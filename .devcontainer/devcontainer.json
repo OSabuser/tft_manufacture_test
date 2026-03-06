@@ -1,11 +1,11 @@
 {
-    "name": "STM32 Dev",
+    "name": "MIMXRT1052 TFT Project",
     "build": {
         "dockerfile": "Dockerfile"
     },
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
     "workspaceFolder": "/workspace",
-    // "postCreateCommand": "cmake --preset host-debug && cmake --preset Debug && cp build/Debug/compile_commands.json /workspace/compile_commands.json",
+    "postCreateCommand": "cmake --preset host-debug && cmake --preset Debug",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -42,7 +42,6 @@
                     "*.h": "c",
                     "*.c": "c"
                 },
-                "stm32.chip": "STM32F407VE",
                 // clangd
                 "clangd.path": "clangd",
                 "clangd.arguments": [

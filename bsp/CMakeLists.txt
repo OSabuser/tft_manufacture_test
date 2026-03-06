@@ -5,9 +5,9 @@ endif()
 # -----------------------------------------------------------------------------
 # bsp_board — стартап, сгенерированные файлы Config Tools, инициализация платы
 # -----------------------------------------------------------------------------
-add_library(
-  bsp_board STATIC board/board.c board/pin_mux.c board/clock_config.c
-                   board/syscalls.c board/startup/startup_MIMXRT1052.S)
+
+add_library(bsp_board STATIC board/board.c board/pin_mux.c board/clock_config.c
+                             board/startup/startup_MIMXRT1052.S)
 
 target_include_directories(bsp_board PUBLIC board)
 

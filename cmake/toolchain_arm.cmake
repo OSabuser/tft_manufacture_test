@@ -76,8 +76,17 @@ set(CMAKE_SIZE
 # -----------------------------------------------------------------------------
 # Флаги процессора — MIMXRT1052 (Cortex-M7, FPv5-D16, hard-float ABI)
 # -----------------------------------------------------------------------------
+# -mcpu=cortex-m7      — целевой процессор, включает оптимизации под эту
+# архитектуру -mthumb              — набор инструкций Thumb-2 (16/32-bit),
+# меньший код при той же производительности -mfpu=fpv5-d16       — FPU: FPv5 с
+# 16 парами 64-bit регистров, соответствует аппаратному FPU IMXRT1052
+# -mfloat-abi=hard     — float/double передаются через FPU-регистры (быстрее чем
+# softfp) -ffunction-sections  — каждая функция в отдельной секции, позволяет
+# --gc-sections удалять неиспользуемые -fdata-sections      — аналогично, но для
+# переменных -ffreestanding       — не предполагать наличия ОС, main() не точка
+# входа, встроенные замены stdlib отключены
 set(CPU_FLAGS
-    "-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard -ffunction-sections -fdata-sections"
+    "-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard -ffunction-sections -fdata-sections -ffreestanding"
 )
 set(CMAKE_C_FLAGS
     "${CMAKE_C_FLAGS}   ${CPU_FLAGS}"
@@ -115,16 +124,9 @@ set(CMAKE_ASM_FLAGS_RELEASE
 # -----------------------------------------------------------------------------
 # C runtime библиотека — newlib-nano (меньше размер, подходит для embedded)
 # -----------------------------------------------------------------------------
-# nano.specs — выбирает компактную версию newlib-nano (меньший размер printf,
-# malloc и т.д.). Но не предоставляет реализацию системных вызовов.
-
-# nosys.specs — предоставляет именно заглушки syscalls. Без него newlib ожидает
-# что ты сам реализуешь _sbrk, _write, _exit и т.д. — либо через semihosting,
-# либо вручную.
-
-# --gc-sections — убирает неиспользуемые секции кода и данных. Работает в паре с
-# -ffunction-sections -fdata-sections у компилятора (каждая функция в отдельной
-# секции — линкер выбрасывает ненужные).
+# --specs=nano.specs        — использовать newlib-nano: облегчённая stdlib,
+# меньший размер printf/malloc -Wl,--no-warn-rwx-segments — подавить
+# предупреждение о RWX сегментах (ITCM/DTCM нормальны для MCU)
 set(CMAKE_EXE_LINKER_FLAGS_INIT "--specs=nano.specs -Wl,--no-warn-rwx-segments")
 
 # -----------------------------------------------------------------------------

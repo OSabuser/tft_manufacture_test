@@ -60,7 +60,6 @@ Testing/
 
 # Файлы настройки среды разработки
 .project
-.vscode/
 compile_commands.json
 .cache/
 .DS_Store

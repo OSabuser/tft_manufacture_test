@@ -23,9 +23,9 @@ Diagnostics:
 
 ---
 
-# Полностью отключаем clang-tidy для Core (генерированный STM32CubeMX код)
+# SDK NXP: сгенерированный/вендорный код — tidy полностью отключён
 If:
-  PathMatch: "Core/.*\\.(c|h)"
+  PathMatch: "sdk/.*\\.(c|h)"
 Diagnostics:
   ClangTidy:
     Remove:
@@ -33,7 +33,27 @@ Diagnostics:
   UnusedIncludes: None
 
 ---
+# Сторонние библиотеки (SEGGER RTT и др.) — tidy полностью отключён
+If:
+  PathMatch: "lib/.*\\.(c|h)"
+Diagnostics:
+  ClangTidy:
+    Remove:
+      - "*"
+  UnusedIncludes: None
 
+---
+# BSP board: сгенерированный Config Tools код — tidy полностью отключён
+If:
+  PathMatch: "bsp/board/(board|pin_mux|clock_config)\\.(c|h)"
+Diagnostics:
+  ClangTidy:
+    Remove:
+      - "*"
+  UnusedIncludes: None
+
+---
+# Глобальные настройки
 Index:
   Background: Build
 Diagnostics:

@@ -1,0 +1,213 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        // Очистка директории с артефактами сборки
+        {
+            "label": "Clean",
+            "group": "build",
+            "type": "shell",
+            "command": "rm -rf build*",
+            "windows": {
+                "command": "rm build* -Recurse -Force"
+            },
+            "options": {
+                "statusbar": {
+                    "color": "#ff8b8b",
+                    "label": "$(clear-all) CleanBuildDir",
+                    "detail": "Clean ALL"
+                }
+            }
+        },
+        // Сборка и запуск тестов на хосте в режиме Debug
+        {
+            "label": "Configure Host Debug tests",
+            "group": "build",
+            "hide": true,
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--preset",
+                "host-debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Build Host Debug tests",
+            "group": "build",
+            "hide": true,
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "host-debug-build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Configure Host Debug tests"
+        },
+        {
+            "label": "🧪 Host Build & Test All",
+            "type": "shell",
+            "command": "ctest",
+            "args": [
+                "--preset",
+                "host-debug-test"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "statusbar": {
+                    "color": "#c800ff",
+                    "label": "$(test-view-icon) Host Test Debug",
+                    "detail": "Perform all the host tests"
+                }
+            },
+            "group": "test",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Build Host Debug tests"
+            ]
+        },
+        // Сборка и запуск тестов на хосте в режиме Release
+        {
+            "label": "Configure Host Release tests",
+            "group": "build",
+            "hide": true,
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--preset",
+                "host-release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
+        {
+            "label": "Build Host Release tests",
+            "group": "build",
+            "hide": true,
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "host-release-build"
+            ],
+            "dependsOn": "Configure Host Release tests"
+        },
+        {
+            "label": "🧪 Host Release Tests",
+            "type": "shell",
+            "command": "ctest",
+            "args": [
+                "--preset",
+                "host-release-test"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "statusbar": {
+                    "color": "#c800ff",
+                    "label": "$(test-view-icon) Host Test Release",
+                    "detail": "Perform all the host tests"
+                }
+            },
+            "group": "test",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Build Host Release tests"
+            ],
+        },
+        // Подготовка сборки в контейнере с пресетом Debug
+        {
+            "label": "Docker: Configure (Debug)",
+            "type": "shell",
+            "hide": true,
+            "command": "cmake",
+            "args": [
+                "--preset",
+                "Debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        // Сборка проекта в контейнере Debug
+        {
+            "label": "Docker: Build (Debug)",
+            "type": "shell",
+            "hide": false,
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "Debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "statusbar": {
+                    "color": "#ff8bd4",
+                    "label": "$(debug-console-view-icon) Target: Build (Debug)",
+                    "detail": "do Debug build"
+                }
+            },
+            "group": "build",
+            "dependsOn": "Docker: Configure (Debug)",
+        },
+        // Подготовка сборки в контейнере с пресетом Release
+        {
+            "label": "Docker: Configure (Release)",
+            "type": "shell",
+            "hide": true,
+            "command": "cmake",
+            "args": [
+                "--preset",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        // Сборка проекта в контейнере Release
+        {
+            "label": "Docker: Build (Release)",
+            "type": "shell",
+            "hide": false,
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "statusbar": {
+                    "color": "#03b3ff",
+                    "label": "$(pass-filled) Target: Build (Release)",
+                    "detail": "do Release build"
+                }
+            },
+            "group": "build",
+            "dependsOn": "Docker: Configure (Release)",
+        },
+    ],
+    "inputs": [
+        {
+            "id": "buildType",
+            "type": "pickString",
+            "description": "Тип сборки",
+            "options": [
+                "Debug",
+                "Release",
+            ],
+            "default": "Debug"
+        }
+    ],
+}

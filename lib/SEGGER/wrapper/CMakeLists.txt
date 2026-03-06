@@ -7,18 +7,6 @@ set(RTT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../RTT/RTT)
 set(RTT_SYSCALLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../RTT/Syscalls)
 set(RTT_CONFIG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../RTT/Config)
 
-# Проверяем наличие субмодуля
-if(NOT EXISTS "${RTT_SRC_DIR}/SEGGER_RTT.c")
-  message(
-    FATAL_ERROR
-      "
-❌ SEGGER_RTT submodule не инициализирован!
-
-Запустите в корне проекта:
-    git submodule update --init ThirdParty/SEGGER/RTT
-    ")
-endif()
-
 # Создаём статическую библиотеку
 add_library(SeggerRTT STATIC)
 

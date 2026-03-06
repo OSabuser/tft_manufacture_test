@@ -1,7 +1,10 @@
 # firmware/test/CMakeLists.txt Тестовая прошивка — входной контроль платы на
 # производстве
 
-add_executable(firmware_test main.c)
+add_executable(firmware_test)
+
+target_sources(firmware_test PRIVATE main.c
+                                     ${PROJECT_SOURCE_DIR}/bsp/board/syscalls.c)
 
 # -----------------------------------------------------------------------------
 # Зависимости — только то что нужно для входного контроля bsp_board транзитивно
@@ -23,16 +26,15 @@ target_link_libraries(
 # -----------------------------------------------------------------------------
 # Linker script
 # -----------------------------------------------------------------------------
-# --gc-sections — убирает неиспользуемые секции кода и данных. Работает в паре с
-# -ffunction-sections -fdata-sections у компилятора (каждая функция в отдельной
-# секции — линкер выбрасывает ненужные).
+# --gc-sections        — удалять неиспользуемые секции (работает с
+# -ffunction/data-sections) --print-memory-usage — выводить таблицу
+# использования Flash/RAM после линковки -Map                 — генерировать
+# map-файл для анализа размещения символов -T                   — линкерный
+# скрипт с описанием карты памяти IMXRT1052
 target_link_options(
-  firmware_test
-  PRIVATE
-  -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor.ld
-  -Wl,--gc-sections
+  firmware_test PRIVATE -Wl,--gc-sections -Wl,--print-memory-usage
   -Wl,-Map=${CMAKE_BINARY_DIR}/firmware_test.map
-  -Wl,--print-memory-usage)
+  -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor.ld)
 
 # -----------------------------------------------------------------------------
 # Post-build: генерация .bin для прошивки через blhost
