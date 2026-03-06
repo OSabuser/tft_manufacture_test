@@ -50,3 +50,18 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Сборка и бинарники
+config_default/
+Debug/
+Release/
+build*
+Testing/
+
+# Файлы настройки среды разработки
+.project
+.vscode/
+compile_commands.json
+.cache/
+.DS_Store
+

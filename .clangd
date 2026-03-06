@@ -1,0 +1,55 @@
+# Для тестов, подхватываем compile_commands для host
+If:
+  PathMatch: "tests/host/.*\\.c"
+CompileFlags:
+  CompilationDatabase: build-host-debug
+
+---
+# Для всего кроме тестов, подхватываем compile_commands для target
+If:
+  PathExclude: "tests/host/.*\\.c"
+CompileFlags:
+  CompilationDatabase: build/Debug
+
+---
+# Не ругаемся на нарушения правил нейминга в тестах
+If:
+  PathMatch: "tests/.*\\.c"
+Diagnostics:
+  ClangTidy:
+    Remove:
+      - readability-identifier-naming
+  UnusedIncludes: None
+
+---
+
+# Полностью отключаем clang-tidy для Core (генерированный STM32CubeMX код)
+If:
+  PathMatch: "Core/.*\\.(c|h)"
+Diagnostics:
+  ClangTidy:
+    Remove:
+      - "*"
+  UnusedIncludes: None
+
+---
+
+Index:
+  Background: Build
+Diagnostics:
+  ClangTidy:
+    Add:
+      - bugprone-*
+      - clang-analyzer-*
+      - performance-*
+      - readability-*
+      - portability-*
+    Remove:
+      - readability-magic-numbers
+      - readability-isolate-declaration
+      - bugprone-easily-swappable-parameters
+  UnusedIncludes: Enabled
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true

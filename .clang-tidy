@@ -1,0 +1,93 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  cppcoreguidelines-avoid-magic-numbers,
+  cppcoreguidelines-macro-usage,
+  cppcoreguidelines-owning-references,
+  cppcoreguidelines-pro-bounds-constant-array-index,
+  cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-pro-type-reinterpret-cast,
+  cppcoreguidelines-pro-type-static-cast-downcast,
+  hicpp-no-array-decay,
+  hicpp-signed-bitwise,
+  modernize-avoid-c-arrays,
+  performance-*,
+  portability-*,
+  readability-avoid-const-params-in-declarations,
+  readability-braces-around-statements,
+  readability-container-size-empty,
+  readability-function-size,
+  readability-identifier-naming,
+  readability-implicit-bool-conversion,
+  readability-magic-numbers,
+  readability-named-parameter,
+  readability-unified-declaration
+WarningsAsErrors: 'bugprone-*,clang-analyzer-*'
+HeaderFilterRegex: "^((?!Drivers|CMSIS|Core|Middlewares).)*$"
+CheckOptions:
+  # ===== ТИПЫ =====
+  - key: readability-identifier-naming.TypedefCase
+    value: lower_case            # my_typedef_t
+  - key: readability-identifier-naming.TypedefSuffix
+    value: "_t"
+  
+  - key: readability-identifier-naming.StructCase
+    value: lower_case            # struct my_struct
+  - key: readability-identifier-naming.StructSuffix
+    value: "_s"
+
+  - key: readability-identifier-naming.EnumCase
+    value: lower_case            # enum my_enum
+  - key: readability-identifier-naming.EnumSuffix
+    value: "_e"
+
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE            # MY_ENUM_VALUE
+
+  # ===== ПЕРЕМЕННЫЕ =====
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case            # my_variable
+
+  - key: readability-identifier-naming.GlobalVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.GlobalVariablePrefix
+    value: "g_"                  # g_my_global
+
+  - key: readability-identifier-naming.LocalVariableCase
+    value: lower_case            # local_var
+
+  - key: readability-identifier-naming.StaticVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.StaticVariablePrefix
+    value: "s_"                  # s_my_static
+
+  # ===== ПАРАМЕТРЫ ФУНКЦИЙ =====
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case            # func(uint8_t my_param)
+
+  # ===== ФУНКЦИИ =====
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case            # my_module_init()
+
+  # ===== МАКРОСЫ =====
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE            # #define MY_MACRO 1
+
+  # ===== КОНСТАНТЫ =====
+  - key: readability-identifier-naming.ConstantCase
+    value: UPPER_CASE            # const uint8_t MY_CONST = 5
+
+  # ===== УКАЗАТЕЛИ =====
+  - key: readability-identifier-naming.PointerParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.PointerParameterPrefix
+    value: "p_"                  # uint8_t *p_buffer
+  - key: readability-function-size.LineThreshold
+    value: '50'        
+  - key: readability-function-size.StatementThreshold
+    value: '30'
+  - key: readability-magic-numbers.IgnoredIntegerValues
+    value: '0;1;2;8;16;32;64;128;255'  

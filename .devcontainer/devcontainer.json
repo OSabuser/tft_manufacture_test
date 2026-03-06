@@ -1,0 +1,71 @@
+{
+    "name": "STM32 Dev",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "workspaceFolder": "/workspace",
+    // "postCreateCommand": "cmake --preset host-debug && cmake --preset Debug && cp build/Debug/compile_commands.json /workspace/compile_commands.json",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "actboy168.tasks",
+                "bierner.markdown-preview-github-styles",
+                "brobeson.ctest-lab",
+                "cheshirekow.cmake-format",
+                "codeium.codeium",
+                "cschlosser.doxdocgen",
+                "dan-c-underwood.arm",
+                "davidanson.vscode-markdownlint",
+                "gruntfuggly.todo-tree",
+                "kylinideteam.cmake-intellisence",
+                "llvm-vs-code-extensions.vscode-clangd",
+                "mcu-debug.debug-tracker-vscode",
+                "mcu-debug.memory-view",
+                "mcu-debug.peripheral-viewer",
+                "mcu-debug.rtos-views",
+                "ms-vscode.hexeditor",
+                "ms-vscode.makefile-tools",
+                "probe-rs.probe-rs-debugger",
+                "rioj7.command-variable",
+                "trond-snekvik.gnu-mapfiles",
+                "twxs.cmake",
+                "usernamehw.errorlens",
+                "wayou.vscode-todo-highlight",
+                "xaver.clang-format",
+                "yzhang.markdown-all-in-one",
+                "zixuanwang.linkerscript"
+            ],
+            "settings": {
+                "editor.formatOnSave": true,
+                "files.associations": {
+                    "*.h": "c",
+                    "*.c": "c"
+                },
+                "stm32.chip": "STM32F407VE",
+                // clangd
+                "clangd.path": "clangd",
+                "clangd.arguments": [
+                    "--query-driver=/opt/arm-toolchain/bin/arm-none-eabi-*",
+                    "--background-index",
+                    "--clang-tidy",
+                    "--header-insertion=iwyu",
+                    "--log=error"
+                ],
+                // Отключаем встроенный IntelliSense от ms-vscode.cpptools, чтобы не конфликтовал с clangd
+                "C_Cpp.intelliSenseEngine": "disabled",
+                "C_Cpp.formatting": "disabled",
+                // clang-format
+                "clang-format.executable": "clang-format",
+                "[c]": {
+                    "editor.defaultFormatter": "xaver.clang-format"
+                },
+                // cmake-format
+                "cmakeFormat.exePath": "cmake-format",
+                "[cmake]": {
+                    "editor.defaultFormatter": "cheshirekow.cmake-format"
+                }
+            }
+        }
+    }
+}
