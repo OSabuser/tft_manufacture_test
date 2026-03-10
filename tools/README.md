@@ -1,158 +1,251 @@
-# Host Tools — окружение для прошивки
+# tools/host — Окружение прошивки MIMXRT1052CVJ5B
 
-Изолированное Python-окружение на базе [uv](https://docs.astral.sh/uv/).
-Устанавливается на хост-машине разработчика — **не внутри devcontainer**.
+Изолированное Python-окружение на базе [uv](https://docs.astral.sh/uv/) для сборки
+HAB-образов и прошивки платы через USB. Запускается на хост-машине разработчика —
+**не внутри devcontainer**.
+
+---
 
 ## Структура
 
 ```bash
 tools/host/
 ├── dcd/
-│   ├── dcd_mt48lc16m16a2.cfg     ← источник истины для DCD (коммитить)
-│   ├── dcd_compiler.py           ← скрипт: .cfg → .bin
-│   └── dcd.bin                   ← артефакт (пересобирается из .cfg)
-│
-├── fdcb/
-│   ├── fcb_w25q64_quad.yaml      ← конфиг FCB: W25Q64, Quad I/O, 133 MHz
-│   └── fcb.bin                   ← артефакт (пересобирается из .yaml)
-│
+│   ├── dcd.bin                   ← DCD бинарник (инициализация SDRAM, коммитить как есть)
+│   └── ivt_flashloader.bin       ← NXP Flashloader (коммитить)
 ├── hab/
 │   ├── hab_firmware_test.yaml    ← HAB: Debug + DCD (входной контроль)
 │   ├── hab_bootloader.yaml       ← HAB: Release, без DCD
 │   └── hab_app.yaml              ← HAB: Release + DCD (боевая прошивка)
-│
-├── image/
-│   ├── bootimg_firmware_test.yaml
-│   ├── bootimg_bootloader.yaml
-│   └── bootimg_app.yaml
-│
-├── pyproject.toml                ← зависимости (spsdk, версия зафиксирована)
+├── flash_usb.py                  ← скрипт прошивки через USB
+├── pyproject.toml                ← зависимости (spsdk==3.7.x)
 ├── uv.lock                       ← lockfile (коммитить)
-├── .python-version
 └── README.md
 ```
 
-## Установка uv (один раз на машину)
+## Предварительные требования
+
+### 1. uv — один раз на машину
 
 ```bash
-# Linux/macOS
+# macOS / Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Windows
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-## Первый запуск (один раз на репозиторий)
+### 2. Зависимости проекта — один раз на репозиторий
 
 ```bash
 cd tools/host
 uv sync
 ```
 
-### udev правило для USB SDP — только Linux, один раз на машину
+### 3. udev правила — только Linux, один раз на машину
 
-Без этого правила `blhost` требует `sudo`:
+Без этого для работы с USB нужен `sudo`:
 
 ```bash
-echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="1fc9", ATTR{idProduct}=="0135", MODE="0666", GROUP="plugdev"' \
-    | sudo tee /etc/udev/rules.d/99-nxp-sdp.rules
+sudo tee /etc/udev/rules.d/99-nxp-mimxrt.rules << 'EOF'
+# NXP BootROM — SDP режим (BOOT_MOD_1 = 3V3)
+SUBSYSTEM=="usb", ATTR{idVendor}=="1fc9", ATTR{idProduct}=="0130", MODE="0666", GROUP="plugdev"
+# NXP Flashloader — после jump-address
+SUBSYSTEM=="usb", ATTR{idVendor}=="15a2", ATTR{idProduct}=="0073", MODE="0666", GROUP="plugdev"
+EOF
+
 sudo udevadm control --reload-rules && sudo udevadm trigger
 sudo usermod -a -G plugdev $USER
-# Перелогиниться после usermod!
+# После usermod — перелогиниться!
 ```
 
-## Пайплайн сборки загрузочного образа
+---
 
-### Шаг 1 — DCD (пересобирать при изменении dcd_mt48lc16m16a2.cfg)
+## Карта Flash (W25Q64FVSSIG, 8 MB)
 
 ```bash
-cd tools/host/dcd
-uv run python3 dcd_compiler.py dcd_mt48lc16m16a2.cfg dcd.bin
+0x60000000  ┌─────────────────────────────┐
+            │  FCB — Flash Config Block   │  512 байт
+            │  (пишет Flashloader,        │
+            │   не входит в HAB образ)    │
+0x60001000  ├─────────────────────────────┤
+            │  IVT — Image Vector Table   │  ← начало HAB образа
+            │  BDT — Boot Data Table      │
+0x60001040  ├─────────────────────────────┤
+            │  DCD — SDRAM init           │  ~1088 байт (для fw_test и app)
+0x60003000  ├─────────────────────────────┤
+            │  Код прошивки               │
+            │  (.text, .data, ...)        │
+            └─────────────────────────────┘
 ```
 
-### Шаг 2 — FCB (пересобирать при изменении fcb_w25q64_quad.yaml)
+---
+
+## Пайплайн: сборка HAB образа
 
 ```bash
-cd tools/host/fdcb
-uv run nxpimage bootable-image fcb export -c fcb_w25q64_quad.yaml -o fcb.bin
-```
+cd tools/host/hab
 
-### Шаг 3 — Загрузочный образ
-
-```bash
-cd tools/host/image
-
-# firmware_test (Debug, входной контроль)
-uv run nxpimage bootable-image export -c bootimg_firmware_test.yaml
+# firmware_test (Debug) — входной контроль платы
+uv run nxpimage hab export --force \
+    -c hab_firmware_test.yaml \
+    -o ../../../../build/Debug/firmware_test_hab.bin
 
 # bootloader (Release)
-uv run nxpimage bootable-image export -c bootimg_bootloader.yaml
+uv run nxpimage hab export --force \
+    -c hab_bootloader.yaml \
+    -o ../../../../build/Release/bootloader_hab.bin
 
-# app (Release, боевая прошивка)
-uv run nxpimage bootable-image export -c bootimg_app.yaml
+# app (Release) — боевая прошивка
+uv run nxpimage hab export --force \
+    -c hab_app.yaml \
+    -o ../../../../build/Release/app_hab.bin
 ```
 
-Артефакты попадают в `build/Debug/` и `build/Release/` соответственно.
-
-### Проверка образа
+### Проверка образа после сборки
 
 ```bash
-cd tools/host/image
-uv run nxpimage bootable-image parse \
-    -b ../../../../build/Debug/firmware_test_bootable.bin \
-    -f mimxrt1050
+uv run nxpimage hab parse -b ../../../../build/Debug/firmware_test_hab.bin
 ```
 
-В выводе должны присутствовать секции `FCB`, `IVT`, `BDT`, `DCD`, `App`.
+Ожидаемый результат: IVT с корректным `entry`, DCD с тегом `0xD2`,
+`csf = 0x00000000` (unsigned).
 
-## Прошивка через USB (BootROM SDP режим)
+---
 
-Перевести плату в SDP режим: `BOOT_MOD_1 = 1` (подтянуть к 3V3), затем подать питание или нажать Reset.
+## Пайплайн: прошивка через USB
+
+### Подготовка платы
+
+Перевести плату в режим SDP (Serial Download Protocol):
+
+1. Подтянуть `BOOT_MOD_1` к `3V3`
+2. Reset
+3. Подключить USB к ПК
+
+В этом режиме плата определяется как `VID:PID = 1FC9:0130`.
+
+### Запуск скрипта
 
 ```bash
 cd tools/host
 
-# Проверить что устройство определилось (VID:PID 1FC9:0135)
-export VID_PID=0x1fc9:0x0130
-uv run nxpdevscan
+# firmware_test
+uv run python3 flash_usb.py --firmware firmware_test --build-type Debug
 
-# Версия BootROM на таргете
-uv run blhost -u $VID_PID get-property 1 
-# Доступные BootROM области памяти
-uv run blhost -u $VID_PID list-memory
+# app
+uv run python3 flash_usb.py --firmware app --build-type Release
 
-# Прошить firmware_test
-uv run blhost -u $VID_PID flash-erase-all
-uv run blhost -u $VID_PID write-memory 0x60000000 \
-    ../../build/Debug/firmware_test_bootable.bin
-uv run blhost -u $VID_PID reset
-
-# Загрузить в RAM без записи во Flash (для быстрой отладки)
-uv run blhost -u $VID_PID load-image ../../build/Debug/firmware_test_bootable.bin
+# bootloader
+uv run python3 flash_usb.py --firmware bootloader --build-type Release
 ```
 
-После прошивки вернуть `BOOT_MOD_1 = 0` (подтянуть к GND) для нормального старта из Flash.
+После прошивки: вернуть `BOOT_MOD_1` к `GND`, Reset — плата стартует из Flash.
 
-## Удалённая прошивка (сервер)
+### Последовательность команд внутри скрипта
 
 ```bash
-# Из devcontainer или локально — копируем образ на сервер и прошиваем
-./tools/host/flash_remote.sh firmware_test Debug
+Плата в SDP режиме (1FC9:0130)
+    │
+    ├─ sdphost write-file 0x20001C00 ivt_flashloader.bin
+    └─ sdphost jump-address 0x20001C00
+         │
+         │  (ожидание до 10с пока Flashloader поднимется на 15A2:0073)
+         │
+    Flashloader (15A2:0073)
+         │
+         │  Шаг 1 — инициализация FlexSPI NOR контроллера
+         ├─ blhost fill-memory 0x2000 4 0xC0000007 word
+         ├─ blhost configure-memory 9 0x2000
+         │
+         │  Шаг 2 — стирание Flash
+         ├─ blhost flash-erase-region 0x60000000 <size> 0    (memoryId=0, XIP)
+         │
+         │  Шаг 3 — запись FCB в 0x60000000
+         │  (ПОСЛЕ стирания! Flashloader генерирует FCB из параметров шага 1)
+         ├─ blhost fill-memory 0x2000 4 0xF000000F word
+         ├─ blhost configure-memory 9 0x2000
+         │
+         │  Шаг 4 — запись HAB образа начиная с 0x60001000
+         ├─ blhost write-memory 0x60001000 *_hab.bin 0       (memoryId=0, XIP)
+         └─ blhost reset
 ```
+
+> **Почему FCB не в образе?**
+> Flashloader генерирует FCB автоматически из параметров FlexSPI (option word
+> `0xC0000007`). Запись FCB через `0xF000000F` — это отдельная команда,
+> выполняемая строго после `flash-erase-region`, иначе FCB будет затёрт следующим
+> стиранием.
+
+---
+
+## DCD — инициализация SDRAM
+
+`dcd/dcd.bin` — бинарный блоб команд, который BootROM выполняет до передачи
+управления прошивке. Инициализирует PLL, CCM clock gates, SEMC контроллер
+и микросхему SDRAM (MT48LCxxM4).
+
+Файл хранится в репозитории в бинарном виде и **не требует пересборки** — он
+меняется только при изменении схемотехники.
+
+```bash
+Цель: MT48LC16M16A2P-6A, 32 MB, шина 16 бит, CS0
+  SEMC BR0: base=0x80000000, size=32MB, VLD=1
+  SEMC BR1–BR3: VLD=0  (один чип, один CS)
+```
+
+Использование DCD по прошивкам:
+
+| Прошивка | DCD | Причина |
+|---|---|---|
+| `firmware_test` | ✓ | тесты работают с SDRAM |
+| `app` | ✓ | FreeRTOS heap и буферы LCDIF размещены в SDRAM |
+| `bootloader` | ✗ | загрузчик не использует SDRAM, инициализация в app |
+
+---
+
+## Flashloader
+
+`dcd/ivt_flashloader.bin` — NXP-программа, загружаемая в RAM через SDP.
+Предоставляет `blhost` доступ к Flash, которого нет через BootROM напрямую.
+
+```bash
+Entry point:    0x20002401
+Загрузка по:    0x20001C00
+VID:PID после старта: 15A2:0073
+Источник:       MCUXpresso Secure Provisioning Tool 25.12
+```
+
+---
 
 ## Диагностика
 
 ```bash
-# Список поддерживаемых семейств (проверка установки)
-uv run nxpimage bootable-image get-families
+# Найти подключённые NXP устройства
+uv run nxpdevscan
 
-# Список доступных шаблонов для mimxrt1050
-uv run nxpimage bootable-image list-templates -f mimxrt1050
+# Проверить связь с BootROM через SDP
+sdphost -u 0x1FC9,0x0130 -- error-status
 
-# Версия SPSDK
+# Проверить что Flashloader отвечает (после jump-address)
+blhost -u 0x15A2,0x0073 -- get-property 1 0
+
+# Версии инструментов
 uv run nxpimage --version
 uv run blhost --version
 ```
+
+### Типичные ошибки
+
+| Симптом | Причина | Решение |
+|---|---|---|
+| `USB HID device not found: 1FC9:0130` | Плата не в SDP режиме | Проверить `BOOT_MOD_1` → 3V3 и Reset |
+| Flashloader timeout после jump | `ivt_flashloader.bin` повреждён или не тот | Взять из SPT 25.12 |
+| Плата не стартует после прошивки | `BOOT_MOD_1` не переключён обратно | Вернуть `BOOT_MOD_1` → GND, Reset |
+| Плата зависает сразу после старта | DCD завис (неверный `dcd.bin`) | Использовать только верифицированный `dcd.bin` |
+| Плата стартует, периферия не работает | CCM clock gates в DCD отключают нужные клоки | Проверить `dcd.bin` — только верифицированный вариант |
+
+---
 
 ## Обновление зависимостей
 
@@ -160,5 +253,5 @@ uv run blhost --version
 cd tools/host
 uv add "spsdk==X.Y.Z"
 uv sync
-git add uv.lock
+git add uv.lock pyproject.toml
 ```

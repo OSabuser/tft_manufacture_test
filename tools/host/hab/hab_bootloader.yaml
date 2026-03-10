@@ -1,18 +1,21 @@
 # =============================================================================
 # HAB Container — firmware/bootloader
+# Расположение: tools/host/hab/hab_bootloader.yaml
 #
-# flags: 0x0 — образ НЕ подписан
-# DCD:   отсутствует намеренно — загрузчик не использует SDRAM,
-#        минимальная зависимость от железа = максимальная надёжность.
-#        SDRAM инициализируется позже, уже внутри app через её DCD.
+# Сборка:
+#   cd tools/host/hab
+#   uv run nxpimage hab export --force -c hab_bootloader.yaml \
+#       -o ../../../build/Release/bootloader_hab.bin
 # =============================================================================
 
 options:
-  flags: 0x0
+  flags: 0x00
+  startAddress: 0x60000000
+  ivtOffset: 0x1000
+  initialLoadSize: 0x2000
   family: mimxrt1050
-  bootDevice: flexspi_nor
-  startAddress: 0x60000000  # FlexSPI NOR base address (XIP)
-  
+  # DCD намеренно отсутствует — загрузчик не использует SDRAM
+
 inputImageFile: "../../../build/Release/bootloader.bin"
 
 sections: []

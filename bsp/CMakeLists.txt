@@ -16,8 +16,9 @@ set_source_files_properties(board/board.c board/pin_mux.c
                             PROPERTIES COMPILE_OPTIONS "-w")
 # Дефайны PUBLIC — транзитивно подтянутся во все firmware таргеты TODO: для
 # каждого приложения свои дефайны
-target_compile_definitions(bsp_board PUBLIC CPU_MIMXRT1052CVJ5B
-                                            SKIP_SYSCLK_INIT)
+target_compile_definitions(
+  bsp_board PUBLIC CPU_MIMXRT1052CVJ5B SKIP_SYSCLK_INIT XIP_EXTERNAL_FLASH=1
+                   XIP_BOOT_HEADER_ENABLE=1 XIP_BOOT_HEADER_DCD_ENABLE=1)
 
 # Сценарий A: XIP — код исполняется прямо из Flash
 add_library(bsp_boot_xip INTERFACE)

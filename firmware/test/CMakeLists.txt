@@ -13,7 +13,6 @@ target_sources(firmware_test PRIVATE main.c
 target_link_libraries(
   firmware_test
   PRIVATE bsp_board
-          bsp_boot_xip
           # SDK драйверы периферии — добавляй по мере написания тестов
           sdk_lpuart # UART тест
           sdk_flexcan # CAN тест

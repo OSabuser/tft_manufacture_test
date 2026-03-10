@@ -1,18 +1,20 @@
 # =============================================================================
 # HAB Container — firmware/app (боевая прошивка)
+# Расположение: tools/host/hab/hab_app.yaml
 #
-# flags: 0x0 — образ НЕ подписан
-# DCD:   обязателен — линкер размещает FreeRTOS heap и буферы LCDIF
-#        в SDRAM (0x80000000), которая должна быть инициализирована
-#        до первой инструкции прошивки.
+# Сборка:
+#   cd tools/host/hab
+#   uv run nxpimage hab export --force -c hab_app.yaml \
+#       -o ../../../build/Release/app_hab.bin
 # =============================================================================
 
 options:
-  flags: 0x0
+  flags: 0x00
+  startAddress: 0x60000000
+  ivtOffset: 0x1000
+  initialLoadSize: 0x2000
   family: mimxrt1050
-  bootDevice: flexspi_nor
-  startAddress: 0x60000000  # FlexSPI NOR base address (XIP)
-  DCDFilePath: ../dcd/dcd.bin
+  DCDFilePath: ../dcd/dcd.bin  # обязателен — heap FreeRTOS и LCDIF в SDRAM
 
 inputImageFile: "../../../build/Release/app.bin"
 
