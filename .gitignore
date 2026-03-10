@@ -63,4 +63,7 @@ Testing/
 compile_commands.json
 .cache/
 .DS_Store
+.venv/
+__pycache__/
+*.pyc
 

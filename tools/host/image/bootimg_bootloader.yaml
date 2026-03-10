@@ -1,0 +1,26 @@
+# =============================================================================
+# Bootable Image — firmware/bootloader
+# Расположение: tools/host/image/bootimg_bootloader.yaml
+#
+# Пайплайн сборки:
+#
+#   1. FCB (один раз, из tools/host/fdcb/):
+#      nxpimage bootable-image fcb export -c fcb_w25q64_quad.yaml -o fcb.bin
+#
+#   2. Образ (из tools/host/image/):
+#      nxpimage bootable-image export -c bootimg_bootloader.yaml
+#
+#   3. Проверка:
+#      nxpimage bootable-image parse -b ../../../../build/Release/bootloader_bootable.bin -f mimxrt1050
+# =============================================================================
+
+family: mimxrt1050
+revision: latest
+memory_type: flexspi_nor
+
+output: "../../../build/Release/bootloader_bootable.bin"
+output_format: bin
+
+fcb: ../fdcb/fcb.bin
+
+hab_container: ../hab/hab_bootloader.yaml

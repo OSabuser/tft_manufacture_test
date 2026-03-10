@@ -1,5 +1,6 @@
 {
     "name": "MIMXRT1052 TFT Project",
+    "remoteUser": "devuser",
     "build": {
         "dockerfile": "Dockerfile"
     },

@@ -5,18 +5,11 @@ Checks: >
   clang-analyzer-*,
   cppcoreguidelines-avoid-magic-numbers,
   cppcoreguidelines-macro-usage,
-  cppcoreguidelines-owning-references,
   cppcoreguidelines-pro-bounds-constant-array-index,
   cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  cppcoreguidelines-pro-type-const-cast,
-  cppcoreguidelines-pro-type-reinterpret-cast,
-  cppcoreguidelines-pro-type-static-cast-downcast,
-  hicpp-no-array-decay,
   hicpp-signed-bitwise,
-  modernize-avoid-c-arrays,
   performance-*,
   portability-*,
-  readability-avoid-const-params-in-declarations,
   readability-braces-around-statements,
   readability-container-size-empty,
   readability-function-size,
@@ -26,7 +19,7 @@ Checks: >
   readability-named-parameter,
   readability-unified-declaration
 WarningsAsErrors: 'bugprone-*,clang-analyzer-*'
-HeaderFilterRegex: "^((?!Drivers|CMSIS|Core|Middlewares).)*$"
+HeaderFilterRegex: "^((?!sdk/|lib/|bsp/board/).)*\\.h$"
 CheckOptions:
   # ===== ТИПЫ =====
   - key: readability-identifier-naming.TypedefCase

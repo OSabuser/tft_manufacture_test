@@ -13,6 +13,7 @@ target_sources(firmware_test PRIVATE main.c
 target_link_libraries(
   firmware_test
   PRIVATE bsp_board
+          bsp_boot_xip
           # SDK драйверы периферии — добавляй по мере написания тестов
           sdk_lpuart # UART тест
           sdk_flexcan # CAN тест
@@ -44,5 +45,7 @@ add_custom_command(
   POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:firmware_test>
           ${CMAKE_BINARY_DIR}/firmware_test.bin
+  COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:firmware_test>
+          ${CMAKE_BINARY_DIR}/firmware_test.hex
   COMMAND ${CMAKE_SIZE} $<TARGET_FILE:firmware_test>
   COMMENT "Generating firmware_test.bin")

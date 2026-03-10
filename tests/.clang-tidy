@@ -1,0 +1,6 @@
+---
+InheritParentConfig: true   # наследуем корневой конфиг...
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*          # ...но оставляем только это

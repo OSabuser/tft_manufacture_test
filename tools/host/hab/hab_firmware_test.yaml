@@ -1,0 +1,23 @@
+# =============================================================================
+# HAB Container — firmware/test (входной контроль производства)
+#
+# flags: 0x0 — образ НЕ подписан (HAB в open/unsigned режиме)
+# DCD:   присутствует — инициализация SDRAM обязательна для тестов
+#
+# Важно: sections пустой — для unsigned образа CSF не нужен.
+# BootROM примет образ без проверки подписи пока HAB не залочен (fuses).
+# =============================================================================
+
+options:
+  flags: 0x0                # unsigned — без подписи
+  family: mimxrt1050
+  bootDevice: flexspi_nor   # ivtOffset=0x1000, initialLoadSize=0x2000 — автоматически
+  startAddress: 0x60000000  # FlexSPI NOR base address (XIP)
+  
+  # DCD — инициализация SDRAM до передачи управления прошивке.
+  # Сгенерирован из dcd.cfg скриптом tools/dcd_cfg_to_bin.py
+  DCDFilePath: ../dcd/dcd.bin
+
+inputImageFile: "../../../build/Debug/firmware_test.bin"
+
+sections: []

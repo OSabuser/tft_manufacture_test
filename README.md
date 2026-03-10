@@ -43,8 +43,8 @@
 │   ├── bootloader/             # [Проект 2] Загрузчик с поддержкой A/B обновления
 │   └── app/                    # [Проект 3] Основная боевая прошивка (FreeRTOS)
 ├── tests/                      # Host-тесты (unit + integration)
-│   ├── unit/
-│   └── integration/
+│   ├── host/
+│   └── target/
 └── tools/                      # Скрипты для прошивки, провизии, HIL-тестов
     ├── flash_usb.py            # Прошивка через USB ROM (blhost / nxp-spsdk)
     ├── flash_remote.sh         # Прошивка на удалённый сервер через SSH
@@ -94,10 +94,8 @@ Bare-metal прошивка для входного контроля на про
 | `clangd` | Language server для VSCode |
 | `clang-format` | Форматирование кода |
 | `clang-tidy` | Статический анализ |
-| `cppcheck` | Дополнительный статический анализ |
-| `lcov / gcovr` | Покрытие host-тестов |
 | `Python 3 + nxp-spsdk` | Прошивка (blhost, nxpimage), производственная провизия |
-| `srec_cat` | Манипуляции с бинарными образами |
+
 
 ---
 

@@ -5,5 +5,4 @@
 void BOARD_Init(void) {
   BOARD_InitPins();
   BOARD_BootClockRUN();
-  BOARD_InitRS_GPIO();
 }

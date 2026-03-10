@@ -1,0 +1,19 @@
+# =============================================================================
+# HAB Container — firmware/app (боевая прошивка)
+#
+# flags: 0x0 — образ НЕ подписан
+# DCD:   обязателен — линкер размещает FreeRTOS heap и буферы LCDIF
+#        в SDRAM (0x80000000), которая должна быть инициализирована
+#        до первой инструкции прошивки.
+# =============================================================================
+
+options:
+  flags: 0x0
+  family: mimxrt1050
+  bootDevice: flexspi_nor
+  startAddress: 0x60000000  # FlexSPI NOR base address (XIP)
+  DCDFilePath: ../dcd/dcd.bin
+
+inputImageFile: "../../../build/Release/app.bin"
+
+sections: []

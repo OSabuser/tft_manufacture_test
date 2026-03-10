@@ -2,7 +2,7 @@
 If:
   PathMatch: "tests/host/.*\\.c"
 CompileFlags:
-  CompilationDatabase: build-host-debug
+  CompilationDatabase: build/host-debug
 
 ---
 # Для всего кроме тестов, подхватываем compile_commands для target
