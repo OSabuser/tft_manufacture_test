@@ -2,10 +2,6 @@
 # HAB Container — firmware/app (боевая прошивка)
 # Расположение: tools/host/hab/hab_app.yaml
 #
-# Сборка:
-#   cd tools/host/hab
-#   uv run nxpimage hab export --force -c hab_app.yaml \
-#       -o ../../../build/Release/app_hab.bin
 # =============================================================================
 
 options:

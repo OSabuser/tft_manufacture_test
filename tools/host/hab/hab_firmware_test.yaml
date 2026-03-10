@@ -2,10 +2,6 @@
 # HAB Container — firmware/test (входной контроль производства)
 # Расположение: tools/host/hab/hab_firmware_test.yaml
 #
-# Сборка:
-#   cd tools/host/hab
-#   uv run nxpimage hab export --force -c hab_firmware_test.yaml \
-#       -o ../../../build/Debug/firmware_test.bin
 # =============================================================================
 
 options:
