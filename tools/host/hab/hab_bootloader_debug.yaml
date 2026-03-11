@@ -1,0 +1,17 @@
+# =============================================================================
+# HAB Container — firmware/bootloader
+# Расположение: tools/host/hab/hab_bootloader.yaml
+#
+# =============================================================================
+
+options:
+  flags: 0x00
+  startAddress: 0x60000000
+  ivtOffset: 0x1000
+  initialLoadSize: 0x2000
+  family: mimxrt1050
+  # DCD намеренно отсутствует — загрузчик не использует SDRAM
+
+inputImageFile: "../../../build/Debug/bootloader.bin"
+
+sections: []

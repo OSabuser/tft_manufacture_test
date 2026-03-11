@@ -1,8 +1,8 @@
 # tft_manufacture_test
 
-## Структура проекта
+Монорепозиторий для **MIMXRT1052CVJ5B**. Содержит три независимых firmware-проекта с общей инфраструктурой сборки, тестирования и инструментарием.
 
-Монорепозиторий для MIMXRT1052CVJ5B. Три независимых firmware-проекта с общей инфраструктурой сборки, тестирования и инструментарием.
+> Архитектура рабочего окружения разработчика — [docs/DEV_ARCH.md](docs/DEV_ARCH.md)
 
 ---
 
@@ -11,44 +11,55 @@
 ```bash
 /
 ├── .devcontainer/              # VSCode Devcontainer — единое окружение для всех разработчиков
+├── bsp/                        # Board Support Package
+│   └── generated/              # Сгенерировано NXP Config Tools (Pins + Clocks Tool)
+│       ├── TFT_Board.mex       # Источник истины конфигурации пинов и тактирования
+│       ├── pin_mux.c/h         # Сгенерировано из .mex (Pins Tool)
+│       ├── clock_config.c/h    # Сгенерировано из .mex (Clocks Tool)
+│       ├── board.c/h           # Ручная инициализация специфики платы
+│       └── BOOT_FLAGS.md       # Описание флагов загрузчика
 ├── cmake/                      # Общие CMake модули и toolchain files
+│   ├── linker/                 # Линкер-скрипты под разные схемы размещения
 │   ├── toolchain_arm.cmake     # ARM cross-compilation toolchain
 │   └── toolchain_host.cmake    # Host GCC для unit-тестов
-├── sdk/                        # NXP MCUXpresso SDK — vendored, только нужные компоненты
-│   ├── CMakeLists.txt          # CMake-таргеты для каждого драйвера
+├── sdk/                        # NXP MCUXpresso SDK — vendored
+│   ├── CMakeLists.txt
 │   ├── CMSIS/
-│   ├── devices/
-│   │   └── MIMXRT1052/
-│   │       ├── drivers/        # fsl_flexcan, fsl_lpuart, fsl_usdhc и др.
-│   │       ├── startup/
-│   │       └── utilities/
-│   └── components/
-├── bsp/                        # Board Support Package
-│   └── board/
-│       ├── board.mex           # Исходник конфигурации для NXP Config Tools
-│       ├── pin_mux.c/h         # Сгенерировано из board.mex (Pins Tool)
-│       ├── clock_config.c/h    # Сгенерировано из board.mex (Clocks Tool)
-│       └── board.c/h           # Ручная инициализация специфики платы
-├── lib/                        # Библиотеки и зависимости
-│   ├── CMakeLists.txt          # Агрегатор — подключает нужные модули через опции
-│   ├── freertos/               # vendored
-│   ├── fatfs/                  # vendored
-│   ├── mbedtls/                # vendored (если используется)
-│   ├── unity/                  # vendored (test framework)
-│   ├── fff/                    # vendored (fake functions для тестов)
-│   └── hal/                    # submodule — аппаратно-независимые библиотеки
-│                               # (второй разработчик, активно развивается)
+│   ├── devices/MIMXRT1052/     # Драйверы, startup, утилиты
+│   ├── components/             # fsl_button, fsl_led, serial_manager и др.
+│   ├── middleware/             # FatFS, FreeRTOS, LittleFS, USB, mcuboot и др.
+│   └── rtos/freertos/          # FreeRTOS (vendored через SDK)
+├── lib/                        # Внешние библиотеки
+│   ├── Unity/                  # Фреймворк для unit-тестов (vendored)
+│   ├── fff/                    # Fake Function Framework для моков (vendored)
+│   └── SEGGER/                 # SEGGER RTT — вывод логов через отладчик
 ├── firmware/
-│   ├── test/                   # [Проект 1] Тестовая прошивка — входной контроль
+│   ├── test/                   # [Проект 1] Тестовая прошивка — входной контроль платы
 │   ├── bootloader/             # [Проект 2] Загрузчик с поддержкой A/B обновления
-│   └── app/                    # [Проект 3] Основная боевая прошивка (FreeRTOS)
-├── tests/                      # Host-тесты (unit + integration)
-│   ├── host/
-│   └── target/
-└── tools/                      # Скрипты для прошивки, провизии, HIL-тестов
-    ├── flash_usb.py            # Прошивка через USB ROM (blhost / nxp-spsdk)
-    ├── flash_remote.sh         # Прошивка на удалённый сервер через SSH
-    └── provision.py            # Производственная провизия (SPT / nxpimage)
+│   └── tft_app/                # [Проект 3] Основная боевая прошивка (FreeRTOS)
+├── tests/                      # Тесты (host + target)
+│   ├── host/                   # Unit/интеграционные тесты, запускаемые на хосте
+│   ├── target/                 # Тесты периферии, запускаемые на таргете
+│   └── HostTestingGuide.md
+├── tools/
+│   └── host/                   # Инструменты для работы с таргетом
+│       ├── flash_usb.py        # Прошивка через USB ROM (nxp-spsdk / blhost)
+│       ├── hab/                # Утилиты и гайд по HAB (Secure Boot)
+│       ├── dcd/                # Device Configuration Data
+│       └── HOW_TO_FLASH.md     → см. также /HOW_TO_FLASH.md
+├── scripts/
+│   ├── bootstrap.sh            # Первичная настройка окружения
+│   └── build.just              # Рецепты сборки (используется через Justfile)
+├── docs/                       # Документация проекта
+│   ├── DEV_ARCH.md             # Архитектура окружения разработки
+│   ├── CMAKE_HINTS.md          # Шпаргалка по CMake в проекте
+│   ├── schematic.pdf           # Схема платы
+│   ├── mcu_rm.pdf              # Reference Manual IMXRT1052
+│   └── manufacturing_user's_guide.pdf
+├── CMakeLists.txt              # Корневой CMake
+├── CMakePresets.json           # Пресеты сборки (Release/Debug/Host)
+├── Justfile                    # Точка входа для команд сборки/тестирования/прошивки
+└── README.md
 ```
 
 ---
@@ -57,15 +68,32 @@
 
 ### 1. Тестовая прошивка (`firmware/test/`)
 
-Bare-metal прошивка для входного контроля на производстве. Проверяет базовую работоспособность всех интерфейсов и периферии: CAN, UART, SDRAM, QSPI Flash, uSD, RGB-интерфейс, гальванически развязанные входы, светодиоды, кнопки. Загружается через USB ROM (Serial Download Mode). **Рекомендуется начать разработку с этого проекта** — он наиболее прост и позволяет полностью отладить окружение сборки.
+Bare-metal прошивка для **входного контроля** платы. Проверяет базовую работоспособность всех интерфейсов: CAN, UART, SDRAM, QSPI Flash, uSD (SDIO), RGB-интерфейс, гальванически развязанные входы, светодиоды, кнопки, IR-приёмник, MQS.
+
+Загружается через USB ROM (Serial Download Mode) — подробнее в [HOW_TO_FLASH.md](HOW_TO_FLASH.md).
+
+> **Рекомендуется начать разработку с этого проекта** — он наиболее прост и позволяет полностью отладить окружение сборки и прошивки.
 
 ### 2. Загрузчик (`firmware/bootloader/`)
 
-Отвечает за обновление боевой прошивки в полевых условиях. Поддерживает схему A/B с шифрованием (обновление через uSD). Обновление самого загрузчика — только через внешний инструмент (USB ROM + blhost), не через себя. Загружается на производстве вместе с первой версией боевой прошивки единым blob-ом.
+Отвечает за обновление боевой прошивки в полевых условиях. Поддерживает схему **A/B** с обновлением через uSD. Обновление самого загрузчика — только через внешний инструмент (USB ROM + blhost), не через себя. На производстве загружается единым blob-ом вместе с первой версией боевой прошивки.
 
-### 3. Боевая прошивка (`firmware/app/`)
+### 3. Боевая прошивка (`firmware/tft_app/`)
 
-Основная прошивка на базе FreeRTOS. Включает FatFS, бизнес-логику, модули. Обновляется через загрузчик по схеме A/B.
+Основная прошивка на базе **FreeRTOS**. Включает FatFS, бизнес-логику, модули. Обновляется через загрузчик по схеме A/B.
+
+---
+
+## Тестирование
+
+Стратегия тестирования двухуровневая:
+
+| Уровень | Расположение | Инструменты | Запуск |
+|---|---|---|---|
+| **Host-тесты** (unit + интеграционные) | `tests/host/` | Unity + fff | `ctest` в devcontainer |
+| **Target-тесты** (аппаратные) | `tests/target/` | Unity на железе | Удалённый ПК-сервер через SSH |
+
+Подробнее — [tests/HostTestingGuide.md](tests/HostTestingGuide.md) и [tests/README.md](tests/README.md).
 
 ---
 
@@ -73,44 +101,52 @@ Bare-metal прошивка для входного контроля на про
 
 | Зависимость | Подход | Причина |
 |---|---|---|
-| NXP SDK | vendored | Стабильная версия, обновлений не планируется |
-| FreeRTOS | vendored | Стабильная версия |
-| FatFS, mbedTLS и др. | vendored | Стабильные версии |
+| NXP MCUXpresso SDK | vendored | Стабильная версия, обновлений не планируется |
+| FreeRTOS, FatFS, LittleFS и др. | vendored (через SDK) | Стабильные версии |
 | Unity + fff | vendored | Маленькие, стабильные |
-| lib/hal (второй разработчик) | **submodule** | Активно развивается параллельно |
+| SEGGER RTT | vendored | Стабильный |
 
-**Принцип:** всё что не меняется — vendored (скачано и закоммичено). Submodule только для активно развивающихся зависимостей. Это обеспечивает полностью автономную сборку после `git clone` без доступа к интернету.
+**Принцип:** всё что не меняется — vendored (закоммичено в репозиторий). Это обеспечивает полностью автономную сборку после `git clone` без доступа к интернету.
 
+---
 
 ## Devcontainer — состав окружения
 
 | Инструмент | Назначение |
 |---|---|
 | `arm-none-eabi-gcc` | Сборка firmware для таргета |
-| `arm-none-eabi-gdb` | Отладка через GDB server |
-| `host-gcc` | Сборка и запуск host-тестов |
+| `arm-none-eabi-gdb` | Отладка через GDB server (удалённая) |
+| `gcc` (host) | Сборка и запуск host-тестов |
 | `CMake + Ninja` | Система сборки |
 | `CTest` | Запуск тестов (Unity + fff) |
 | `clangd` | Language server для VSCode |
 | `clang-format` | Форматирование кода |
 | `clang-tidy` | Статический анализ |
-| `Python 3 + nxp-spsdk` | Прошивка (blhost, nxpimage), производственная провизия |
-
+| `Python 3 + nxp-spsdk` | Прошивка (blhost, nxpimage), HAB, провизия |
+| `just` | Запуск рецептов сборки/тестирования/прошивки |
 
 ---
 
 ## Конфигурация платы (NXP Config Tools)
 
-Файл `bsp/board/board.mex` — источник истины для конфигурации пинов и тактирования. Открывается в NXP Config Tools (Pins Tool + Clocks Tool) для генерации `pin_mux.c/h` и `clock_config.c/h`. Используется **один раз** при старте проекта или при изменении аппаратной схемы. Коммитится в репозиторий вместе со сгенерированным кодом.
+Файл `bsp/generated/TFT_Board.mex` — **источник истины** для конфигурации пинов и тактирования. Открывается в NXP Config Tools (Pins Tool + Clocks Tool) для регенерации `pin_mux.c/h` и `clock_config.c/h`. Используется при старте проекта или при изменении аппаратной схемы. Коммитится вместе со сгенерированным кодом.
 
 ---
 
-## Доставка прошивки
+## Быстрый старт
 
-| Сценарий | Способ |
-|---|---|
-| Разработка (с ПК разработчика) | `rsync` / `scp` → SSH на ПК-сервер → OpenOCD/blhost |
-| Производство | `nxp-spsdk` (blhost + nxpimage) через USB ROM |
-| Готовое ПО на сервер | GitLab CI/CD → GitLab Package Registry → сервер подтягивает |
-| Обновление загрузчика | USB ROM + blhost (только так, не через сам загрузчик) |
-| Обновление боевой прошивки в поле | Через загрузчик, схема A/B, uSD |
+```bash
+git clone <repo-url>
+cd tft_manufacture_test
+
+# Открыть в VSCode → Reopen in Container
+# Затем внутри devcontainer:
+
+just build-host      # сборка host-тестов
+just test            # запуск host-тестов через CTest
+just build-firmware  # сборка firmware для таргета
+just flash           # прошивка через USB ROM
+```
+
+> Подробнее о прошивке — [HOW_TO_FLASH.md](HOW_TO_FLASH.md)
+> Подробнее об окружении разработки — [docs/DEV_ARCH.md](docs/DEV_ARCH.md)

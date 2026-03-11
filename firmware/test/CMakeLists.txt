@@ -3,8 +3,8 @@
 
 add_executable(firmware_test)
 
-target_sources(firmware_test PRIVATE main.c
-                                     ${PROJECT_SOURCE_DIR}/bsp/board/syscalls.c)
+target_sources(firmware_test
+               PRIVATE main.c ${PROJECT_SOURCE_DIR}/bsp/generated/syscalls.c)
 
 # -----------------------------------------------------------------------------
 # Зависимости — только то что нужно для входного контроля bsp_board транзитивно
@@ -36,6 +36,7 @@ target_link_options(
   -Wl,-Map=${CMAKE_BINARY_DIR}/firmware_test.map
   -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor.ld)
 
+# TODO: дефайны BOOT
 # -----------------------------------------------------------------------------
 # Post-build: генерация .bin для прошивки через blhost
 # -----------------------------------------------------------------------------

@@ -6,14 +6,17 @@ endif()
 # bsp_board — стартап, сгенерированные файлы Config Tools, инициализация платы
 # -----------------------------------------------------------------------------
 
-add_library(bsp_board STATIC board/board.c board/pin_mux.c board/clock_config.c
-                             board/startup/startup_MIMXRT1052.S)
+add_library(
+  bsp_board STATIC
+  generated/board.c generated/pin_mux.c generated/clock_config.c
+  generated/startup/startup_MIMXRT1052.S)
 
-target_include_directories(bsp_board PUBLIC board)
+# Подавляем предупреждения при компиляции собственных .c файлов библиотеки
+target_compile_options(bsp_board PRIVATE -w)
 
-# Подавляем предупреждения о macro redefined
-set_source_files_properties(board/board.c board/pin_mux.c
-                            PROPERTIES COMPILE_OPTIONS "-w")
+# SYSTEM подавляет предупреждения для всех внешних потребителей
+target_include_directories(bsp_board SYSTEM PUBLIC generated)
+
 # Дефайны PUBLIC — транзитивно подтянутся во все firmware таргеты TODO: для
 # каждого приложения свои дефайны
 target_compile_definitions(

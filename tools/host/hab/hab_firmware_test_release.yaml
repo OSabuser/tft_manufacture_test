@@ -1,0 +1,18 @@
+# =============================================================================
+# HAB Container — firmware/test (входной контроль производства)
+# Расположение: tools/host/hab/hab_firmware_test.yaml
+#
+# =============================================================================
+
+options:
+  flags: 0x00                  # unsigned — без подписи
+  startAddress: 0x60000000     # FlexSPI NOR base (XIP)
+  ivtOffset: 0x1000            # IVT offset for FlexSPI NOR boot
+  initialLoadSize: 0x2000      # размер области IVT+BDT+DCD до кода
+  family: mimxrt1050
+  DCDFilePath: ../dcd/dcd.bin  # инициализация SDRAM
+
+# .bin или .srec — оба принимаются
+inputImageFile: "../../../build/Release/firmware_test.bin"
+
+sections: []

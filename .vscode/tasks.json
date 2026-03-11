@@ -1,213 +1,185 @@
 {
     "version": "2.0.0",
     "tasks": [
-        // Очистка директории с артефактами сборки
+        // =============================================================
+        // СБОРКА
+        // =============================================================
         {
-            "label": "Clean",
-            "group": "build",
-            "type": "shell",
-            "command": "rm -rf build*",
-            "windows": {
-                "command": "rm build* -Recurse -Force"
+            "label": "🔨 Build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
             },
-            "options": {
-                "statusbar": {
-                    "color": "#ff8b8b",
-                    "label": "$(clear-all) CleanBuildDir",
-                    "detail": "Clean ALL"
-                }
-            }
-        },
-        // Сборка и запуск тестов на хосте в режиме Debug
-        {
-            "label": "Configure Host Debug tests",
-            "group": "build",
-            "hide": true,
             "type": "shell",
-            "command": "cmake",
+            "command": "just",
             "args": [
-                "--preset",
-                "host-debug"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            }
-        },
-        {
-            "label": "Build Host Debug tests",
-            "group": "build",
-            "hide": true,
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build",
-                "--preset",
-                "host-debug-build"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "dependsOn": "Configure Host Debug tests"
-        },
-        {
-            "label": "🧪 Host Build & Test All",
-            "type": "shell",
-            "command": "ctest",
-            "args": [
-                "--preset",
-                "host-debug-test"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "statusbar": {
-                    "color": "#c800ff",
-                    "label": "$(test-view-icon) Host Test Debug",
-                    "detail": "Perform all the host tests"
-                }
-            },
-            "group": "test",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "Build Host Debug tests"
-            ]
-        },
-        // Сборка и запуск тестов на хосте в режиме Release
-        {
-            "label": "Configure Host Release tests",
-            "group": "build",
-            "hide": true,
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--preset",
-                "host-release"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-        },
-        {
-            "label": "Build Host Release tests",
-            "group": "build",
-            "hide": true,
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build",
-                "--preset",
-                "host-release-build"
-            ],
-            "dependsOn": "Configure Host Release tests"
-        },
-        {
-            "label": "🧪 Host Release Tests",
-            "type": "shell",
-            "command": "ctest",
-            "args": [
-                "--preset",
-                "host-release-test"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "statusbar": {
-                    "color": "#c800ff",
-                    "label": "$(test-view-icon) Host Test Release",
-                    "detail": "Perform all the host tests"
-                }
-            },
-            "group": "test",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "Build Host Release tests"
-            ],
-        },
-        // Подготовка сборки в контейнере с пресетом Debug
-        {
-            "label": "Docker: Configure (Debug)",
-            "type": "shell",
-            "hide": true,
-            "command": "cmake",
-            "args": [
-                "--preset",
-                "Debug"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "group": "build",
-            "problemMatcher": []
-        },
-        // Сборка проекта в контейнере Debug
-        {
-            "label": "Docker: Build (Debug)",
-            "type": "shell",
-            "hide": false,
-            "command": "cmake",
-            "args": [
-                "--build",
-                "--preset",
-                "Debug"
+                "--justfile",
+                "scripts/build.just",
+                "build-${input:project}-${input:buildType}"
             ],
             "options": {
                 "cwd": "${workspaceFolder}",
                 "statusbar": {
                     "color": "#ff8bd4",
-                    "label": "$(debug-console-view-icon) Target: Build (Debug)",
-                    "detail": "do Debug build"
+                    "label": "$(debug-console-view-icon) Build",
+                    "detail": "Build selected firmware"
                 }
             },
-            "group": "build",
-            "dependsOn": "Docker: Configure (Debug)",
+            "problemMatcher": [
+                "$gcc"
+            ]
         },
-        // Подготовка сборки в контейнере с пресетом Release
+        // =============================================================
+        // HOST-ТЕСТЫ
+        // =============================================================
         {
-            "label": "Docker: Configure (Release)",
+            "label": "🧪 Host Tests (Debug)",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
             "type": "shell",
-            "hide": true,
-            "command": "cmake",
+            "command": "just",
             "args": [
-                "--preset",
-                "Release"
+                "--justfile",
+                "scripts/build.just",
+                "test-host"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "statusbar": {
+                    "color": "#c800ff",
+                    "label": "$(test-view-icon) Host Tests",
+                    "detail": "Run host unit tests"
+                }
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Host Tests (Release)",
+            "group": "test",
+            "type": "shell",
+            "command": "just",
+            "args": [
+                "--justfile",
+                "scripts/build.just",
+                "test-host-release"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "group": "build",
             "problemMatcher": []
         },
-        // Сборка проекта в контейнере Release
+        // =============================================================
+        // HAB-ОБРАЗЫ
+        // =============================================================
         {
-            "label": "Docker: Build (Release)",
+            "label": "📦 HAB Image",
+            "group": "build",
             "type": "shell",
-            "hide": false,
-            "command": "cmake",
+            "command": "just",
             "args": [
-                "--build",
-                "--preset",
-                "Release"
+                "--justfile",
+                "scripts/build.just",
+                "hab-${input:habProject}-${input:buildType}"
             ],
             "options": {
                 "cwd": "${workspaceFolder}",
                 "statusbar": {
                     "color": "#03b3ff",
-                    "label": "$(pass-filled) Target: Build (Release)",
-                    "detail": "do Release build"
+                    "label": "$(package) HAB",
+                    "detail": "Build HAB image"
                 }
             },
-            "group": "build",
-            "dependsOn": "Docker: Configure (Release)",
+            "problemMatcher": []
         },
+        {
+            "label": "📦 HAB All (Debug)",
+            "group": "build",
+            "type": "shell",
+            "command": "just",
+            "args": [
+                "--justfile",
+                "scripts/build.just",
+                "hab-all-debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "📦 HAB All (Release)",
+            "group": "build",
+            "type": "shell",
+            "command": "just",
+            "args": [
+                "--justfile",
+                "scripts/build.just",
+                "hab-all-release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        // =============================================================
+        // УТИЛИТЫ
+        // =============================================================
+        {
+            "label": "🗑️ Clean",
+            "group": "build",
+            "type": "shell",
+            "command": "just",
+            "args": [
+                "--justfile",
+                "scripts/build.just",
+                "clean"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "statusbar": {
+                    "color": "#ff8b8b",
+                    "label": "$(clear-all) Clean",
+                    "detail": "Remove build artifacts"
+                }
+            },
+            "problemMatcher": []
+        }
     ],
     "inputs": [
         {
+            "id": "project",
+            "type": "pickString",
+            "description": "Project",
+            "options": [
+                "firmware-test",
+                "bootloader",
+                "app",
+                "all"
+            ],
+            "default": "firmware-test"
+        },
+        {
             "id": "buildType",
             "type": "pickString",
-            "description": "Тип сборки",
+            "description": "Build type",
             "options": [
-                "Debug",
-                "Release",
+                "debug",
+                "release"
             ],
-            "default": "Debug"
+            "default": "debug"
+        },
+        {
+            "id": "habProject",
+            "type": "pickString",
+            "description": "HAB project",
+            "options": [
+                "firmware-test",
+                "bootloader",
+                "app"
+            ],
+            "default": "firmware-test"
         }
-    ],
+    ]
 }

@@ -1,0 +1,55 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# --- Отступы ---
+IndentWidth: 4           # 4 пробела — стандарт для embedded
+TabWidth: 4
+UseTab: Never            # Только пробелы, чтобы не было войны в git
+
+# --- Скобки ---
+BreakBeforeBraces: Allman   # Открывающая скобка на новой строке
+                            # Альтернатива: Linux (скобка после if/for, но
+                            # Allman нагляднее при отладке железа)
+
+# --- Длина строки ---
+ColumnLimit: 100         # 80 — слишком мало для современных мониторов
+
+# --- Выравнивание ---
+AlignConsecutiveAssignments:
+  Enabled: true          # Выравнивает = в блоках присваиваний
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignConsecutiveMacros:
+  Enabled: true          # Очень удобно для регистровых масок
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignConsecutiveDeclarations:
+  Enabled: false         # Спорно — может ломать читаемость
+
+# --- Пробелы ---
+SpaceBeforeParens: ControlStatements   # if (...) но func(...)
+SpaceInEmptyParentheses: false
+SpacesInParentheses: false
+SpaceAfterCStyleCast: true             # (uint8_t) value
+
+# --- Указатели ---
+PointerAlignment: Right  # uint8_t *ptr  (или Left — uint8_t* ptr)
+                         # Right — традиционный C стиль
+
+# --- Переносы ---
+AllowShortFunctionsOnASingleLine: None     # Запрет коротких функций в одну строку
+AllowShortIfStatementsOnASingleLine: Never # if всегда с телом на новой строке
+AllowShortLoopsOnASingleLine: false
+
+# --- Include-сортировка ---
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup   # Группирует и сортирует #include блоки
+
+# --- Комментарии ---
+ReflowComments: false    # НЕ переформатировать комментарии автоматически
+                         # Важно для ASCII-art схем и таблиц регистров!
+
+# --- Прочее ---
+InsertTrailingCommas: None
+Cpp11BracedListStyle: false

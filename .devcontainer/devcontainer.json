@@ -6,7 +6,7 @@
     },
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
     "workspaceFolder": "/workspace",
-    "postCreateCommand": "cmake --preset host-debug && cmake --preset Debug",
+    "postCreateCommand": "cd tools/host && uv sync && cd ../.. && cmake --preset host-debug && cmake --preset Debug",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -43,7 +43,6 @@
                     "*.h": "c",
                     "*.c": "c"
                 },
-                // clangd
                 "clangd.path": "clangd",
                 "clangd.arguments": [
                     "--query-driver=/opt/arm-toolchain/bin/arm-none-eabi-*",
@@ -52,20 +51,26 @@
                     "--header-insertion=iwyu",
                     "--log=error"
                 ],
-                // Отключаем встроенный IntelliSense от ms-vscode.cpptools, чтобы не конфликтовал с clangd
-                "C_Cpp.intelliSenseEngine": "disabled",
-                "C_Cpp.formatting": "disabled",
-                // clang-format
                 "clang-format.executable": "clang-format",
+                "clang-format.style": "file",
+                "clang-format.fallbackStyle": "LLVM",
                 "[c]": {
-                    "editor.defaultFormatter": "xaver.clang-format"
+                    "editor.defaultFormatter": "xaver.clang-format",
+                    "editor.formatOnSave": true
                 },
-                // cmake-format
+                "[h]": {
+                    "editor.defaultFormatter": "xaver.clang-format",
+                    "editor.formatOnSave": true
+                },
                 "cmakeFormat.exePath": "cmake-format",
                 "[cmake]": {
                     "editor.defaultFormatter": "cheshirekow.cmake-format"
                 }
             }
         }
-    }
+    },
+    "runArgs": [
+        "--name",
+        "tft-devcontainer"
+    ]
 }

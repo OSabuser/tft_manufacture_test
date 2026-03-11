@@ -58,11 +58,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-alternatives --install /usr/bin/clang        clang        /usr/bin/clang-17       100 \
     && update-alternatives --install /usr/bin/clang-tidy   clang-tidy   /usr/bin/clang-tidy-17   100 \
     && update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-17 100 \
-    && pip3 install --no-cache-dir spsdk cmake-format==0.6.13 \
+    && pip3 install --no-cache-dir cmake-format==0.6.13 \
     && ln -s /usr/bin/clangd /usr/local/bin/clangd \
     && ln -s /usr/bin/clang  /usr/local/bin/clang \
     && rm -rf /var/lib/apt/lists/*
 
+
+# uv — менеджер Python-окружений для spsdk и других host-инструментов.
+# spsdk НЕ ставится через pip напрямую — версия фиксируется в tools/host/uv.lock.
+# uv sync в postCreateCommand подтянет нужную версию автоматически.
+ARG UV_VERSION=0.5.0
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+ARG JUST_VERSION=1.36.0
+
+RUN curl -sSf https://just.systems/install.sh \
+    | bash -s -- --tag ${JUST_VERSION} --to /usr/local/bin
 
 ARG USER_ID=1000
 ARG GROUP_ID=1000

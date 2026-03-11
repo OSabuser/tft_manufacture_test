@@ -66,17 +66,67 @@
     ],
     "buildPresets": [
         {
-            "name": "Debug",
+            "name": "all-debug",
+            "displayName": "All — Debug",
             "configurePreset": "Debug"
         },
         {
-            "name": "Release",
+            "name": "all-release",
+            "displayName": "All — Release",
             "configurePreset": "Release"
         },
         {
+            "name": "firmware-test-debug",
+            "displayName": "firmware_test — Debug",
+            "configurePreset": "Debug",
+            "targets": [
+                "firmware_test"
+            ]
+        },
+        {
+            "name": "firmware-test-release",
+            "displayName": "firmware_test — Release",
+            "configurePreset": "Release",
+            "targets": [
+                "firmware_test"
+            ]
+        },
+        {
+            "name": "bootloader-debug",
+            "displayName": "bootloader — Debug",
+            "configurePreset": "Debug",
+            "targets": [
+                "bootloader"
+            ]
+        },
+        {
+            "name": "bootloader-release",
+            "displayName": "bootloader — Release",
+            "configurePreset": "Release",
+            "targets": [
+                "bootloader"
+            ]
+        },
+        {
+            "name": "app-debug",
+            "displayName": "app — Debug",
+            "configurePreset": "Debug",
+            "targets": [
+                "app"
+            ]
+        },
+        {
+            "name": "app-release",
+            "displayName": "app — Release",
+            "configurePreset": "Release",
+            "targets": [
+                "app"
+            ]
+        },
+        {
             "name": "host-debug-build",
+            "displayName": "Host Tests — Debug",
             "configurePreset": "host-debug",
-            "displayName": "Build Host Debug Tests",
             "targets": [
                 "test_host_simple",
                 "test_host_second"
@@ -84,8 +134,8 @@
         },
         {
             "name": "host-release-build",
+            "displayName": "Host Tests — Release",
             "configurePreset": "host-release",
-            "displayName": "Build Host Release Tests",
             "targets": [
                 "test_host_simple",
                 "test_host_second"
