@@ -15,6 +15,9 @@
 TOOLS_DIR := env('TOOLS_DIR', justfile_directory() / 'tools/host')
 CACHE_DIR := env('CACHE_DIR', justfile_directory() / '.cache')
 
+_uname := `uname -s`
+_venv := if _uname =~ "MINGW|MSYS|CYGWIN" { ".venv-host-win" } else { ".venv-host" }
+
 # === Минимальные версии зависимостей ===
 JUST_MIN   := "1.36.0"
 UV_MIN     := "0.4.0"
@@ -114,7 +117,7 @@ check-deps:
 
     check_tool "just"   "just"   "{{JUST_MIN}}"
     check_tool "uv"     "uv"     "{{UV_MIN}}"
-    check_tool "docker" "docker" "{{DOCKER_MIN}}" version --format '{{{{.Client.Version}}}}'
+    check_tool "docker" "docker" "{{DOCKER_MIN}}"
 
     if [[ "${PLATFORM}" == "linux" ]]; then
         echo ""
@@ -253,7 +256,7 @@ flash project type="release":
             echo "  Valid: debug, release"
             exit 1 ;;
     esac
-    cd "{{TOOLS_DIR}}" && uv run python3 flash_usb.py \
+    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run python flash_usb.py \
         --firmware "{{project}}" --build-type "${BUILD_TYPE}"
 
 # Загрузить образ в RAM без записи во Flash.
@@ -271,7 +274,7 @@ flash-ram project type="debug":
             echo "  Valid: debug, release"
             exit 1 ;;
     esac
-    cd "{{TOOLS_DIR}}" && uv run python3 flash_usb.py \
+    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run python flash_usb.py \
         --firmware "{{project}}" --build-type "${BUILD_TYPE}" --ram-only
 
 # Псевдонимы для частых сценариев ────────────────────────────────────────────
@@ -302,7 +305,7 @@ incoming: flash-test-release
     #!/usr/bin/env bash
     set -euo pipefail
     echo "  ▶  Running HIL tests (CAN, UART, SDRAM, SPI Flash)..."
-    # cd tools/hil && uv run python3 run_hil.py   <- раскомментить когда готово
+    # cd tools/hil && UV_PROJECT_ENVIRONMENT={{_venv}} uv run python run_hil.py   <- раскомментить когда готово
     echo "  ⚠️   HIL tests not yet implemented"
 
 # Финальная прошивка: загрузчик + основная прошивка (Release)
@@ -317,17 +320,17 @@ production: flash-production
 # Найти подключённые NXP USB-устройства
 [group('util')]
 scan:
-    cd "{{TOOLS_DIR}}" && uv run nxpdevscan
+    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run nxpdevscan
 
 # Проверить связь с BootROM через SDP (плата в SDP-режиме)
 [group('util'), no-cd]
 sdp-status:
-    cd "{{TOOLS_DIR}}" && uv run sdphost -u 0x1FC9,0x0130 -- error-status
+    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run sdphost -u 0x1FC9,0x0130 -- error-status
 
 # Проверить что Flashloader отвечает (после jump-address)
 [group('util')]
 flashloader-status:
-    cd "{{TOOLS_DIR}}" && uv run blhost -u 0x15A2,0x0073 -- get-property 1 0
+    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run blhost -u 0x15A2,0x0073 -- get-property 1 0
 
 # Обновить spsdk до новой версии
 # Использование: just upgrade-tools 3.8.0

@@ -34,7 +34,8 @@ CI использует те же команды что и локальная р
 │   ├── docker        ← управление devcontainer
 │   ├── git           ← работа с репозиторием
 │   ├── uv + spsdk    ← прошивка платы (flash_usb.py, sdphost, blhost)
-│   │                    venv: tools/host/.venv-host
+│   │                    venv: tools/host/.venv-host (Linux/macOS)
+│   │                          tools/host/.venv-host-win (Windows)
 │   ├── JLinkGDBServer / probe-rs  ← сервер отладки (USB → TCP :2331)
 │   └── VSCode        ← IDE (Dev Containers extension)
 │
@@ -48,7 +49,7 @@ CI использует те же команды что и локальная р
 │   ├── cmake-format     ← форматирование CMakeLists
 │   ├── just             ← запуск задач внутри контейнера (just build::*)
 │   ├── uv + spsdk       ← сборка HAB-образов (только nxpimage)
-│   │                       venv: tools/host/.venv-container
+│   │                       venv: tools/host/.venv
 │   └── Unity + fff      ← фреймворки host-тестов
 │
 └── Плата TFT (IMXRT1052) — на столе у разработчика
@@ -83,7 +84,45 @@ CI использует те же команды что и локальная р
 Версия `spsdk` зафиксирована в `tools/host/uv.lock` — все три места
 используют одну и ту же версию.
 
+---
 
+## 3.1 Конфигурация проекта — `.env`
+
+`.env` в корне репозитория — единый источник конфигурации для всего стека.
+
+```ini
+# USB VID:PID (NXP)
+BOOTROM_VID=1fc9       # используется: host.just (udev-правила) + flash_usb.py
+BOOTROM_PID=0130
+FLASHLOADER_VID=15a2
+FLASHLOADER_PID=0073
+
+# GDB / отладка
+GDB_PORT=3333
+GDB_EXECUTABLE=gdb-multiarch
+OPENOCD_INTERFACE=cmsis-dap.cfg
+TARGET_CFG=target/imxrt.cfg
+```
+
+**Как значения попадают в инструменты:**
+
+```bash
+.env
+ │
+ ├─▶ just (set dotenv-load + set export)
+ │     └─▶ just-рецепты видят переменные напрямую: {{BOOTROM_VID}}
+ │           └─▶ uv run flash_usb.py  ← наследует окружение автоматически
+ │                 └─▶ os.environ.get("BOOTROM_VID")  ← без python-dotenv
+ │
+ └─▶ .vscode/launch.json  ← через ${env:GDB_PORT} если нужно
+```
+
+Аппаратные константы (`FLASH_BASE`, `HAB_OFFSET`, `FLEXSPI_OPTION_VALUE` и т.д.)
+намеренно оставлены в коде `flash_usb.py` — это не конфигурация, а часть
+протокола прошивки IMXRT1052, менять их незачем.
+
+`.env.example` — шаблон без значений, коммитится в репозиторий.
+`.env` — реальные значения, в `.gitignore` (если содержит секреты), иначе тоже коммитится.
 
 ---
 
@@ -91,16 +130,19 @@ CI использует те же команды что и локальная р
 
 ```bash
 /
-├── Justfile                      ← корневой оркестратор; модули: build, host, ci
+├── justfile                      ← корневой оркестратор; модули: build, host, ci
+├── bootstrap.sh                  ← уровень 0: устанавливает just+uv → just host::bootstrap
+├── .env                          ← конфигурация проекта (VID:PID, пути, GDB)
+├── .env.example                  ← шаблон для новых разработчиков
 ├── just/
 │   ├── build.just                ← devcontainer: сборка, тесты, HAB
 │   ├── host.just                 ← хост: прошивка, bootstrap, HIL
 │   └── ci.just                   ← CI/CD пайплайны
-├── scripts/
-│   └── bootstrap.sh              ← уровень 0: just → just host::bootstrap
 ├── .devcontainer/
 │   ├── Dockerfile
 │   └── devcontainer.json
+├── .vscode/
+│   └── tasks.json                ← UI для just build::* (внутри devcontainer)
 ├── tools/
 │   └── host/
 │       ├── hab/
@@ -113,11 +155,9 @@ CI использует те же команды что и локальная р
 │       ├── dcd/
 │       │   ├── dcd.bin
 │       │   └── ivt_flashloader.bin
-│       ├── flash_usb.py
+│       ├── flash_usb.py          ← читает конфиг из env (VID:PID, BUILD_DIR)
 │       ├── pyproject.toml
 │       └── uv.lock
-├── .vscode/
-│   └── tasks.json                ← UI для just build::* (внутри devcontainer)
 ├── CMakePresets.json
 ├── cmake/
 ├── sdk/
@@ -157,11 +197,18 @@ bootstrap.sh  (уровень 0)
 ├── определить платформу (Linux / macOS / Windows Git Bash)
 │   uname: MINGW64_NT-... → windows, Linux → linux, Darwin → macos
 │
-├── проверить just (semver без sort -V — работает в Git Bash)
+├── проверить/установить just (semver без sort -V — работает в Git Bash)
 │   < 1.36.0 или отсутствует:
 │     Linux/macOS → curl | bash → ~/.local/bin/just
+│     macOS       → brew install just  (если есть Homebrew)
 │     Windows     → winget install --id Casey.Just
 │                   (перезапустить Git Bash после установки)
+│
+├── проверить/установить uv
+│   < 0.4.0 или отсутствует:
+│     Linux/macOS → curl -LsSf https://astral.sh/uv/install.sh | sh → ~/.local/bin/uv
+│     macOS       → brew install uv  (если есть Homebrew)
+│     Windows     → powershell.exe irm https://astral.sh/uv/install.ps1 | iex
 │
 └── exec just host::bootstrap
       │
@@ -173,11 +220,15 @@ bootstrap.sh  (уровень 0)
       │         /etc/udev/rules.d/99-nxp-mimxrt.rules:
       │           1FC9:0130  ← NXP BootROM (SDP-режим)
       │           15A2:0073  ← NXP Flashloader
+      │         VID:PID берутся из .env (BOOTROM_VID/PID, FLASHLOADER_VID/PID)
       │         usermod -a -G plugdev $USER
       │         требует re-login · на macOS/Windows пропускается
       │
       └── [3/3] setup-tools
-                uv sync в tools/host/  (venv: .venv-host на хосте)
+                uv sync в tools/host/
+                venv: .venv-host (Linux/macOS) · .venv-host-win (Windows)
+                разделение нужно: devcontainer создаёт .venv с Linux-симлинками,
+                Windows не может их удалить без прав администратора
                 SHA-256 uv.lock кэшируется в .cache/
                 повторный вызов мгновенный если lockfile не изменился
 ```
@@ -191,7 +242,7 @@ bootstrap.sh  (уровень 0)
 `postCreateCommand` выполняется автоматически при поднятии контейнера:
 
 ```bash
-cd tools/host && uv sync &&   # venv: .venv-container
+cd tools/host && uv sync &&   # venv: tools/host/.venv (Linux, внутри контейнера)
 cd ../.. &&
 cmake --preset host-debug &&
 cmake --preset Debug
@@ -266,7 +317,7 @@ buildPresets (host):
 
 ### 7.2 Типичная сессия разработки
 
-```
+```bash
 Открыть VSCode → работать в devcontainer весь день
 │
 ├── писать код
@@ -311,7 +362,7 @@ buildPresets (host):
 
 ### 8.1 Перевод платы в SDP-режим
 
-```
+```bash
 1. BOOT_MOD_1 → 3V3
 2. Reset
 3. Подключить USB к хосту
@@ -347,7 +398,12 @@ just host::flash-production  # bootloader release + tft_app release
 
 ### 8.3 Что происходит внутри flash_usb.py
 
-```
+`flash_usb.py` читает конфигурацию из окружения (just экспортирует `.env`):
+
+- `BOOTROM_VID/PID`, `FLASHLOADER_VID/PID` → USB-адреса устройств
+- `BUILD_DIR` → абсолютный путь к артефактам сборки
+
+```bash
 Плата в SDP-режиме (1FC9:0130)
   │
   ├── sdphost: загрузить ivt_flashloader.bin в RAM (0x20001C00)

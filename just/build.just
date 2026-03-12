@@ -117,20 +117,22 @@ test-host-release: _configure-host-release
 hab-firmware-test-debug: build-firmware-test-debug
     #!/usr/bin/env bash
     set -euo pipefail
+    mkdir -p "{{BUILD_DIR}}/Debug"
     cd "{{TOOLS_DIR}}/hab"
     uv run nxpimage hab export --force \
         -c hab_firmware_test_debug.yaml \
-        -o "../../../{{BUILD_DIR}}/Debug/firmware_test_hab.bin"
+        -o "{{BUILD_DIR}}/Debug/firmware_test_hab.bin"
     echo "  ✅  firmware_test_hab.bin (Debug)"
 
 [group('hab_image_gen')]
 hab-firmware-test-release: build-firmware-test-release
     #!/usr/bin/env bash
     set -euo pipefail
+    mkdir -p "{{BUILD_DIR}}/Release"
     cd "{{TOOLS_DIR}}/hab"
     uv run nxpimage hab export --force \
         -c hab_firmware_test_release.yaml \
-        -o "../../../{{BUILD_DIR}}/Release/firmware_test_hab.bin"
+        -o "{{BUILD_DIR}}/Release/firmware_test_hab.bin"
     echo "  ✅  firmware_test_hab.bin (Release)"
 
 # ── bootloader ───────────────────────────────────────────────────────────────
@@ -138,20 +140,22 @@ hab-firmware-test-release: build-firmware-test-release
 hab-bootloader-debug: build-bootloader-debug
     #!/usr/bin/env bash
     set -euo pipefail
+    mkdir -p "{{BUILD_DIR}}/Debug"
     cd "{{TOOLS_DIR}}/hab"
     uv run nxpimage hab export --force \
         -c hab_bootloader_debug.yaml \
-        -o "../../../{{BUILD_DIR}}/Debug/bootloader_hab.bin"
+        -o "{{BUILD_DIR}}/Debug/bootloader_hab.bin"
     echo "  ✅  bootloader_hab.bin (Debug)"
 
 [group('hab_image_gen')]
 hab-bootloader-release: build-bootloader-release
     #!/usr/bin/env bash
     set -euo pipefail
+    mkdir -p "{{BUILD_DIR}}/Release"
     cd "{{TOOLS_DIR}}/hab"
     uv run nxpimage hab export --force \
         -c hab_bootloader_release.yaml \
-        -o "../../../{{BUILD_DIR}}/Release/bootloader_hab.bin"
+        -o "{{BUILD_DIR}}/Release/bootloader_hab.bin"
     echo "  ✅  bootloader_hab.bin (Release)"
 
 # ── app ───────────────────────────────────────────────────────────────────────
@@ -159,20 +163,22 @@ hab-bootloader-release: build-bootloader-release
 hab-app-debug: build-app-debug
     #!/usr/bin/env bash
     set -euo pipefail
+    mkdir -p "{{BUILD_DIR}}/Debug"
     cd "{{TOOLS_DIR}}/hab"
     uv run nxpimage hab export --force \
         -c hab_app_debug.yaml \
-        -o "../../../{{BUILD_DIR}}/Debug/app_hab.bin"
+        -o "{{BUILD_DIR}}/Debug/app_hab.bin"
     echo "  ✅  app_hab.bin (Debug)"
 
 [group('hab_image_gen')]
 hab-app-release: build-app-release
     #!/usr/bin/env bash
     set -euo pipefail
+    mkdir -p "{{BUILD_DIR}}/Release"
     cd "{{TOOLS_DIR}}/hab"
     uv run nxpimage hab export --force \
         -c hab_app_release.yaml \
-        -o "../../../{{BUILD_DIR}}/Release/app_hab.bin"
+        -o "{{BUILD_DIR}}/Release/app_hab.bin"
     echo "  ✅  app_hab.bin (Release)"
 
 # ── все образы сразу ─────────────────────────────────────────────────────────
@@ -190,14 +196,13 @@ hab-all-release: hab-firmware-test-release hab-bootloader-release hab-app-releas
 hab-verify project="firmware_test" type="release":
     #!/usr/bin/env bash
     set -euo pipefail
-    ROOT="$(pwd)"
     case "{{project}}-{{type}}" in
-        firmware_test-debug)   BIN="${ROOT}/{{BUILD_DIR}}/Debug/firmware_test_hab.bin" ;;
-        firmware_test-release) BIN="${ROOT}/{{BUILD_DIR}}/Release/firmware_test_hab.bin" ;;
-        bootloader-debug)      BIN="${ROOT}/{{BUILD_DIR}}/Debug/bootloader_hab.bin" ;;
-        bootloader-release)    BIN="${ROOT}/{{BUILD_DIR}}/Release/bootloader_hab.bin" ;;
-        app-debug)             BIN="${ROOT}/{{BUILD_DIR}}/Debug/app_hab.bin" ;;
-        app-release)           BIN="${ROOT}/{{BUILD_DIR}}/Release/app_hab.bin" ;;
+        firmware_test-debug)   BIN="{{BUILD_DIR}}/Debug/firmware_test_hab.bin" ;;
+        firmware_test-release) BIN="{{BUILD_DIR}}/Release/firmware_test_hab.bin" ;;
+        bootloader-debug)      BIN="{{BUILD_DIR}}/Debug/bootloader_hab.bin" ;;
+        bootloader-release)    BIN="{{BUILD_DIR}}/Release/bootloader_hab.bin" ;;
+        app-debug)             BIN="{{BUILD_DIR}}/Debug/app_hab.bin" ;;
+        app-release)           BIN="{{BUILD_DIR}}/Release/app_hab.bin" ;;
         *)
             echo "  ❌  Unknown: {{project}}-{{type}}"
             echo "  Projects: firmware_test, bootloader, app"

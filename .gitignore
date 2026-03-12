@@ -68,5 +68,6 @@ compile_commands.json
 __pycache__/
 *.pyc
 .env
-
+tools/host/.venv-host/
+tools/host/.venv-host-win/
 
