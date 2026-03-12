@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
 # bootstrap.sh
-# Уровень 0: устанавливает just (если отсутствует), затем передаёт управление
-# just host::bootstrap для полной инициализации окружения.
+# Уровень 0: устанавливает just и uv (если отсутствуют / устарели),
+# затем передаёт управление just host::bootstrap для полной инициализации.
 #
 # Поддерживаемые платформы:
 #   Linux   — bash (native)
 #   macOS   — bash (native)
 #   Windows — Git Bash (поставляется вместе с git)
 #
-# Требования: bash >= 4, curl (Linux/macOS) или winget (Windows)
+# Требования: bash >= 4, curl (Linux/macOS) или winget/powershell (Windows)
 # Запуск: ./bootstrap.sh
 # =============================================================================
 set -euo pipefail
 
 JUST_VERSION="1.36.0"
+UV_VERSION="0.4.0"
 LINUX_INSTALL_DIR="${HOME}/.local/bin"
 
 BOLD="\033[1m"
@@ -59,7 +60,7 @@ semver_ge() {
     IFS='.' read -r b1 b2 b3 <<< "${b}"
     a1="${a1//[^0-9]/}"; a2="${a2//[^0-9]/}"; a3="${a3//[^0-9]/}"
     b1="${b1//[^0-9]/}"; b2="${b2//[^0-9]/}"; b3="${b3//[^0-9]/}"
-    
+
     [[ "${a1:-0}" -gt "${b1:-0}" ]] && return 0
     [[ "${a1:-0}" -lt "${b1:-0}" ]] && return 1
     [[ "${a2:-0}" -gt "${b2:-0}" ]] && return 0
@@ -76,7 +77,7 @@ install_just_linux() {
     mkdir -p "${LINUX_INSTALL_DIR}"
     curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
         | bash -s -- --tag "${JUST_VERSION}" --to "${LINUX_INSTALL_DIR}"
-    
+
     if ! echo "${PATH}" | grep -q "${LINUX_INSTALL_DIR}"; then
         warn "${LINUX_INSTALL_DIR} not in PATH -- adding for this session"
         warn "Add to ~/.bashrc to make permanent:"
@@ -104,7 +105,7 @@ install_just_windows() {
             echo "  Then restart Git Bash and re-run: ./bootstrap.sh"
             exit 1
         }
-        
+
         warn "Restart Git Bash so the new PATH from winget takes effect,"
         warn "then re-run: ./bootstrap.sh"
         exit 0
@@ -120,8 +121,61 @@ install_just_windows() {
 }
 
 # -----------------------------------------------------------------------------
-# 4. Проверить / установить just
+# 4. Платформо-зависимая установка uv
 # -----------------------------------------------------------------------------
+install_uv_linux() {
+    info "Installing uv -> ${LINUX_INSTALL_DIR}"
+    mkdir -p "${LINUX_INSTALL_DIR}"
+    # Официальный установщик astral.sh кладёт uv в ~/.local/bin по умолчанию
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${LINUX_INSTALL_DIR}" sh
+
+    if ! echo "${PATH}" | grep -q "${LINUX_INSTALL_DIR}"; then
+        warn "${LINUX_INSTALL_DIR} not in PATH -- adding for this session"
+        export PATH="${LINUX_INSTALL_DIR}:${PATH}"
+    fi
+}
+
+install_uv_macos() {
+    if command -v brew &>/dev/null; then
+        info "Installing uv via Homebrew..."
+        brew install uv
+    else
+        install_uv_linux
+    fi
+}
+
+install_uv_windows() {
+    # В Git Bash можно вызвать PowerShell напрямую
+    if command -v powershell.exe &>/dev/null; then
+        info "Installing uv via PowerShell..."
+        powershell.exe -ExecutionPolicy ByPass \
+            -Command "irm https://astral.sh/uv/install.ps1 | iex" || {
+            error "PowerShell install of uv failed."
+            echo "  Run manually in PowerShell:"
+            echo '    irm https://astral.sh/uv/install.ps1 | iex'
+            echo "  Then restart Git Bash and re-run: ./bootstrap.sh"
+            exit 1
+        }
+        # После winget-стиля установки нужно добавить путь в PATH для текущей сессии Git Bash
+        # uv на Windows кладёт себя в %USERPROFILE%\.local\bin
+        UV_WIN_DIR="${USERPROFILE}/.local/bin"
+        if [[ -d "${UV_WIN_DIR}" ]] && ! echo "${PATH}" | grep -q "${UV_WIN_DIR}"; then
+            export PATH="${UV_WIN_DIR}:${PATH}"
+        fi
+    else
+        error "powershell.exe not found -- cannot install uv automatically."
+        echo ""
+        echo "  Install uv manually in PowerShell:"
+        echo '    irm https://astral.sh/uv/install.ps1 | iex'
+        echo "  Then restart Git Bash and re-run: ./bootstrap.sh"
+        exit 1
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# 5. Проверить / установить just
+# -----------------------------------------------------------------------------
+info "--- Checking just ---"
 JUST_OK=false
 
 if command -v just &>/dev/null; then
@@ -140,15 +194,52 @@ if [[ "${JUST_OK}" == "false" ]]; then
         macos)   install_just_macos   ;;
         windows) install_just_windows ;;
     esac
-    
+
     JUST_CURRENT="$(just --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
     success "just ${JUST_CURRENT} installed"
     echo ""
 fi
 
 # -----------------------------------------------------------------------------
-# 5. Передать управление just host::bootstrap для дальнейшей настройки рабочего окружения
+# 6. Проверить / установить uv
 # -----------------------------------------------------------------------------
+echo ""
+info "--- Checking uv ---"
+UV_OK=false
+
+if command -v uv &>/dev/null; then
+    UV_CURRENT="$(uv --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+    if semver_ge "${UV_CURRENT}" "${UV_VERSION}"; then
+        success "uv ${UV_CURRENT} (>= ${UV_VERSION} required)"
+        UV_OK=true
+    else
+        warn "uv ${UV_CURRENT} is outdated (need >= ${UV_VERSION}), reinstalling..."
+    fi
+fi
+
+if [[ "${UV_OK}" == "false" ]]; then
+    case "${PLATFORM}" in
+        linux)   install_uv_linux   ;;
+        macos)   install_uv_macos   ;;
+        windows) install_uv_windows ;;
+    esac
+
+    # Верифицировать установку
+    if command -v uv &>/dev/null; then
+        UV_CURRENT="$(uv --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+        success "uv ${UV_CURRENT} installed"
+    else
+        error "uv was installed but is not in PATH."
+        warn "Open a new terminal session and re-run: ./bootstrap.sh"
+        exit 1
+    fi
+    echo ""
+fi
+
+# -----------------------------------------------------------------------------
+# 7. Передать управление just host::bootstrap для дальнейшей настройки
+# -----------------------------------------------------------------------------
+echo ""
 info "Delegating to: just host::bootstrap"
 echo ""
 exec just host::bootstrap "$@"
