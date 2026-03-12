@@ -114,7 +114,7 @@ check-deps:
 
     check_tool "just"   "just"   "{{JUST_MIN}}"
     check_tool "uv"     "uv"     "{{UV_MIN}}"
-    check_tool "docker" "docker" "{{DOCKER_MIN}}" version --format '{{{{.Client.Version}}}}'
+    check_tool "docker" "docker" "{{DOCKER_MIN}}"
 
     if [[ "${PLATFORM}" == "linux" ]]; then
         echo ""
