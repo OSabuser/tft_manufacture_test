@@ -5,10 +5,11 @@
 # Рабочая директория — корень репозитория (не scripts/).
 # =============================================================================
 
-set working-directory := ".."
+# === Импорт общих переменных ===
+TOOLS_DIR := env('TOOLS_DIR', justfile_directory() / 'tools/host')
+BUILD_DIR := env('BUILD_DIR', justfile_directory() / 'build')
 
-TOOLS_DIR := "tools/host"
-BUILD_DIR  := "build"
+set working-directory := '..'
 
 _default:
     @just --list --justfile scripts/build.just --unsorted
@@ -22,7 +23,7 @@ _default:
 #   app            × debug / release
 #   all            × debug / release  (все проекты сразу, для CI)
 # =============================================================================
-
+# Приватные рецепты для configure (не показываются в --list)
 [private]
 _configure-debug:
     cmake --preset Debug
@@ -68,7 +69,7 @@ build-all-release: _configure-release
     cmake --build --preset all-release
 
 # ── утилиты ───────────────────────────────────────────────────────────────────
-[group('build')]
+[group('build'), confirm("Delete build/ directory?")]
 clean:
     rm -rf build
 
@@ -112,7 +113,7 @@ test-host-release: _configure-host-release
 # =============================================================================
 
 # ── firmware_test ─────────────────────────────────────────────────────────────
-[group('flash')]
+[group('hab_image_gen')]
 hab-firmware-test-debug: build-firmware-test-debug
     #!/usr/bin/env bash
     set -euo pipefail
@@ -122,7 +123,7 @@ hab-firmware-test-debug: build-firmware-test-debug
         -o "../../../{{BUILD_DIR}}/Debug/firmware_test_hab.bin"
     echo "  ✅  firmware_test_hab.bin (Debug)"
 
-[group('flash')]
+[group('hab_image_gen')]
 hab-firmware-test-release: build-firmware-test-release
     #!/usr/bin/env bash
     set -euo pipefail
@@ -133,7 +134,7 @@ hab-firmware-test-release: build-firmware-test-release
     echo "  ✅  firmware_test_hab.bin (Release)"
 
 # ── bootloader ───────────────────────────────────────────────────────────────
-[group('flash')]
+[group('hab_image_gen')]
 hab-bootloader-debug: build-bootloader-debug
     #!/usr/bin/env bash
     set -euo pipefail
@@ -143,7 +144,7 @@ hab-bootloader-debug: build-bootloader-debug
         -o "../../../{{BUILD_DIR}}/Debug/bootloader_hab.bin"
     echo "  ✅  bootloader_hab.bin (Debug)"
 
-[group('flash')]
+[group('hab_image_gen')]
 hab-bootloader-release: build-bootloader-release
     #!/usr/bin/env bash
     set -euo pipefail
@@ -154,7 +155,7 @@ hab-bootloader-release: build-bootloader-release
     echo "  ✅  bootloader_hab.bin (Release)"
 
 # ── app ───────────────────────────────────────────────────────────────────────
-[group('flash')]
+[group('hab_image_gen')]
 hab-app-debug: build-app-debug
     #!/usr/bin/env bash
     set -euo pipefail
@@ -164,7 +165,7 @@ hab-app-debug: build-app-debug
         -o "../../../{{BUILD_DIR}}/Debug/app_hab.bin"
     echo "  ✅  app_hab.bin (Debug)"
 
-[group('flash')]
+[group('hab_image_gen')]
 hab-app-release: build-app-release
     #!/usr/bin/env bash
     set -euo pipefail
@@ -175,27 +176,28 @@ hab-app-release: build-app-release
     echo "  ✅  app_hab.bin (Release)"
 
 # ── все образы сразу ─────────────────────────────────────────────────────────
-[group('flash')]
+[group('hab_image_gen')]
 hab-all-debug: hab-firmware-test-debug hab-bootloader-debug hab-app-debug
     @echo "  ✅  All HAB images (Debug) ready"
 
-[group('flash')]
+[group('hab_image_gen')]
 hab-all-release: hab-firmware-test-release hab-bootloader-release hab-app-release
     @echo "  ✅  All HAB images (Release) ready"
 
 # ── верификация образа (для отладки) ─────────────────────────────────────────
 # Использование: just --justfile just/build.just hab-verify firmware_test debug
-[group('flash')]
+[group('hab_image_gen')]
 hab-verify project="firmware_test" type="release":
     #!/usr/bin/env bash
     set -euo pipefail
+    ROOT="$(pwd)"
     case "{{project}}-{{type}}" in
-        firmware_test-debug)   BIN="{{BUILD_DIR}}/Debug/firmware_test_hab.bin" ;;
-        firmware_test-release) BIN="{{BUILD_DIR}}/Release/firmware_test_hab.bin" ;;
-        bootloader-debug)      BIN="{{BUILD_DIR}}/Debug/bootloader_hab.bin" ;;
-        bootloader-release)    BIN="{{BUILD_DIR}}/Release/bootloader_hab.bin" ;;
-        app-debug)             BIN="{{BUILD_DIR}}/Debug/app_hab.bin" ;;
-        app-release)           BIN="{{BUILD_DIR}}/Release/app_hab.bin" ;;
+        firmware_test-debug)   BIN="${ROOT}/{{BUILD_DIR}}/Debug/firmware_test_hab.bin" ;;
+        firmware_test-release) BIN="${ROOT}/{{BUILD_DIR}}/Release/firmware_test_hab.bin" ;;
+        bootloader-debug)      BIN="${ROOT}/{{BUILD_DIR}}/Debug/bootloader_hab.bin" ;;
+        bootloader-release)    BIN="${ROOT}/{{BUILD_DIR}}/Release/bootloader_hab.bin" ;;
+        app-debug)             BIN="${ROOT}/{{BUILD_DIR}}/Debug/app_hab.bin" ;;
+        app-release)           BIN="${ROOT}/{{BUILD_DIR}}/Release/app_hab.bin" ;;
         *)
             echo "  ❌  Unknown: {{project}}-{{type}}"
             echo "  Projects: firmware_test, bootloader, app"
@@ -203,6 +205,20 @@ hab-verify project="firmware_test" type="release":
             exit 1 ;;
     esac
     OUT="/tmp/hab_parse_{{project}}_{{type}}.yaml"
-    uv run nxpimage hab parse -b "${BIN}" -o "${OUT}"
+    cd "{{TOOLS_DIR}}" && uv run  nxpimage hab parse -b "${BIN}" -o "${OUT}"
     echo "  ✅  ${OUT}"
     grep -E "(entry|csf|tag)" "${OUT}" || true
+
+# =============================================================================
+# ГРУППА: quality — линтеры, форматтеры
+# =============================================================================
+# TODO: проверять bsp,firmware, modules
+[group('quality')]
+lint:
+    echo "TODO!"
+# clang-tidy -p {{BUILD_DIR}}/Debug src/**/*.c
+
+[group('quality')]
+format:
+    echo "TODO!"
+# clang-format -i src/**/*.{c,h}

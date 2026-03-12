@@ -13,9 +13,7 @@
             "type": "shell",
             "command": "just",
             "args": [
-                "--justfile",
-                "scripts/build.just",
-                "build-${input:project}-${input:buildType}"
+                "build::build-${input:project}-${input:buildType}"
             ],
             "options": {
                 "cwd": "${workspaceFolder}",
@@ -41,9 +39,7 @@
             "type": "shell",
             "command": "just",
             "args": [
-                "--justfile",
-                "scripts/build.just",
-                "test-host"
+                "build::test-host"
             ],
             "options": {
                 "cwd": "${workspaceFolder}",
@@ -61,9 +57,7 @@
             "type": "shell",
             "command": "just",
             "args": [
-                "--justfile",
-                "scripts/build.just",
-                "test-host-release"
+                "build::test-host-release"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -79,9 +73,7 @@
             "type": "shell",
             "command": "just",
             "args": [
-                "--justfile",
-                "scripts/build.just",
-                "hab-${input:habProject}-${input:buildType}"
+                "build::hab-${input:habProject}-${input:buildType}"
             ],
             "options": {
                 "cwd": "${workspaceFolder}",
@@ -99,9 +91,7 @@
             "type": "shell",
             "command": "just",
             "args": [
-                "--justfile",
-                "scripts/build.just",
-                "hab-all-debug"
+                "build::hab-all-debug"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -114,9 +104,7 @@
             "type": "shell",
             "command": "just",
             "args": [
-                "--justfile",
-                "scripts/build.just",
-                "hab-all-release"
+                "build::hab-all-release"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -132,9 +120,7 @@
             "type": "shell",
             "command": "just",
             "args": [
-                "--justfile",
-                "scripts/build.just",
-                "clean"
+                "build::clean"
             ],
             "options": {
                 "cwd": "${workspaceFolder}",

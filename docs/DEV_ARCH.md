@@ -13,10 +13,10 @@
 
 **Devcontainer** — всё что касается кода: сборка, статический анализ,
 форматирование, host-тесты, подготовка HAB-образов. Разработчик проводит
-здесь большую часть времени. Управляется через VSCode tasks и `scripts/build.just`.
+здесь большую часть времени. Управляется через VSCode tasks и модуль `just build::`.
 
 **Хост** — всё что касается железа: прошивка платы через USB, отладка
-через JLink/probe-rs. Управляется через корневой `Justfile`.
+через JLink/probe-rs. Управляется через модуль `just host::`.
 
 Такое разделение решает несколько проблем: USB-устройства не требуют
 проброса в контейнер; оба разработчика работают в идентичных условиях;
@@ -30,10 +30,11 @@ CI использует те же команды что и локальная р
 ПК разработчика
 │
 ├── Хост (Linux / macOS / Windows + Git Bash)
-│   ├── just          ← запуск задач хостового уровня
+│   ├── just          ← запуск задач хостового уровня (just host::*)
 │   ├── docker        ← управление devcontainer
 │   ├── git           ← работа с репозиторием
 │   ├── uv + spsdk    ← прошивка платы (flash_usb.py, sdphost, blhost)
+│   │                    venv: tools/host/.venv-host
 │   ├── JLinkGDBServer / probe-rs  ← сервер отладки (USB → TCP :2331)
 │   └── VSCode        ← IDE (Dev Containers extension)
 │
@@ -45,8 +46,9 @@ CI использует те же команды что и локальная р
 │   ├── clang-tidy-17    ← статический анализ
 │   ├── clang-format-17  ← форматирование кода
 │   ├── cmake-format     ← форматирование CMakeLists
-│   ├── just             ← запуск задач внутри контейнера
+│   ├── just             ← запуск задач внутри контейнера (just build::*)
 │   ├── uv + spsdk       ← сборка HAB-образов (только nxpimage)
+│   │                       venv: tools/host/.venv-container
 │   └── Unity + fff      ← фреймворки host-тестов
 │
 └── Плата TFT (IMXRT1052) — на столе у разработчика
@@ -59,18 +61,18 @@ CI использует те же команды что и локальная р
 
 ## 3. Что устанавливается и где
 
-| Инструмент | Хост | Devcontainer | Сервер |
-|---|---|---|---|
-| `just` | ✅ | ✅ Dockerfile | ✅ |
-| `docker` | ✅ | — | — |
-| `git` | ✅ | ✅ | ✅ |
-| `uv` | ✅ | ✅ Dockerfile | ✅ |
-| `spsdk` | ✅ uv sync | ✅ uv sync | ✅ uv sync |
-| ARM GCC toolchain | — | ✅ | — |
-| `cmake` / `ninja` | — | ✅ | — |
-| `clang` / `clangd` | — | ✅ | — |
-| Unity / fff | — | ✅ | — |
-| JLink / probe-rs | ✅ | — | — |
+| Инструмент         | Хост      | Devcontainer | Сервер    |
+| ------------------ | --------- | ------------ | --------- |
+| `just`             | ✅         | ✅ Dockerfile | ✅         |
+| `docker`           | ✅         | —            | —         |
+| `git`              | ✅         | ✅            | ✅         |
+| `uv`               | ✅         | ✅ Dockerfile | ✅         |
+| `spsdk`            | ✅ uv sync | ✅ uv sync    | ✅ uv sync |
+| ARM GCC toolchain  | —         | ✅            | —         |
+| `cmake` / `ninja`  | —         | ✅            | —         |
+| `clang` / `clangd` | —         | ✅            | —         |
+| Unity / fff        | —         | ✅            | —         |
+| JLink / probe-rs   | ✅         | —            | —         |
 
 `spsdk` присутствует везде, но с разными ролями:
 
@@ -81,16 +83,21 @@ CI использует те же команды что и локальная р
 Версия `spsdk` зафиксирована в `tools/host/uv.lock` — все три места
 используют одну и ту же версию.
 
+
+
 ---
 
 ## 4. Структура репозитория (automation-часть)
 
 ```bash
 /
-├── Justfile                      ← хост: прошивка, setup, pipeline
+├── Justfile                      ← корневой оркестратор; модули: build, host, ci
+├── just/
+│   ├── build.just                ← devcontainer: сборка, тесты, HAB
+│   ├── host.just                 ← хост: прошивка, bootstrap, HIL
+│   └── ci.just                   ← CI/CD пайплайны
 ├── scripts/
-│   └── bootstrap.sh              ← уровень 0: just → just bootstrap
-│   └── build.just                ← devcontainer: сборка, тесты, HAB
+│   └── bootstrap.sh              ← уровень 0: just → just host::bootstrap
 ├── .devcontainer/
 │   ├── Dockerfile
 │   └── devcontainer.json
@@ -110,7 +117,7 @@ CI использует те же команды что и локальная р
 │       ├── pyproject.toml
 │       └── uv.lock
 ├── .vscode/
-│   └── tasks.json                ← UI для build.just (внутри devcontainer)
+│   └── tasks.json                ← UI для just build::* (внутри devcontainer)
 ├── CMakePresets.json
 ├── cmake/
 ├── sdk/
@@ -119,7 +126,7 @@ CI использует те же команды что и локальная р
 ├── firmware/
 │   ├── test/
 │   ├── bootloader/
-│   └── app/
+│   └── tft_app/
 └── tests/                        ← host-тесты (Unity + fff)
 ```
 
@@ -129,17 +136,17 @@ CI использует те же команды что и локальная р
 
 ### 5.1 Предварительные требования
 
-| Платформа | Что нужно до bootstrap |
-|---|---|
-| Linux | `docker`, `git`, `curl` |
-| macOS | Docker Desktop, `git` (Xcode CLT) |
-| Windows | Docker Desktop, Git for Windows → **использовать Git Bash** |
+| Платформа | Что нужно до bootstrap                                      |
+| --------- | ----------------------------------------------------------- |
+| Linux     | `docker`, `git`, `curl`                                     |
+| macOS     | Docker Desktop, `git` (Xcode CLT)                           |
+| Windows   | Docker Desktop, Git for Windows → **использовать Git Bash** |
 
 ### 5.2 Единственная команда для нового разработчика
 
 ```bash
 git clone <repo-url> && cd <repo>
-./scripts/bootstrap.sh
+./bootstrap.sh
 ```
 
 ### 5.3 Что делает bootstrap
@@ -151,15 +158,15 @@ bootstrap.sh  (уровень 0)
 │   uname: MINGW64_NT-... → windows, Linux → linux, Darwin → macos
 │
 ├── проверить just (semver без sort -V — работает в Git Bash)
-│   < 1.27.0 или отсутствует:
+│   < 1.36.0 или отсутствует:
 │     Linux/macOS → curl | bash → ~/.local/bin/just
 │     Windows     → winget install --id Casey.Just
 │                   (перезапустить Git Bash после установки)
 │
-└── exec just bootstrap
+└── exec just host::bootstrap
       │
       ├── [1/3] check-deps
-      │         just >= 1.27.0 · uv >= 0.4.0 · docker >= 24.0.0
+      │         just >= 1.36.0 · uv >= 0.4.0 · docker >= 24.0.0
       │         платформо-зависимые подсказки при ошибках
       │
       ├── [2/3] setup-udev  (только Linux)
@@ -170,7 +177,7 @@ bootstrap.sh  (уровень 0)
       │         требует re-login · на macOS/Windows пропускается
       │
       └── [3/3] setup-tools
-                uv sync в tools/host/
+                uv sync в tools/host/  (venv: .venv-host на хосте)
                 SHA-256 uv.lock кэшируется в .cache/
                 повторный вызов мгновенный если lockfile не изменился
 ```
@@ -184,7 +191,7 @@ bootstrap.sh  (уровень 0)
 `postCreateCommand` выполняется автоматически при поднятии контейнера:
 
 ```bash
-cd tools/host && uv sync &&
+cd tools/host && uv sync &&   # venv: .venv-container
 cd ../.. &&
 cmake --preset host-debug &&
 cmake --preset Debug
@@ -199,21 +206,21 @@ cmake --preset Debug
 
 ### 6.1 Три подпроекта
 
-| Прошивка | Boot-стратегия | DCD | Назначение |
-|---|---|---|---|
-| `firmware_test` | XIP из Flash | ✅ | Входной контроль, тестирование периферии |
-| `bootloader` | Копирование в ITCM | ❌ | Загрузчик, не использует SDRAM |
-| `app` | XIP + буферы в SDRAM | ✅ | Основное приложение (FreeRTOS, LCDIF) |
+| Прошивка        | Boot-стратегия       | DCD  | Назначение                               |
+| --------------- | -------------------- | ---- | ---------------------------------------- |
+| `firmware_test` | XIP из Flash         | ✅    | Входной контроль, тестирование периферии |
+| `bootloader`    | Копирование в ITCM   | ❌    | Загрузчик, не использует SDRAM           |
+| `tft_app`       | XIP + буферы в SDRAM | ✅    | Основное приложение (FreeRTOS, LCDIF)    |
 
 ### 6.2 Матрица сборки
 
 Каждый проект собирается в двух режимах:
 
-| | Debug | Release |
-|---|---|---|
-| `firmware_test` | разработка, отладка | HAB для сервера |
-| `bootloader` | отладка загрузчика | финальная прошивка |
-| `app` | отладка приложения | финальная прошивка |
+|                 | Debug               | Release            |
+| --------------- | ------------------- | ------------------ |
+| `firmware_test` | разработка, отладка | HAB для сервера    |
+| `bootloader`    | отладка загрузчика  | финальная прошивка |
+| `tft_app`       | отладка приложения  | финальная прошивка |
 
 ### 6.3 CMake пресеты
 
@@ -235,7 +242,7 @@ buildPresets (host):
 ```bash
 0x60000000  FCB — Flash Config Block       512 байт  (пишет Flashloader)
 0x60001000  IVT + BDT                                ← начало HAB-образа
-0x60001040  DCD — инициализация SDRAM      ~1088 байт (firmware_test, app)
+0x60001040  DCD — инициализация SDRAM      ~1088 байт (firmware_test, tft_app)
 0x60003000  Код прошивки (.text, .data…)
 ```
 
@@ -245,17 +252,17 @@ buildPresets (host):
 
 ### 7.1 Карта задач по контекстам
 
-| Задача | Где |
-|---|---|
-| Написание кода, clangd, форматирование | devcontainer |
-| Статический анализ (clang-tidy) | devcontainer |
-| Host-тесты (Unity + fff) | devcontainer |
-| Сборка ARM firmware (ELF) | devcontainer |
-| Подготовка HAB-образов (nxpimage) | devcontainer |
-| Прошивка платы через USB | **хост** |
-| Отладка — GDB-сервер (JLink/probe-rs) | **хост** |
-| Отладка — GDB-клиент | devcontainer → хост по TCP |
-| Target-тесты (управление стендом) | **хост** |
+| Задача                                 | Где                        |
+| -------------------------------------- | -------------------------- |
+| Написание кода, clangd, форматирование | devcontainer               |
+| Статический анализ (clang-tidy)        | devcontainer               |
+| Host-тесты (Unity + fff)               | devcontainer               |
+| Сборка ARM firmware (ELF)              | devcontainer               |
+| Подготовка HAB-образов (nxpimage)      | devcontainer               |
+| Прошивка платы через USB               | **хост**                   |
+| Отладка — GDB-сервер (JLink/probe-rs)  | **хост**                   |
+| Отладка — GDB-клиент                   | devcontainer → хост по TCP |
+| Target-тесты (управление стендом)      | **хост**                   |
 
 ### 7.2 Типичная сессия разработки
 
@@ -265,7 +272,7 @@ buildPresets (host):
 ├── писать код
 │
 ├── Ctrl+Shift+P → "Run Task" → 🧪 Host Tests (Debug)
-│     или в терминале: just --justfile just/build.just test-host
+│     или в терминале: just build::test-host
 │
 ├── Ctrl+Shift+P → "Run Task" → 🔨 Build → firmware-test · debug
 │     → build/Debug/firmware/test/firmware_test.elf
@@ -277,22 +284,22 @@ buildPresets (host):
 │
 ├── just flash firmware_test debug      ← прошить отладочный образ
 │   или
-├── just flash-ram firmware_test debug  ← загрузить в RAM (быстро, без износа Flash)
+├── just host::flash-ram firmware_test debug  ← загрузить в RAM (быстро, без износа Flash)
 │
 └── F5 в VSCode → отладка через JLink
 ```
 
 ### 7.3 VSCode Tasks (внутри devcontainer)
 
-| Таск | Input 1 | Input 2 | Команда |
-|---|---|---|---|
-| 🔨 Build | project | debug/release | `just build-<project>-<type>` |
-| 🧪 Host Tests (Debug) | — | — | `just test-host` |
-| 🧪 Host Tests (Release) | — | — | `just test-host-release` |
-| 📦 HAB Image | project | debug/release | `just hab-<project>-<type>` |
-| 📦 HAB All (Debug) | — | — | `just hab-all-debug` |
-| 📦 HAB All (Release) | — | — | `just hab-all-release` |
-| 🗑️ Clean | — | — | `just clean` |
+| Таск                   | Input 1 | Input 2       | Команда                              |
+| ---------------------- | ------- | ------------- | ------------------------------------ |
+| 🔨 Build                | project | debug/release | `just build::build-<project>-<type>` |
+| 🧪 Host Tests (Debug)   | —       | —             | `just build::test-host`              |
+| 🧪 Host Tests (Release) | —       | —             | `just build::test-host-release`      |
+| 📦 HAB Image            | project | debug/release | `just build::hab-<project>-<type>`   |
+| 📦 HAB All (Debug)      | —       | —             | `just build::hab-all-debug`          |
+| 📦 HAB All (Release)    | —       | —             | `just build::hab-all-release`        |
+| 🗑️ Clean                | —       | —             | `just build::clean`                  |
 
 Таски «Build» и «HAB Image» запрашивают два input последовательно:
 сначала проект (`firmware-test / bootloader / app / all`),
@@ -309,7 +316,7 @@ buildPresets (host):
 2. Reset
 3. Подключить USB к хосту
    → плата определяется как VID:PID = 1FC9:0130
-4. Выполнить нужный just flash-* рецепт
+4. Выполнить нужный just host::flash-* рецепт
 5. После прошивки: BOOT_MOD_1 → GND, Reset
    → плата стартует из Flash
 ```
@@ -318,23 +325,24 @@ buildPresets (host):
 
 ```bash
 # Основной рецепт (project × type)
-just flash firmware_test debug    # разработка — итерации с отладчиком
-just flash firmware_test release  # проверить как будет на сервере
-just flash bootloader debug
-just flash bootloader release
-just flash app debug
-just flash app release
+just host::flash firmware_test debug    # разработка — итерации с отладчиком
+just host::flash firmware_test release  # проверить как будет на сервере
+just host::flash bootloader debug
+just host::flash bootloader release
+just host::flash tft_app debug
+just host::flash tft_app release
 
-# TODO: Загрузка в RAM — без записи во Flash, мгновенный старт
-# Удобно для частых итераций: не изнашивает Flash, не нужен BOOT_MOD переключатель
-just flash-ram firmware_test        # default: debug
-just flash-ram firmware_test debug
-just flash-ram app release
+# Загрузка в RAM — без записи во Flash, мгновенный старт
+# Удобно для частых итераций: не изнашивает Flash
+just host::flash-ram firmware_test        # default: debug
+just host::flash-ram firmware_test debug
+just host::flash-ram tft_app release
 
-# TODO: Быстрые псевдонимы
-just flash-test-debug      # = just flash firmware_test debug
-just flash-test-release    # = just flash firmware_test release
-just flash-production      # bootloader release + app release
+# Быстрые псевдонимы (из корневого Justfile)
+just flash                   # = just host::flash-test-debug
+just host::flash-test-debug
+just host::flash-test-release
+just host::flash-production  # bootloader release + tft_app release
 ```
 
 ### 8.3 Что происходит внутри flash_usb.py
@@ -403,7 +411,7 @@ Devcontainer
 Фреймворк:  Unity + fff
 Пресеты:    host-debug / host-release
 Компилятор: системный clang-17 (не ARM GCC)
-Запуск:     just --justfile just/build.just test-host
+Запуск:     just build::test-host
 Результат:  JUnit XML → VSCode CTest Lab + GitLab CI
 ```
 
@@ -439,17 +447,17 @@ Devcontainer
 feature-ветка
   │
   ├── код в devcontainer
-  │     🧪 Host Tests         ← зелёные?
-  │     🔨 Build firmware-test debug  ← компилируется?
+  │     just build::test-host              ← зелёные?
+  │     just build::build-firmware-test-debug  ← компилируется?
   │
   ├── проверка на железе
-  │     📦 HAB Image → firmware-test · debug
-  │     just flash-test-debug          ← прошить
-  │     target-тесты со стендом        ← периферия работает?
+  │     just build::hab-firmware-test-debug
+  │     just flash                         ← прошить (алиас flash-test-debug)
+  │     target-тесты со стендом            ← периферия работает?
   │
   ├── подготовка к MR
-  │     📦 HAB All (Release)           ← финальные образы
-  │     just flash firmware_test release  ← убедиться что release работает
+  │     just build::hab-all-release        ← финальные образы
+  │     just host::flash firmware_test release  ← убедиться что release работает
   │
   └── Merge Request → GitLab
         [CI pipeline — отдельная тема]
@@ -457,29 +465,29 @@ feature-ветка
               │
               ▼
         Производственный сервер
-        just incoming   → firmware_test release → HIL
-        just production → bootloader + app release
+        just host::incoming   → firmware_test release → HIL
+        just host::production → bootloader + tft_app release
 ```
 
 ---
 
 ## 12. Обновление зависимостей
 
-### spsdk (на хосте разработчика)
+### spsdk
 
 ```bash
-just upgrade-tools 3.8.0
+just host::upgrade-tools 3.8.0
 git add tools/host/uv.lock tools/host/pyproject.toml
 git commit -m "chore: upgrade spsdk to 3.8.0"
 ```
 
 После этого у всех разработчиков и в контейнере обновится автоматически
-при следующем `just setup-tools` / `uv sync`.
+при следующем `just host::setup-tools` / `uv sync`.
 
 ### just в Dockerfile
 
 ```dockerfile
-ARG JUST_VERSION=1.40.0   # .devcontainer/Dockerfile — единственное место
+ARG JUST_VERSION=1.36.0   # .devcontainer/Dockerfile — единственное место
 ```
 
 ### ARM toolchain
@@ -494,7 +502,7 @@ ARG TOOLCHAIN_VERSION=14.2.rel1   # .devcontainer/Dockerfile
 ### После git pull если изменился uv.lock
 
 ```bash
-just setup-tools   # автоматически обнаружит изменение и выполнит uv sync
+just host::setup-tools   # автоматически обнаружит изменение и выполнит uv sync
 ```
 
 ---
@@ -509,12 +517,12 @@ just setup-tools   # автоматически обнаружит измене�
   — только теггированные релизы, прошедшие CI
 
 Сценарий входного контроля новой платы:
-  1. just incoming
+  1. just host::incoming
        └── flash firmware_test release → HIL-тесты периферии
   2. Тесты пройдены:
-     just production
+     just host::production
        ├── flash bootloader release
-       └── flash app release
+       └── flash tft_app release
 
 Установлено:     just · uv + spsdk · git
 НЕ установлено:  docker · cmake · компилятор · ARM toolchain
@@ -526,41 +534,42 @@ just setup-tools   # автоматически обнаружит измене�
 
 ## Приложение А: минимальные версии
 
-| Инструмент | Версия | Причина |
-|---|---|---|
-| `just` | 1.27.0 | поддержка `[group()]` |
-| `uv` | 0.4.0 | стабильный lockfile формат |
-| `docker` | 24.0.0 | Compose v2, `--build-arg` |
-| `spsdk` | 3.7.x | совместимость с HAB yaml-форматом |
-| ARM GCC | 13.3.rel1 | C11, LTO, текущий SDK |
-| clang/clangd | 17 | поддержка `If:` в `.clangd` |
+| Инструмент   | Версия    | Причина                                                      |
+| ------------ | --------- | ------------------------------------------------------------ |
+| `just`       | 1.36.0    | поддержка `mod` с кастомным путём (`mod host 'just/host.just'`) |
+| `uv`         | 0.4.0     | стабильный lockfile формат                                   |
+| `docker`     | 24.0.0    | Compose v2, `--build-arg`                                    |
+| `spsdk`      | 3.7.x     | совместимость с HAB yaml-форматом                            |
+| ARM GCC      | 13.3.rel1 | C11, LTO, текущий SDK                                        |
+| clang/clangd | 17        | поддержка `If:` в `.clangd`                                  |
 
 ## Приложение Б: быстрая шпаргалка
 
 ```bash
 # ── Первый запуск ──────────────────────────────────────────────
-./scripts/bootstrap.sh           # инициализация хоста
+./bootstrap.sh           # инициализация хоста
 # VSCode → Reopen in Container
 
 # ── Внутри devcontainer (терминал VSCode) ──────────────────────
-just --justfile just/build.just test-host
-just --justfile just/build.just build-firmware-test-debug
-just --justfile just/build.just build-app-release
-just --justfile just/build.just hab-firmware-test-debug
-just --justfile just/build.just hab-all-release
-just --justfile just/build.just clean
+just build::test-host
+just build::build-firmware-test-debug
+just build::build-tft-app-release
+just build::hab-firmware-test-debug
+just build::hab-all-release
+just build::clean
 
 # ── Хостовый терминал — прошивка ───────────────────────────────
-just flash firmware_test debug   # во Flash
-just flash firmware_test release
-just flash bootloader release
-just flash app release
-just flash-ram firmware_test     # в RAM (быстро, без износа Flash)
-just flash-production            # bootloader + app release
+just flash                           # алиас: firmware_test debug
+just host::flash firmware_test debug # во Flash
+just host::flash firmware_test release
+just host::flash bootloader release
+just host::flash tft_app release
+just host::flash-ram firmware_test   # в RAM (быстро, без износа Flash)
+just host::flash-production          # bootloader + tft_app release
 
 # ── Хостовый терминал — обслуживание ───────────────────────────
-just scan                        # найти NXP USB-устройства
-just sdp-status                  # проверить BootROM
-just setup-tools                 # обновить spsdk после git pull
-just check-deps                  # проверить версии инструментов
+just host::scan                  # найти NXP USB-устройства
+just host::sdp-status            # проверить BootROM
+just host::setup-tools           # обновить spsdk после git pull
+just host::check-deps            # проверить версии инструментов
 ```

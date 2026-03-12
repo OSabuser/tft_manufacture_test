@@ -30,7 +30,7 @@ int main(void)
 {
     BOARD_Init();
     GPIO_PinWrite(BOARD_INITPINS_UserLed1_PORT, BOARD_INITPINS_UserLed1_PIN, 0);
-    //GPIO_PinWrite(BOARD_INITPINS_UserLed2_PORT, BOARD_INITPINS_UserLed2_PIN, 0);
+    GPIO_PinWrite(BOARD_INITPINS_UserLed2_PORT, BOARD_INITPINS_UserLed2_PIN, 0);
     while (1)
     {
     }

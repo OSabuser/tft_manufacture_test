@@ -45,11 +45,13 @@
 │   └── host/                   # Инструменты для работы с таргетом
 │       ├── flash_usb.py        # Прошивка через USB ROM (nxp-spsdk / blhost)
 │       ├── hab/                # Утилиты и гайд по HAB (Secure Boot)
-│       ├── dcd/                # Device Configuration Data
-│       └── HOW_TO_FLASH.md     → см. также /HOW_TO_FLASH.md
+│       └── dcd/                # Device Configuration Data
+├── just/                       # Just-модули (автоматизация)
+│   ├── build.just              # Сборка, тесты, HAB-образы (devcontainer)
+│   ├── host.just               # Прошивка, bootstrap, HIL (хост)
+│   └── ci.just                 # CI/CD пайплайны
 ├── scripts/
-│   ├── bootstrap.sh            # Первичная настройка окружения
-│   └── build.just              # Рецепты сборки (используется через Justfile)
+│   └── bootstrap.sh            # Первичная настройка окружения (уровень 0)
 ├── docs/                       # Документация проекта
 │   ├── DEV_ARCH.md             # Архитектура окружения разработки
 │   ├── CMAKE_HINTS.md          # Шпаргалка по CMake в проекте
@@ -58,7 +60,7 @@
 │   └── manufacturing_user's_guide.pdf
 ├── CMakeLists.txt              # Корневой CMake
 ├── CMakePresets.json           # Пресеты сборки (Release/Debug/Host)
-├── Justfile                    # Точка входа для команд сборки/тестирования/прошивки
+├── Justfile                    # Точка входа для команд (модули: build, host, ci)
 └── README.md
 ```
 
@@ -88,10 +90,10 @@ Bare-metal прошивка для **входного контроля** пла�
 
 Стратегия тестирования двухуровневая:
 
-| Уровень | Расположение | Инструменты | Запуск |
-|---|---|---|---|
-| **Host-тесты** (unit + интеграционные) | `tests/host/` | Unity + fff | `ctest` в devcontainer |
-| **Target-тесты** (аппаратные) | `tests/target/` | Unity на железе | Удалённый ПК-сервер через SSH |
+| Уровень                                | Расположение    | Инструменты     | Запуск                                 |
+| -------------------------------------- | --------------- | --------------- | -------------------------------------- |
+| **Host-тесты** (unit + интеграционные) | `tests/host/`   | Unity + fff     | `just build::test-host` в devcontainer |
+| **Target-тесты** (аппаратные)          | `tests/target/` | Unity на железе | Удалённый ПК-сервер через SSH          |
 
 Подробнее — [tests/HostTestingGuide.md](tests/HostTestingGuide.md) и [tests/README.md](tests/README.md).
 
@@ -99,12 +101,12 @@ Bare-metal прошивка для **входного контроля** пла�
 
 ## Управление зависимостями
 
-| Зависимость | Подход | Причина |
-|---|---|---|
-| NXP MCUXpresso SDK | vendored | Стабильная версия, обновлений не планируется |
-| FreeRTOS, FatFS, LittleFS и др. | vendored (через SDK) | Стабильные версии |
-| Unity + fff | vendored | Маленькие, стабильные |
-| SEGGER RTT | vendored | Стабильный |
+| Зависимость                     | Подход               | Причина                                      |
+| ------------------------------- | -------------------- | -------------------------------------------- |
+| NXP MCUXpresso SDK              | vendored             | Стабильная версия, обновлений не планируется |
+| FreeRTOS, FatFS, LittleFS и др. | vendored (через SDK) | Стабильные версии                            |
+| Unity + fff                     | vendored             | Маленькие, стабильные                        |
+| SEGGER RTT                      | vendored             | Стабильный                                   |
 
 **Принцип:** всё что не меняется — vendored (закоммичено в репозиторий). Это обеспечивает полностью автономную сборку после `git clone` без доступа к интернету.
 
@@ -112,18 +114,18 @@ Bare-metal прошивка для **входного контроля** пла�
 
 ## Devcontainer — состав окружения
 
-| Инструмент | Назначение |
-|---|---|
-| `arm-none-eabi-gcc` | Сборка firmware для таргета |
-| `arm-none-eabi-gdb` | Отладка через GDB server (удалённая) |
-| `gcc` (host) | Сборка и запуск host-тестов |
-| `CMake + Ninja` | Система сборки |
-| `CTest` | Запуск тестов (Unity + fff) |
-| `clangd` | Language server для VSCode |
-| `clang-format` | Форматирование кода |
-| `clang-tidy` | Статический анализ |
-| `Python 3 + nxp-spsdk` | Прошивка (blhost, nxpimage), HAB, провизия |
-| `just` | Запуск рецептов сборки/тестирования/прошивки |
+| Инструмент             | Назначение                             |
+| ---------------------- | -------------------------------------- |
+| `arm-none-eabi-gcc`    | Сборка firmware для таргета            |
+| `arm-none-eabi-gdb`    | Отладка через GDB server (удалённая)   |
+| `gcc` (host)           | Сборка и запуск host-тестов            |
+| `CMake + Ninja`        | Система сборки                         |
+| `CTest`                | Запуск тестов (Unity + fff)            |
+| `clangd`               | Language server для VSCode             |
+| `clang-format`         | Форматирование кода                    |
+| `clang-tidy`           | Статический анализ                     |
+| `Python 3 + nxp-spsdk` | HAB-образы (nxpimage)                  |
+| `just`                 | Запуск рецептов через модули `build::` |
 
 ---
 
@@ -139,13 +141,19 @@ Bare-metal прошивка для **входного контроля** пла�
 git clone <repo-url>
 cd tft_manufacture_test
 
+# Инициализация хоста (один раз)
+sudo chmod +x bootstrap.sh
+./bootstrap.sh
+
 # Открыть в VSCode → Reopen in Container
 # Затем внутри devcontainer:
 
-just build-host      # сборка host-тестов
-just test            # запуск host-тестов через CTest
-just build-firmware  # сборка firmware для таргета
-just flash           # прошивка через USB ROM
+just build::test-host              # сборка и запуск host-тестов
+just build::build-firmware-test-debug  # сборка firmware для таргета
+just build::hab-firmware-test-debug    # подготовка HAB-образа
+
+# На хосте (вне контейнера):
+just flash                         # прошивка через USB ROM
 ```
 
 > Подробнее о прошивке — [HOW_TO_FLASH.md](HOW_TO_FLASH.md)
