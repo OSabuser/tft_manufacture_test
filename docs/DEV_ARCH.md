@@ -34,7 +34,7 @@ CI использует те же команды что и локальная р
 │   ├── docker        ← управление devcontainer
 │   ├── git           ← работа с репозиторием
 │   ├── uv + spsdk    ← прошивка платы (flash_usb.py, sdphost, blhost)
-│   │                    venv: tools/host/.venv-host (Linux/macOS)
+│   │                    venv: tools/host/.venv.     (Linux/macOS)
 │   │                          tools/host/.venv-host-win (Windows)
 │   ├── JLinkGDBServer / probe-rs  ← сервер отладки (USB → TCP :2331)
 │   └── VSCode        ← IDE (Dev Containers extension)

@@ -167,5 +167,3 @@ just flash                         # прошивка через USB ROM
 
 > Подробнее о прошивке — [HOW_TO_FLASH.md](HOW_TO_FLASH.md)
 > Подробнее об окружении разработки — [docs/DEV_ARCH.md](docs/DEV_ARCH.md)
->
-> 
