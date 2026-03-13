@@ -11,6 +11,11 @@
 ```bash
 /
 ├── .devcontainer/              # VSCode Devcontainer — единое окружение для всех разработчиков
+│   ├── Dockerfile
+│   └── devcontainer.json
+├── .vscode/
+│   ├── launch.json
+│   └── tasks.json              # UI для just build::* (внутри devcontainer)
 ├── bsp/                        # Board Support Package
 │   └── generated/              # Сгенерировано NXP Config Tools (Pins + Clocks Tool)
 │       ├── TFT_Board.mex       # Источник истины конфигурации пинов и тактирования
@@ -40,27 +45,31 @@
 ├── tests/                      # Тесты (host + target)
 │   ├── host/                   # Unit/интеграционные тесты, запускаемые на хосте
 │   ├── target/                 # Тесты периферии, запускаемые на таргете
-│   └── HostTestingGuide.md
+│   ├── HostTestingGuide.md
+│   └── README.md
 ├── tools/
 │   └── host/                   # Инструменты для работы с таргетом
 │       ├── flash_usb.py        # Прошивка через USB ROM (nxp-spsdk / blhost)
 │       ├── hab/                # Утилиты и гайд по HAB (Secure Boot)
-│       └── dcd/                # Device Configuration Data
+│       ├── dcd/                # Device Configuration Data
+│       ├── pyproject.toml
+│       └── uv.lock
 ├── just/                       # Just-модули (автоматизация)
 │   ├── build.just              # Сборка, тесты, HAB-образы (devcontainer)
 │   ├── host.just               # Прошивка, bootstrap, HIL (хост)
 │   └── ci.just                 # CI/CD пайплайны
-├── scripts/
-│   └── bootstrap.sh            # Первичная настройка окружения (уровень 0)
 ├── docs/                       # Документация проекта
 │   ├── DEV_ARCH.md             # Архитектура окружения разработки
 │   ├── CMAKE_HINTS.md          # Шпаргалка по CMake в проекте
 │   ├── schematic.pdf           # Схема платы
 │   ├── mcu_rm.pdf              # Reference Manual IMXRT1052
 │   └── manufacturing_user's_guide.pdf
+├── .env                        # Конфигурация проекта (VID:PID, пути, GDB и др.)
+├── .env.example                # Шаблон .env для новых разработчиков
+├── bootstrap.sh                # Первичная настройка окружения (уровень 0)
 ├── CMakeLists.txt              # Корневой CMake
 ├── CMakePresets.json           # Пресеты сборки (Release/Debug/Host)
-├── Justfile                    # Точка входа для команд (модули: build, host, ci)
+├── justfile                    # Точка входа для команд (модули: build, host, ci)
 └── README.md
 ```
 
@@ -142,7 +151,7 @@ git clone <repo-url>
 cd tft_manufacture_test
 
 # Инициализация хоста (один раз)
-sudo chmod +x bootstrap.sh
+# Устанавливает just и uv, затем настраивает окружение
 ./bootstrap.sh
 
 # Открыть в VSCode → Reopen in Container

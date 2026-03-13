@@ -20,9 +20,9 @@ set dotenv-load
 
 # === Общие переменные (доступны во всех модулях через export) ===
 BOARD      := env('BOARD', 'MIMXRT1052')
-BUILD_DIR  := env('BUILD_DIR', 'build')
-TOOLS_DIR  := env('TOOLS_DIR', 'tools/host')
-CACHE_DIR  := ".cache"
+BUILD_DIR  := env('BUILD_DIR', justfile_directory() / 'build')
+TOOLS_DIR  := env('TOOLS_DIR', justfile_directory() / 'tools/host')
+CACHE_DIR  := justfile_directory() / '.cache'
 
 # === Модули ===
 # Каждый модуль — это namespace с изолированными рецептами

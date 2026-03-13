@@ -17,35 +17,56 @@ flash_usb.py — прошивка MIMXRT1052 через USB (BootROM SDP → Fla
        → blhost стирает нужный регион Flash
        → blhost пишет HAB образ начиная с 0x60002000
        → blhost reset
+
+Конфигурация:
+    Переменные окружения (задаются в .env, экспортируются через just):
+        BOOTROM_VID       — VID BootROM SDP (default: 1fc9)
+        BOOTROM_PID       — PID BootROM SDP (default: 0130)
+        FLASHLOADER_VID   — VID Flashloader  (default: 15a2)
+        FLASHLOADER_PID   — PID Flashloader  (default: 0073)
+        BUILD_DIR         — путь к директории сборки (default: <repo_root>/build)
 """
 
 import argparse
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-# ─── Константы ────────────────────────────────────────────────────────────────
-SCRIPT_DIR    = Path(__file__).parent.resolve()
-REPO_ROOT     = SCRIPT_DIR.parent.parent
-BUILD_DIR     = REPO_ROOT / "build"
-FLASHLOADER   = SCRIPT_DIR / "dcd" / "ivt_flashloader.bin"
+# ─── Пути ─────────────────────────────────────────────────────────────────────
+SCRIPT_DIR  = Path(__file__).parent.resolve()
+REPO_ROOT   = SCRIPT_DIR.parent.parent
+FLASHLOADER = SCRIPT_DIR / "dcd" / "ivt_flashloader.bin"
 
-# USB VID:PID
-SDP_USB       = "0x1FC9,0x0130"   # BootROM Serial Download Protocol
-BLHOST_USB    = "0x15A2,0x0073"   # Flashloader запущен
+# BUILD_DIR: берём из окружения (just экспортирует из .env как абсолютный путь),
+# fallback — рассчитываем от расположения скрипта
+BUILD_DIR = Path(os.environ.get("BUILD_DIR", str(REPO_ROOT / "build")))
 
+# ─── USB VID:PID — из окружения (.env → just set export → uv run) ─────────────
+def _usb(vid_key: str, vid_default: str, pid_key: str, pid_default: str) -> str:
+    
+    vid = os.environ.get(vid_key, vid_default).strip().upper().lstrip("0X")
+    pid = os.environ.get(pid_key, pid_default).strip().upper().lstrip("0X")
+    return f"0x{vid},0x{pid}"
+
+SDP_USB    = _usb("BOOTROM_VID",    "1fc9", "BOOTROM_PID",    "0130")  # BootROM SDP
+BLHOST_USB = _usb("FLASHLOADER_VID","15a2", "FLASHLOADER_PID","0073")  # Flashloader
+
+# ─── Аппаратные константы (часть логики прошивки, не конфигурация) ────────────
 # FlexSPI NOR config option word: 0xC0000007
 #   bits[31:28]=0xC — tag (QuadSPI NOR)
 #   bits[3:0]=0x7   — option size
 FLEXSPI_OPTION_ADDR  = "0x2000"
 FLEXSPI_OPTION_VALUE = "0xC0000007"
-FLEXSPI_MEMORY_ID    = "9"        # FlexSPI NOR memory interface ID
+FLEXSPI_MEMORY_ID    = "9"          # FlexSPI NOR memory interface ID
+
+# Option word для записи FCB: tag=0xF → Write FCB command
+FLEXSPI_FCB_VALUE    = "0xF000000F"
 
 # Flash layout
-FLASH_BASE    = 0x60000000
-HAB_OFFSET    = 0x1000            # IVT offset: HAB binary starts with IVT at byte 0
-                                   # write address = FLASH_BASE + ivtOffset = 0x60001000
+FLASH_BASE  = 0x60000000
+HAB_OFFSET  = 0x1000               # IVT offset: write address = FLASH_BASE + HAB_OFFSET
 
 
 def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -64,7 +85,7 @@ def step(msg: str) -> None:
 
 
 def wait_for_flashloader(timeout: int = 10) -> bool:
-    """Ждём пока Flashloader поднимется (VID:PID 15A2:0073)"""
+    """Ждём пока Flashloader поднимется"""
     print(f"\n  Ожидание Flashloader (до {timeout}с)...", end="", flush=True)
     for i in range(timeout):
         time.sleep(1)
@@ -82,7 +103,6 @@ def wait_for_flashloader(timeout: int = 10) -> bool:
 
 def load_flashloader() -> None:
     """Загружает Flashloader через SDP если ещё не запущен"""
-    # Проверяем — вдруг уже запущен
     result = subprocess.run(
         ["blhost", "-u", BLHOST_USB, "-j", "--", "get-property", "1", "0"],
         capture_output=True
@@ -108,11 +128,6 @@ def load_flashloader() -> None:
         sys.exit(1)
 
 
-# Option word для записи FCB в Flash[0x60000000]
-# 0xF000000F: tag=0xF → Write FCB command (Flashloader пишет готовый FCB в начало Flash)
-FLEXSPI_FCB_VALUE    = "0xF000000F"
-
-
 def configure_flexspi() -> None:
     """Инициализирует FlexSPI NOR контроллер через Flashloader"""
     step("Конфигурация FlexSPI NOR (инициализация контроллера)")
@@ -124,7 +139,7 @@ def configure_flexspi() -> None:
 
 def write_fcb() -> None:
     """Записывает Flash Configuration Block в 0x60000000
-    
+
     Отдельный шаг после erase! Flashloader генерирует FCB из параметров FlexSPI
     и пишет его по адресу 0x60000000. Без FCB BootROM не знает как читать Flash.
     Option word 0xF000000F: tag=0xF → Write FCB command.
@@ -144,7 +159,6 @@ def flash(hab_bin: Path, ram_only: bool = False) -> None:
 
     if ram_only:
         step(f"Загрузка в RAM (без записи во Flash): {hab_bin.name}")
-        # RAM-only: грузим в RAM прямо через SDP без flashloader
         run(["sdphost", "-u", SDP_USB, "-j", "--",
              "write-file", f"0x{FLASH_BASE + HAB_OFFSET:08X}", str(hab_bin)])
         run(["sdphost", "-u", SDP_USB, "-j", "--",
@@ -152,10 +166,9 @@ def flash(hab_bin: Path, ram_only: bool = False) -> None:
         return
 
     load_flashloader()
-    configure_flexspi()      # 0xC0000007 — инициализация FlexSPI контроллера
+    configure_flexspi()
 
     write_addr = f"0x{FLASH_BASE + HAB_OFFSET:08X}"
-    # Размер стирания: HAB_OFFSET (0x1000) + размер образа, выровнено вверх до 4KB
     erase_size = ((HAB_OFFSET + hab_bin.stat().st_size + 0xFFF) // 0x1000) * 0x1000
 
     step(f"Прошивка Flash: {hab_bin.name}")
@@ -164,14 +177,12 @@ def flash(hab_bin: Path, ram_only: bool = False) -> None:
     print(f"  Адрес:     {write_addr}")
     print(f"  Стирание:  0x{FLASH_BASE:08X} .. +{erase_size} байт")
 
-    # memoryId=0 — mapped (XIP) адресное пространство
     run(["blhost", "-u", BLHOST_USB, "--",
          "flash-erase-region", f"0x{FLASH_BASE:08X}",
          str(erase_size), "0"])
 
-    write_fcb()              # 0xF000000F — запись FCB в 0x60000000 (после erase!)
+    write_fcb()
 
-    # memoryId=0 — mapped (XIP) адресное пространство
     run(["blhost", "-u", BLHOST_USB, "--",
          "write-memory", write_addr, str(hab_bin), "0"])
 
@@ -181,6 +192,9 @@ def flash(hab_bin: Path, ram_only: bool = False) -> None:
 
 
 def main() -> None:
+    print(f"DEBUG SDP_USB = {repr(SDP_USB)}")
+    print(f"DEBUG BLHOST_USB = {repr(BLHOST_USB)}")
+    print(f"DEBUG BUILD_DIR = {repr(BUILD_DIR)}")
     parser = argparse.ArgumentParser(description="Прошивка MIMXRT1052 через USB")
     parser.add_argument("--firmware",   required=True,
                         choices=["firmware_test", "bootloader", "app"],
@@ -192,14 +206,14 @@ def main() -> None:
                         help="Загрузить в RAM без записи во Flash")
     args = parser.parse_args()
 
-    # HAB образ собирается командой: nxpimage hab export -c hab_<firmware>.yaml
-    # Выходной файл: build/<BuildType>/<firmware>_hab.bin
     hab_bin = BUILD_DIR / args.build_type / f"{args.firmware}_hab.bin"
 
     print(f"\n{'═'*60}")
     print(f"  MIMXRT1052 Flash Tool")
-    print(f"  Прошивка: {args.firmware}  [{args.build_type}]")
-    print(f"  Образ:    {hab_bin}")
+    print(f"  Прошивка:  {args.firmware}  [{args.build_type}]")
+    print(f"  Образ:     {hab_bin}")
+    print(f"  SDP USB:   {SDP_USB}")
+    print(f"  BL  USB:   {BLHOST_USB}")
     print(f"{'═'*60}")
 
     flash(hab_bin, ram_only=args.ram_only)
