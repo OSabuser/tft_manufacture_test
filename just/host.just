@@ -69,19 +69,19 @@ check-deps:
         case "${PLATFORM}" in
             linux)
                 case "$tool" in
-                    just)   echo "curl -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin" ;;
+                    just)   echo "uv tool install 'rust-just=={{JUST_MIN}}'" ;;
                     uv)     echo "curl -LsSf https://astral.sh/uv/install.sh | sh" ;;
                     docker) echo "https://docs.docker.com/engine/install/ubuntu/" ;;
                 esac ;;
             macos)
                 case "$tool" in
-                    just)   echo "brew install just" ;;
+                    just)   echo "uv tool install 'rust-just=={{JUST_MIN}}'" ;;
                     uv)     echo "brew install uv" ;;
                     docker) echo "brew install --cask docker" ;;
                 esac ;;
             windows)
                 case "$tool" in
-                    just)   echo "winget install --id Casey.Just  (в PowerShell)" ;;
+                    just)   echo "uv tool install 'rust-just=={{JUST_MIN}}'" ;;
                     uv)     echo 'powershell -c "irm https://astral.sh/uv/install.ps1 | iex"' ;;
                     docker) echo "winget install --id Docker.DockerDesktop  (в PowerShell)" ;;
                 esac ;;
