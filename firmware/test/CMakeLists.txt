@@ -12,7 +12,7 @@ target_sources(firmware_test
 # -----------------------------------------------------------------------------
 target_link_libraries(
   firmware_test
-  PRIVATE bsp_board bsp_led
+  PRIVATE bsp_board bsp_led bsp_tick
           # Опциональные библиотеки
           lib_external # SEGGER RTT если включён через SEGGER_RTT_ENABLED
 )

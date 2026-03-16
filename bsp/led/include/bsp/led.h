@@ -1,4 +1,5 @@
-#pragma once
+#ifndef BSP_LED_H_
+#define BSP_LED_H_
 
 /**
  * @file led.h
@@ -7,7 +8,7 @@
  * LED_HEARTBEAT — системный, мигает как признак жизни прошивки
  * LED_APP       — прикладной, управляется из firmware по ситуации
  *
- * Пины сконфигурированы в generated/pin_mux. Этот хедер не знает
+ * Пины сконфигурированы в generated/pin_mux.h. Этот хедер не знает
  * ни про GPIO-порты, ни про NXP SDK.
  */
 
@@ -25,25 +26,27 @@ typedef enum
 
 /**
  * @brief Инициализация обоих светодиодов.
- *        Вызвать один раз после BOARD_InitPins().
+ *        Вызвать один раз после board_init_hw().
  *        После вызова оба LED выключены.
  */
-void led_init(void);
+void bsp_led_init(void);
 
 /** @brief Включить светодиод. */
-void led_on(led_id_t led_id);
+void bsp_led_on(led_id_t led_id);
 
 /** @brief Выключить светодиод. */
-void led_off(led_id_t led_id);
+void bsp_led_off(led_id_t led_id);
 
 /** @brief Переключить состояние светодиода. */
-void led_toggle(led_id_t led_id);
+void bsp_led_toggle(led_id_t led_id);
 
 /**
  * @brief Установить состояние светодиода явно.
  * @param on  true — включить, false — выключить
  */
-void led_set(led_id_t led_id, bool is_enabled);
+void bsp_led_set(led_id_t led_id, bool is_enabled);
 
 /** @brief Получить текущее состояние (true — горит). */
-bool led_get(led_id_t led_id);
+bool bsp_led_get(led_id_t led_id);
+
+#endif //BSP_LED_H_

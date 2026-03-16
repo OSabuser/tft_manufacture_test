@@ -47,19 +47,19 @@ static led_desc_t s_leds[] = {
 /* ── Приватные хелперы ───────────────────────────────────────────────── */
 
 /** Перевести логическое состояние в физический уровень GPIO (active LOW). */
-static inline uint8_t led_to_gpio_level(bool is_enabled)
+static inline uint8_t bsp_led_to_gpio_level(bool is_enabled)
 {
     return is_enabled ? 0U : 1U;
 }
 
-static inline void led_apply(led_desc_t *p_led)
+static inline void bsp_led_apply(led_desc_t *p_led)
 {
-    GPIO_PinWrite(p_led->gpio, p_led->pin, led_to_gpio_level(p_led->state));
+    GPIO_PinWrite(p_led->gpio, p_led->pin, bsp_led_to_gpio_level(p_led->state));
 }
 
 /* ── Публичный API ───────────────────────────────────────────────────── */
 
-void led_init(void)
+void bsp_led_init(void)
 {
     gpio_pin_config_t cfg = {
         .direction     = kGPIO_DigitalOutput,
@@ -74,28 +74,28 @@ void led_init(void)
     }
 }
 
-void led_on(led_id_t led_id)
+void bsp_led_on(led_id_t led_id)
 {
-    led_set(led_id, true);
+    bsp_led_set(led_id, true);
 }
 
-void led_off(led_id_t led_id)
+void bsp_led_off(led_id_t led_id)
 {
-    led_set(led_id, false);
+    bsp_led_set(led_id, false);
 }
 
-void led_toggle(led_id_t led_id)
+void bsp_led_toggle(led_id_t led_id)
 {
-    led_set(led_id, !s_leds[led_id].state);
+    bsp_led_set(led_id, !s_leds[led_id].state);
 }
 
-void led_set(led_id_t led_id, bool is_enabled)
+void bsp_led_set(led_id_t led_id, bool is_enabled)
 {
     s_leds[led_id].state = is_enabled;
-    led_apply(&s_leds[led_id]);
+    bsp_led_apply(&s_leds[led_id]);
 }
 
-bool led_get(led_id_t led_id)
+bool bsp_led_get(led_id_t led_id)
 {
     return s_leds[led_id].state;
 }

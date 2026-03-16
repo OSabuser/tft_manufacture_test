@@ -12,6 +12,7 @@ add_library(
   generated/startup/startup_MIMXRT1052.S)
 
 add_subdirectory(led)
+add_subdirectory(tick)
 
 # Подавляем предупреждения при компиляции собственных .c файлов библиотеки
 target_compile_options(bsp_board PRIVATE -w)

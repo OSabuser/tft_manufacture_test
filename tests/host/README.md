@@ -80,9 +80,9 @@ tests/host/
 │   ├── fsl_lpuart.h
 │   ├── pin_mux.h                 # зеркало макросов пинов из generated/
 │   └── board.h
-├── test_led.c                    # категория B — BSP-модуль
-├── test_protocol.c               # категория A — платформонезависимый
-└── test_runner_logic.c           # категория A
+├── led/test_led.c                    # категория B — BSP-модуль
+├── protocol/test_protocol.c               # категория A — платформонезависимый
+└── runner/test_runner_logic.c           # категория A
 ```
 
 `mocks/` подключается как include path с более высоким приоритетом чем `sdk/`. Компилятор найдёт `fsl_gpio.h` из `mocks/` раньше чем из SDK — `led.c` компилируется на хосте без единого изменения в BSP-коде.

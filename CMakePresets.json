@@ -128,7 +128,9 @@
             "displayName": "Host Tests — Debug",
             "configurePreset": "host-debug",
             "targets": [
-                "test_bsp_led"
+                "test_bsp_led",
+                "test_ring_buffer",
+                "test_timeout_pattern"
             ]
         },
         {
@@ -136,7 +138,9 @@
             "displayName": "Host Tests — Release",
             "configurePreset": "host-release",
             "targets": [
-                "test_bsp_led"
+                "test_bsp_led",
+                "test_ring_buffer",
+                "test_timeout_pattern"
             ]
         }
     ],

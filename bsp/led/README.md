@@ -19,13 +19,13 @@
 ## API
 
 ```c
-void led_init(void);               // вызвать один раз после BOARD_InitPins()
+void bsp_led_init(void);               // вызвать один раз после board_hw_init()
 
-void led_on(led_id_t id);
-void led_off(led_id_t id);
-void led_toggle(led_id_t id);
-void led_set(led_id_t id, bool on);
-bool led_get(led_id_t id);
+void bsp_led_on(led_id_t id);
+void bsp_led_off(led_id_t id);
+void bsp_led_toggle(led_id_t id);
+void bsp_led_set(led_id_t id, bool on);
+bool bsp_led_get(led_id_t id);
 ```
 
 ---
@@ -36,14 +36,14 @@ bool led_get(led_id_t id);
 #include "bsp/led.h"
 
 // инициализация
-led_init();
+bsp_led_init();
 
 // heartbeat
-led_toggle(LED_HEARTBEAT);
+bsp_led_toggle(LED_HEARTBEAT);
 
 // прикладная индикация
-led_on(LED_APP);    // пакет принят / тест запущен
-led_off(LED_APP);   // сброс
+bsp_led_on(LED_APP);    // пакет принят / тест запущен
+bsp_led_off(LED_APP);   // сброс
 ```
 
 ---
