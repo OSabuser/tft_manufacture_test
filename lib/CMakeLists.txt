@@ -31,7 +31,7 @@ endif()
 # === FFF Mocking Framework ===
 if(UNITY_TESTING_ENABLED)
   add_library(fff INTERFACE)
-  target_include_directories(fff INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/fff)
+  target_include_directories(fff INTERFACE fff)
   target_link_libraries(lib_external INTERFACE fff)
   message(STATUS "FFF ✅")
 else()

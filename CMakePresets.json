@@ -128,8 +128,7 @@
             "displayName": "Host Tests — Debug",
             "configurePreset": "host-debug",
             "targets": [
-                "test_host_simple",
-                "test_host_second"
+                "test_bsp_led"
             ]
         },
         {
@@ -137,8 +136,7 @@
             "displayName": "Host Tests — Release",
             "configurePreset": "host-release",
             "targets": [
-                "test_host_simple",
-                "test_host_second"
+                "test_bsp_led"
             ]
         }
     ],

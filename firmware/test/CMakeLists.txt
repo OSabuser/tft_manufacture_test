@@ -12,13 +12,7 @@ target_sources(firmware_test
 # -----------------------------------------------------------------------------
 target_link_libraries(
   firmware_test
-  PRIVATE bsp_board
-          # SDK драйверы периферии — добавляй по мере написания тестов
-          sdk_lpuart # UART тест
-          sdk_flexcan # CAN тест
-          sdk_gpio # GPIO тест (кнопки, светодиоды, входы)
-          sdk_usdhc # uSD тест
-          sdk_semc # SDRAM тест
+  PRIVATE bsp_board bsp_led
           # Опциональные библиотеки
           lib_external # SEGGER RTT если включён через SEGGER_RTT_ENABLED
 )

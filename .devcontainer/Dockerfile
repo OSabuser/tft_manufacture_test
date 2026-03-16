@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-get update && apt-get install -y --no-install-recommends \
         curl git cmake ninja-build bear \
         python3 python3-pip \
-        clang-17 clangd-17 clang-tidy-17 clang-format-17 \
+        clang-17 clangd-17 libclang-rt-17-dev clang-tidy-17 clang-format-17 \
         gdb-multiarch \
         build-essential \
     && update-alternatives --install /usr/bin/clangd       clangd       /usr/bin/clangd-17       100 \
