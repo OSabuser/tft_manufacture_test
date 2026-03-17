@@ -162,8 +162,8 @@ just build::build-firmware-test-debug  # сборка firmware для тарге
 just build::hab-firmware-test-debug    # подготовка HAB-образа
 
 # На хосте (вне контейнера):
-just flash                         # прошивка через USB ROM
+just flash  ...                       # прошивка через USB ROM
 ```
 
-> Подробнее о прошивке — [HOW_TO_FLASH.md](HOW_TO_FLASH.md)
+> Подробнее о прошивке — [HOW_TO_FLASH.md](docs/HOW_TO_FLASH.md)
 > Подробнее об окружении разработки — [docs/DEV_ARCH.md](docs/DEV_ARCH.md)

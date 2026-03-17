@@ -130,7 +130,8 @@
             "targets": [
                 "test_bsp_led",
                 "test_ring_buffer",
-                "test_timeout_pattern"
+                "test_timeout_pattern",
+                "uart_host_mock_example"
             ]
         },
         {
@@ -140,7 +141,8 @@
             "targets": [
                 "test_bsp_led",
                 "test_ring_buffer",
-                "test_timeout_pattern"
+                "test_timeout_pattern",
+                "uart_host_mock_example"
             ]
         }
     ],

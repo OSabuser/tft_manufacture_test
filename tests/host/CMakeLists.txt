@@ -78,3 +78,23 @@ add_host_test(
   NAME test_timeout_pattern SOURCES timeout/test_timeout_pattern.c
   # нет INCLUDES и MOCKS — чистая математика, нет зависимостей
 )
+
+# -----------------------------------------------------------------------------
+# Тест кода, использующего bsp_uart_host через мок (замените SOURCES на свой
+# реальный тест и код под тестом)
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  uart_host_mock_example
+  SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/uart_host/test_uart_host.c
+  ${CMAKE_SOURCE_DIR}/bsp/uart_host/mocks/uart_host_mock.c
+  # Если тестируете "protocol.c" который использует uart_host:
+  # ${CMAKE_SOURCE_DIR}/bsp/protocol/src/protocol.c
+  INCLUDES
+  ${CMAKE_SOURCE_DIR}/bsp/uart_host/include # bsp/uart_host.h
+  ${CMAKE_SOURCE_DIR}/bsp/uart_host/mocks # uart_host_mock.h
+  ${CMAKE_SOURCE_DIR}/bsp/common/include # bsp/status.h
+  # ${CMAKE_SOURCE_DIR}/bsp/protocol/include  # protocol.h
+  MOCKS
+  ${CMAKE_SOURCE_DIR}/bsp/uart_host/mocks/uart_host_mock.c)

@@ -8,7 +8,7 @@ int main(void)
     board_hw_init();
     bsp_led_init();
     bsp_tick_init();
-    const uint16_t DELAY_MS = 1000;
+    const uint16_t DELAY_MS = 50;
     while (1)
     {
         bsp_led_on(LED_HEARTBEAT);

@@ -6,6 +6,9 @@ add_executable(firmware_test)
 target_sources(firmware_test
                PRIVATE main.c ${PROJECT_SOURCE_DIR}/bsp/generated/syscalls.c)
 
+target_compile_definitions(firmware_test
+                           PRIVATE BSP_UART_HOST_RX_BUFFER_SIZE=512)
+#
 # -----------------------------------------------------------------------------
 # Зависимости — только то что нужно для входного контроля bsp_board транзитивно
 # даёт: sdk_device, sdk_clock, sdk_common, CPU_MIMXRT1052CVJ5B, XIP_* дефайны
