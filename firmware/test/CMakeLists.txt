@@ -2,9 +2,12 @@
 # производстве
 
 add_executable(firmware_test)
-
-target_sources(firmware_test
-               PRIVATE main.c ${PROJECT_SOURCE_DIR}/bsp/generated/syscalls.c)
+set(BSP_GENERATED ${CMAKE_SOURCE_DIR}/bsp/generated)
+target_sources(
+  firmware_test
+  PRIVATE main.c ${PROJECT_SOURCE_DIR}/bsp/generated/syscalls.c
+          ${BSP_GENERATED}/clock_config.c
+          ${BSP_GENERATED}/startup/startup_MIMXRT1052.S)
 
 target_compile_definitions(firmware_test
                            PRIVATE BSP_UART_HOST_RX_BUFFER_SIZE=512)
@@ -15,8 +18,7 @@ target_compile_definitions(firmware_test
 # -----------------------------------------------------------------------------
 target_link_libraries(
   firmware_test
-  PRIVATE bsp_board bsp_led bsp_tick
-          # Опциональные библиотеки
+  PRIVATE bsp_board bsp_led bsp_tick bsp_uart_host bsp_boot_ram
           lib_external # SEGGER RTT если включён через SEGGER_RTT_ENABLED
 )
 
@@ -25,15 +27,14 @@ target_link_libraries(
 # -----------------------------------------------------------------------------
 # --gc-sections        — удалять неиспользуемые секции (работает с
 # -ffunction/data-sections) --print-memory-usage — выводить таблицу
-# использования Flash/RAM после линковки -Map                 — генерировать
-# map-файл для анализа размещения символов -T                   — линкерный
-# скрипт с описанием карты памяти IMXRT1052
+# использования Flash/RAM после линковки -Map — генерировать map-файл для
+# анализа размещения символов -T — линкерный скрипт с описанием карты памяти
+# IMXRT1052
 target_link_options(
   firmware_test PRIVATE -Wl,--gc-sections -Wl,--print-memory-usage
   -Wl,-Map=${CMAKE_BINARY_DIR}/firmware_test.map
-  -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor.ld)
+  -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_ram.ld)
 
-# TODO: дефайны BOOT
 # -----------------------------------------------------------------------------
 # Post-build: генерация .bin для прошивки через blhost
 # -----------------------------------------------------------------------------

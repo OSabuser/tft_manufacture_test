@@ -1,6 +1,7 @@
 if(BUILD_TESTS_HOST)
   set(UART_HOST_SOURCES mocks/uart_host_mock.c)
 else()
+
   set(UART_HOST_SOURCES src/uart_host.c)
 endif()
 

@@ -26,7 +26,7 @@ typedef enum
 
 /**
  * @brief Инициализация обоих светодиодов.
- *        Вызвать один раз после board_init_hw().
+ *        Вызвать один раз после board_hw_init().
  *        После вызова оба LED выключены.
  */
 void bsp_led_init(void);

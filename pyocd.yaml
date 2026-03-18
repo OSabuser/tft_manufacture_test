@@ -1,0 +1,8 @@
+# pyocd.yaml — корень репозитория
+# Подхватывается автоматически pyOCD при запуске из любой поддиректории.
+# Для RAM-загрузки flash-алгоритм не нужен — используем generic cortex_m.
+
+target_override: cortex_m
+frequency: 1000000
+connect_mode: attach
+no_config: false

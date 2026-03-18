@@ -44,8 +44,6 @@ static led_desc_t s_leds[] = {
 
 #define LED_COUNT (sizeof(s_leds) / sizeof(s_leds[0]))
 
-/* ── Приватные хелперы ───────────────────────────────────────────────── */
-
 /** Перевести логическое состояние в физический уровень GPIO (active LOW). */
 static inline uint8_t bsp_led_to_gpio_level(bool is_enabled)
 {
@@ -56,8 +54,6 @@ static inline void bsp_led_apply(led_desc_t *p_led)
 {
     GPIO_PinWrite(p_led->gpio, p_led->pin, bsp_led_to_gpio_level(p_led->state));
 }
-
-/* ── Публичный API ───────────────────────────────────────────────────── */
 
 void bsp_led_init(void)
 {

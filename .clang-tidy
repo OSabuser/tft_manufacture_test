@@ -19,7 +19,7 @@ Checks: >
   readability-named-parameter,
   readability-unified-declaration
 WarningsAsErrors: 'bugprone-*,clang-analyzer-*'
-HeaderFilterRegex: "^((?!sdk/|lib/|bsp/board/).)*\\.h$"
+HeaderFilterRegex: "^((?!sdk/|lib/|bsp/board/|tests/host/).)*\\.h$"
 CheckOptions:
   # ===== ТИПЫ =====
   - key: readability-identifier-naming.TypedefCase

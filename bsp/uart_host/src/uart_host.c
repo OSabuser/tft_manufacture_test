@@ -36,10 +36,11 @@
 #endif
 
 /* Частота источника тактирования LPUART1.
- * BOARD_BootClockRUN() настраивает OSC → 24 MHz на LPUART.
+ * BOARD_BootClockRUN() -> 80000000UL настраивает OSC → 24 MHz на LPUART.
  * Скорректируй если у вас другой clock source. */
 #ifndef BSP_UART_HOST_SRC_CLOCK_HZ
-#define BSP_UART_HOST_SRC_CLOCK_HZ (24000000U)
+//TODO:  брать из generated/clock_config.h!
+#define BSP_UART_HOST_SRC_CLOCK_HZ (80000000UL)
 #endif
 
 /* Приоритет прерывания LPUART1 (0 = наивысший на CM7). */

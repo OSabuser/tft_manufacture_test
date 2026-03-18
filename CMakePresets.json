@@ -62,6 +62,17 @@
                 "BUILD_TESTS_HOST": "ON",
                 "BUILD_TESTS_TARGET": "OFF"
             }
+        },
+        {
+            "name": "target-debug",
+            "displayName": "🎯 Target Debug Tests (HIL)",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "SEGGER_RTT_ENABLED": "OFF",
+                "BUILD_TESTS_TARGET": "ON",
+                "BUILD_TESTS_HOST": "OFF"
+            }
         }
     ],
     "buildPresets": [
@@ -143,6 +154,14 @@
                 "test_ring_buffer",
                 "test_timeout_pattern",
                 "uart_host_mock_example"
+            ]
+        },
+        {
+            "name": "target-debug-build",
+            "displayName": "Target Tests — Debug (HIL)",
+            "configurePreset": "target-debug",
+            "targets": [
+                "test_host_uart"
             ]
         }
     ],
