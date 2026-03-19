@@ -45,22 +45,18 @@ default:
 # === Популярные алиасы (для удобства команды) ===
 # Сокращают длинные вызовы модулей
 
-# Инициализация окружения (эквивалент host::bootstrap)
+[doc('Первичная настройка окружения после git clone (на хосте)')]
 init:
     @just host::bootstrap
 
-# Быстрая прошивка тестового образа в Debug
+[doc('Прошить firmware_test Debug во Flash через USB ROM')]
 flash:
     @just host::flash-test-debug
 
-# Полная сборка всех проектов в Release (в контейнере)
+[doc('Собрать все HAB-образы в Release')]
 build-all:
     @just build::hab-all-release
 
-# CI пайплайн
+[doc('Запустить CI pipeline')]
 run-ci:
     @just ci::pipeline
-
-
-
-

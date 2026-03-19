@@ -22,6 +22,7 @@
                 "mcu-debug.debug-tracker-vscode",
                 "mcu-debug.memory-view",
                 "mcu-debug.peripheral-viewer",
+                "marus25.cortex-debug",
                 "brobeson.ctest-lab",
                 "mcu-debug.rtos-views",
                 "ms-vscode.hexeditor",
@@ -67,6 +68,7 @@
         }
     },
     "runArgs": [
+        "--add-host=host.docker.internal:host-gateway",
         "--name",
         "tft-devcontainer"
     ]

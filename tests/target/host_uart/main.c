@@ -100,11 +100,19 @@ int main(void)
     bsp_tick_init();
     bsp_led_init();
     bsp_uart_host_init(CLI_BAUD_RATE);
-
-    /* pytest ждёт эту строку как сигнал готовности */
-    bsp_uart_host_write_str("READY\r\n");
     bsp_led_on(LED_HEARTBEAT);
 
+    /* Шлём READY каждые 200 мс пока хост не откроет порт и не пришлёт байт.
+     * Как только в RX-буфере что-то появится — переходим в основной цикл.
+     * Это убирает race condition между загрузкой ELF и открытием UART. */
+    while (bsp_uart_host_rx_available() == 0U)
+    {
+        bsp_uart_host_write_str("READY\r\n");
+        bsp_led_toggle(LED_APP);
+        bsp_delay(200U);
+    }
+
+    bsp_led_off(LED_APP);
     static uint8_t s_line_buf[CLI_LINE_MAX];
 
     for (;;)

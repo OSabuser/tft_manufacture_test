@@ -3,10 +3,9 @@
 # =============================================================================
 
 set(TARGET_NAME test_host_uart)
-set(BSP_GENERATED ${CMAKE_SOURCE_DIR}/bsp/generated)
 
 add_executable(${TARGET_NAME} main.c ${BSP_GENERATED}/clock_config.c
-                              ${BSP_GENERATED}/startup/startup_MIMXRT1052.S)
+                              ${BSP_STARTUP_FILE} ${BSP_SYSCALLS_FILE})
 
 target_compile_definitions(${TARGET_NAME}
                            PRIVATE BSP_UART_HOST_RX_BUFFER_SIZE=512)

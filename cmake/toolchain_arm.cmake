@@ -9,9 +9,6 @@ else()
   set(TOOLCHAIN_EXT "")
 endif()
 
-# EXECUTABLE EXTENSION
-set(CMAKE_EXECUTABLE_SUFFIX ".elf")
-
 # -----------------------------------------------------------------------------
 # Путь к тулчейну В devcontainer: /opt/arm-toolchain (symlink на конкретную
 # версию) Переопределяется через переменную окружения ARMGCC_DIR если нужно

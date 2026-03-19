@@ -1,0 +1,96 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        // =============================================================
+        // firmware/test — без перепрошивки (прошивка уже в flash)
+        // =============================================================
+        {
+            "name": "🐛 Debug: firmware_test",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "external",
+            "gdbTarget": "host.docker.internal:3333",
+            "gdbPath": "arm-none-eabi-gdb",
+            "executable": "${workspaceFolder}/build/Debug/firmware/test/firmware_test.elf",
+            "device": "MIMXRT1052CVJ5B",
+            "svdFile": "${workspaceFolder}/bsp/generated/startup/MIMXRT1052.xml",
+            "interface": "swd",
+            "loadFiles": [],
+            "runToEntryPoint": "main",
+            "preLaunchTask": "build:firmware-test-debug",
+            "rttConfig": {
+                "enabled": true,
+                "address": "auto",
+                "clearSearch": false,
+                "decoders": [
+                    {
+                        "port": 0,
+                        "type": "console",
+                        "label": "RTT"
+                    }
+                ]
+            }
+        },
+        // =============================================================
+        // firmware/bootloader — без перепрошивки
+        // =============================================================
+        {
+            "name": "🐛 Debug: bootloader",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "external",
+            "gdbTarget": "host.docker.internal:3333",
+            "gdbPath": "arm-none-eabi-gdb",
+            "executable": "${workspaceFolder}/build/Debug/firmware/bootloader/bootloader.elf",
+            "device": "MIMXRT1052CVJ5B",
+            "svdFile": "${workspaceFolder}/bsp/generated/startup/MIMXRT1052.xml",
+            "interface": "swd",
+            "loadFiles": [],
+            "runToEntryPoint": "main",
+            "preLaunchTask": "build:bootloader-debug",
+            "rttConfig": {
+                "enabled": true,
+                "address": "auto",
+                "clearSearch": false,
+                "decoders": [
+                    {
+                        "port": 0,
+                        "type": "console",
+                        "label": "RTT"
+                    }
+                ]
+            }
+        },
+        // =============================================================
+        // firmware/tft_app — FreeRTOS task view
+        // =============================================================
+        {
+            "name": "🐛 Debug: tft_app (FreeRTOS)",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "external",
+            "gdbTarget": "host.docker.internal:3333",
+            "gdbPath": "arm-none-eabi-gdb",
+            "executable": "${workspaceFolder}/build/Debug/firmware/tft_app/app.elf",
+            "device": "MIMXRT1052CVJ5B",
+            "svdFile": "${workspaceFolder}/bsp/generated/startup/MIMXRT1052.xml",
+            "interface": "swd",
+            "loadFiles": [],
+            "runToEntryPoint": "main",
+            "rtos": "FreeRTOS",
+            "preLaunchTask": "build:app-debug",
+            "rttConfig": {
+                "enabled": true,
+                "address": "auto",
+                "clearSearch": false,
+                "decoders": [
+                    {
+                        "port": 0,
+                        "type": "console",
+                        "label": "RTT"
+                    }
+                ]
+            }
+        }
+    ]
+}

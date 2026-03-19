@@ -1,33 +1,24 @@
 # =============================================================================
 # host.just — операции на хост-машине (вне devcontainer)
-#
-# Ответственность:
-#   - bootstrap окружения (just, uv, docker, udev)
-#   - USB-прошивка через spsdk
-#   - HIL-тесты на реальном железе
-#   - производственные сценарии (incoming, production)
-#
-# Все рецепты должны работать БЕЗ devcontainer.
 # =============================================================================
 
-# === Импорт общих переменных из корневого justfile ===
-# Благодаря `set export` в корне, эти переменные доступны
 TOOLS_DIR := env('TOOLS_DIR', justfile_directory() / 'tools/host')
+HIL_DIR := justfile_directory() / 'tools/hil'
 CACHE_DIR := env('CACHE_DIR', justfile_directory() / '.cache')
-
+BUILD_DIR := env('BUILD_DIR', justfile_directory() / 'build')
 _uname := `uname -s`
 _venv := if _uname =~ "MINGW|MSYS|CYGWIN" { ".venv-host-win" } else { ".venv-host" }
-
-# === Минимальные версии зависимостей ===
-JUST_MIN   := "1.36.0"
-UV_MIN     := "0.4.0"
+JUST_MIN := "1.36.0"
+UV_MIN := "0.4.0"
 DOCKER_MIN := "24.0.0"
+
 set working-directory := '..'
+
 # =============================================================================
-# ГРУППА: setup — инициализация рабочего окружения
+# ГРУППА: setup
 # =============================================================================
 
-# [1/3] Проверить наличие и версии инструментов на хост-машине
+[doc('Проверить версии и наличие зависимостей хоста (just, uv, docker)')]
 [group('setup')]
 check-deps:
     #!/usr/bin/env bash
@@ -48,7 +39,6 @@ check-deps:
         *)                    PLATFORM="unknown" ;;
     esac
 
-    # Сравнение semver без sort -V (недоступен в Git Bash)
     semver_ge() {
         local a="$1" b="$2"
         local a1 a2 a3 b1 b2 b3
@@ -69,21 +59,21 @@ check-deps:
         case "${PLATFORM}" in
             linux)
                 case "$tool" in
-                    just)   echo "uv tool install 'rust-just=={{JUST_MIN}}'" ;;
+                    just)   echo "uv tool install 'rust-just=={{ JUST_MIN }}'" ;;
                     uv)     echo "curl -LsSf https://astral.sh/uv/install.sh | sh" ;;
                     docker) echo "https://docs.docker.com/engine/install/ubuntu/" ;;
                 esac ;;
             macos)
                 case "$tool" in
-                    just)   echo "uv tool install 'rust-just=={{JUST_MIN}}'" ;;
+                    just)   echo "uv tool install 'rust-just=={{ JUST_MIN }}'" ;;
                     uv)     echo "brew install uv" ;;
                     docker) echo "brew install --cask docker" ;;
                 esac ;;
             windows)
                 case "$tool" in
-                    just)   echo "uv tool install 'rust-just=={{JUST_MIN}}'" ;;
+                    just)   echo "uv tool install 'rust-just=={{ JUST_MIN }}'" ;;
                     uv)     echo 'powershell -c "irm https://astral.sh/uv/install.ps1 | iex"' ;;
-                    docker) echo "winget install --id Docker.DockerDesktop  (в PowerShell)" ;;
+                    docker) echo "winget install --id Docker.DockerDesktop" ;;
                 esac ;;
         esac
     }
@@ -115,9 +105,9 @@ check-deps:
     echo -e "${BOLD}  Checking host dependencies...${RESET}"
     echo ""
 
-    check_tool "just"   "just"   "{{JUST_MIN}}"
-    check_tool "uv"     "uv"     "{{UV_MIN}}"
-    check_tool "docker" "docker" "{{DOCKER_MIN}}"
+    check_tool "just"   "just"   "{{ JUST_MIN }}"
+    check_tool "uv"     "uv"     "{{ UV_MIN }}"
+    check_tool "docker" "docker" "{{ DOCKER_MIN }}"
 
     if [[ "${PLATFORM}" == "linux" ]]; then
         echo ""
@@ -125,14 +115,14 @@ check-deps:
         echo ""
         rules_file="/etc/udev/rules.d/99-nxp-mimxrt.rules"
         udev_ok=true
-        grep -q "1fc9" "$rules_file" 2>/dev/null || { warn "udev: BootROM rule missing (VID 1fc9)"; udev_ok=false; }
-        grep -q "15a2" "$rules_file" 2>/dev/null || { warn "udev: Flashloader rule missing (VID 15a2)"; udev_ok=false; }
+        grep -q "1fc9" "$rules_file" 2>/dev/null || { warn "udev: BootROM rule missing"; udev_ok=false; }
+        grep -q "15a2" "$rules_file" 2>/dev/null || { warn "udev: Flashloader rule missing"; udev_ok=false; }
         if ! groups 2>/dev/null | grep -q plugdev; then
             warn "User '$(whoami)' not in 'plugdev' group"
             udev_ok=false
         fi
         if [[ "$udev_ok" == "false" ]]; then
-            warn "USB flashing requires root without udev rules -- run: just setup-udev"
+            warn "Run: just host::setup-udev"
         else
             ok "udev rules (NXP USB) + plugdev group"
         fi
@@ -140,62 +130,54 @@ check-deps:
 
     echo ""
     if [[ $ERRORS -gt 0 ]]; then
-        echo -e "  ${RED}${BOLD}$ERRORS error(s) found. Fix them before continuing.${RESET}"
-        echo ""
+        echo -e "  ${RED}${BOLD}$ERRORS error(s) found.${RESET}"
         exit 1
     elif [[ $WARNINGS -gt 0 ]]; then
-        echo -e "  ${YELLOW}${BOLD}$WARNINGS warning(s). Some features may not work.${RESET}"
+        echo -e "  ${YELLOW}${BOLD}$WARNINGS warning(s).${RESET}"
     else
         echo -e "  ${GREEN}${BOLD}All dependencies satisfied.${RESET}"
     fi
     echo ""
 
-# [2/3] Установить udev правила для USB-прошивки (только Linux, требует sudo)
+[doc('Установить udev rules для NXP USB (только Linux)')]
 [group('setup')]
 setup-udev:
     #!/usr/bin/env bash
     set -euo pipefail
     case "$(uname -s)" in
         Linux*) ;;
-        *)
-            echo "  ℹ️  udev rules are Linux-only, skipping on $(uname -s)."
-            exit 0
-            ;;
+        *) echo "  ℹ️  udev rules are Linux-only, skipping."; exit 0 ;;
     esac
-    echo "  Installing udev rules for NXP USB devices..."
     printf '%s\n%s\n%s\n%s\n' \
-        '# NXP BootROM -- SDP mode (BOOT_MOD_1 = 3V3)' \
+        '# NXP BootROM -- SDP mode' \
         'SUBSYSTEM=="usb", ATTR{idVendor}=="1fc9", ATTR{idProduct}=="0130", MODE="0666", GROUP="plugdev"' \
-        '# NXP Flashloader -- after jump-address' \
+        '# NXP Flashloader' \
         'SUBSYSTEM=="usb", ATTR{idVendor}=="15a2", ATTR{idProduct}=="0073", MODE="0666", GROUP="plugdev"' \
         | sudo tee /etc/udev/rules.d/99-nxp-mimxrt.rules > /dev/null
-    sudo udevadm control --reload-rules
-    sudo udevadm trigger
+    sudo udevadm control --reload-rules && sudo udevadm trigger
     sudo usermod -a -G plugdev "$USER"
-    echo "  ✅  udev rules installed"
-    echo "  ⚠️   Re-login required for 'plugdev' group to take effect"
+    echo "  ✅  udev rules installed. Re-login required."
 
-# [3/3] Синхронизировать зависимости tools/host (spsdk и др.)
-# Идемпотентен: пропускает sync если uv.lock не изменился
+[doc('Установить/обновить Python-зависимости tools/host (spsdk и др.)')]
 [group('setup')]
 setup-tools:
     #!/usr/bin/env bash
     set -euo pipefail
-    LOCK="{{TOOLS_DIR}}/uv.lock"
-    STAMP="{{CACHE_DIR}}/uv_lock.sha256"
-    mkdir -p "{{CACHE_DIR}}"
+    LOCK="{{ TOOLS_DIR }}/uv.lock"
+    STAMP="{{ CACHE_DIR }}/uv_lock.sha256"
+    mkdir -p "{{ CACHE_DIR }}"
     current=$(sha256sum "$LOCK" 2>/dev/null | cut -d' ' -f1 || echo "missing")
     previous=$(cat "$STAMP" 2>/dev/null || echo "none")
     if [[ "$current" == "$previous" ]]; then
-        echo "  ✅  tools/host deps up to date (lockfile unchanged)"
+        echo "  ✅  tools/host deps up to date"
     else
         echo "  📦  Syncing tools/host deps..."
-        cd "{{TOOLS_DIR}}" && uv sync
+        cd "{{ TOOLS_DIR }}" && uv sync
         echo "$current" > "$STAMP"
         echo "  ✅  tools/host deps installed"
     fi
 
-# Полная инициализация — запустить один раз после git clone
+[doc('Полная первичная настройка хоста: check-deps + setup-udev + setup-tools')]
 [group('setup')]
 bootstrap:
     #!/usr/bin/env bash
@@ -224,118 +206,143 @@ bootstrap:
     echo ""
 
 # =============================================================================
-# ГРУППА: flash — прошивка платы через USB
-# Требует: uv + spsdk (just setup-tools), плата в SDP-режиме
-# HAB-образы должны быть собраны заранее (just hab-* внутри devcontainer)
-#
-# Матрица прошивки:
-#   just flash firmware_test debug
-#   just flash firmware_test release
-#   just flash bootloader    debug
-#   just flash bootloader    release
-#   just flash app           debug
-#   just flash app           release
+# ГРУППА: flash
 # =============================================================================
 
-# Прошить выбранный HAB-образ.
-# Использование: just flash <project> <type>
-#   project: firmware_test | bootloader | app
-#   type:    debug | release  (default: release)
-#
-# Образ должен быть собран заранее в devcontainer:
-#   just --justfile just/build.just hab-<project>-<type>
+[doc('Прошить образ во Flash через USB ROM: flash <firmware_test|bootloader|app> <debug|release>')]
 [group('flash')]
 flash project type="release":
     #!/usr/bin/env bash
     set -euo pipefail
-    case "{{type}}" in
+    case "{{ type }}" in
         debug)   BUILD_TYPE="Debug" ;;
         release) BUILD_TYPE="Release" ;;
-        *)
-            echo "  ❌  Unknown type: {{type}}"
-            echo "  Valid: debug, release"
-            exit 1 ;;
+        *) echo "  ❌  Unknown type: {{ type }}"; exit 1 ;;
     esac
-    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run python flash_usb.py \
-        --firmware "{{project}}" --build-type "${BUILD_TYPE}"
+    cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run python flash_usb.py \
+        --firmware "{{ project }}" --build-type "${BUILD_TYPE}"
 
-# Загрузить образ в RAM без записи во Flash.
-# Полезно для быстрой проверки — не изнашивает Flash, плата стартует сразу.
-# Использование: just flash-ram <project> <type>
+[doc('Прошить образ в RAM через USB ROM: flash-ram <firmware_test|bootloader|app> <debug|release>')]
 [group('flash')]
 flash-ram project type="debug":
     #!/usr/bin/env bash
     set -euo pipefail
-    case "{{type}}" in
+    case "{{ type }}" in
         debug)   BUILD_TYPE="Debug" ;;
         release) BUILD_TYPE="Release" ;;
-        *)
-            echo "  ❌  Unknown type: {{type}}"
-            echo "  Valid: debug, release"
-            exit 1 ;;
+        *) echo "  ❌  Unknown type: {{ type }}"; exit 1 ;;
     esac
-    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run python flash_usb.py \
-        --firmware "{{project}}" --build-type "${BUILD_TYPE}" --ram-only
+    cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run python flash_usb.py \
+        --firmware "{{ project }}" --build-type "${BUILD_TYPE}" --ram-only
 
-# Псевдонимы для частых сценариев ────────────────────────────────────────────
-
-# firmware_test Debug — самый частый при разработке
+[doc('Прошить firmware_test Debug во Flash')]
 [group('flash')]
 flash-test-debug:
     @just host::flash firmware_test debug
 
-# firmware_test Release — как будет на производстве
+[doc('Прошить firmware_test Release во Flash')]
 [group('flash')]
 flash-test-release:
     @just host::flash firmware_test release
 
-# TODO: bootloader + app Release — финальная прошивка
-[group('flash'), confirm("Flash bootloader + app (Release)?")]
+[confirm("Flash bootloader + app (Release)?")]
+[doc('Прошить bootloader + tft_app Release во Flash (производство)')]
+[group('flash')]
 flash-production:
     @just host::flash bootloader release
     @just host::flash app release
 
 # =============================================================================
-# ГРУППА: pipeline — производственные сценарии (для сервера)
+# ГРУППА: hil — запуск HIL-тестов на реальном железе
+# Сборка target-прошивок — в devcontainer: just build::build-hil
 # =============================================================================
 
-# Входной контроль платы: тестовая прошивка (Release) -> HIL-тесты
+_hil_build := BUILD_DIR / "target-debug"
+
+[doc('Загрузить test_host_uart.elf на таргет без запуска тестов (для ручной отладки)')]
+[group('hil')]
+hil-load:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} python load_and_run.py \
+        {{ _hil_build }}/tests/target/host_uart/test_host_uart.elf
+
+[doc('Запустить все HIL-тесты')]
+[group('hil')]
+hil-run:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} pytest -v
+
+[doc('Запустить только smoke HIL-тесты (быстро, для CI)')]
+[group('hil')]
+hil-smoke:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} pytest -v -m smoke
+
+[doc('Запустить HIL-тесты без перезагрузки ELF (прошивка уже запущена)')]
+[group('hil')]
+hil-run-fast:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} pytest -v --no-load
+
+# =============================================================================
+# ГРУППА: pipeline
+# =============================================================================
+
+[doc('Входной контроль: прошить firmware_test Release + запустить HIL-тесты')]
 [group('pipeline')]
 incoming: flash-test-release
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "  ▶  Running HIL tests (CAN, UART, SDRAM, SPI Flash)..."
-    # cd tools/hil && UV_PROJECT_ENVIRONMENT={{_venv}} uv run python run_hil.py   <- раскомментить когда готово
-    echo "  ⚠️   HIL tests not yet implemented"
+    echo "  ▶  Running HIL tests..."
+    just host::hil-run
 
-# Финальная прошивка: загрузчик + основная прошивка (Release)
+[doc('Производственная прошивка: bootloader + tft_app Release')]
 [group('pipeline')]
 production: flash-production
-    @echo "  ✅  Production firmware flashed (bootloader + app)"
+    @echo "  ✅  Production firmware flashed"
 
 # =============================================================================
-# ГРУППА: util — вспомогательные инструменты
+# ГРУППА: util
 # =============================================================================
 
-# Найти подключённые NXP USB-устройства
+[doc('Найти подключённые NXP устройства (BootROM, flashloader, обычный режим)')]
 [group('util')]
 scan:
-    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run nxpdevscan
+    cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run nxpdevscan
 
-# Проверить связь с BootROM через SDP (плата в SDP-режиме)
-[group('util'), no-cd]
+[doc('Получить статус SDP (BootROM режим, VID:PID 1FC9:0130)')]
+[group('util')]
+[no-cd]
 sdp-status:
-    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run sdphost -u 0x1FC9,0x0130 -- error-status
+    cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run sdphost -u 0x1FC9,0x0130 -- error-status
 
-# Проверить что Flashloader отвечает (после jump-address)
+[doc('Получить статус flashloader (VID:PID 15A2:0073)')]
 [group('util')]
 flashloader-status:
-    cd "{{TOOLS_DIR}}" && UV_PROJECT_ENVIRONMENT={{_venv}} uv run blhost -u 0x15A2,0x0073 -- get-property 1 0
+    cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run blhost -u 0x15A2,0x0073 -- get-property 1 0
 
-# Обновить spsdk до новой версии
-# Использование: just upgrade-tools 3.8.0
+[doc('Обновить spsdk до указанной версии: upgrade-tools <version>')]
 [group('util')]
 upgrade-tools version:
-    cd "{{TOOLS_DIR}}" && uv add "spsdk=={{version}}" && uv sync
-    @echo "  ✅  spsdk upgraded to {{version}}"
-    @echo "  Run: git add tools/host/uv.lock tools/host/pyproject.toml"
+    cd "{{ TOOLS_DIR }}" && uv add "spsdk=={{ version }}" && uv sync
+    @echo "  ✅  spsdk upgraded to {{ version }}"
+
+# =============================================================================
+# ГРУППА: debug
+# =============================================================================
+
+_hil_dir := "tools/hil"
+
+[doc('Запустить GDB-сервер на порту 3333. Оставить запущенным, подключаться из VSCode')]
+[group('debug')]
+debug-server:
+    uv run --directory {{ _hil_dir }} pyocd gdbserver \
+        --config {{ justfile_directory() }}/pyocd_debug.yaml \
+        --port 3333 \
+        --persist \
+        --semihosting
+
+[doc('Показать доступные builtin-таргеты pyOCD для MIMXRT')]
+[group('debug')]
+debug-list-targets:
+    uv run --directory {{ _hil_dir }} pyocd list --targets | grep -i mimx

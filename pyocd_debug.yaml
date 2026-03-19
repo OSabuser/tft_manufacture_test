@@ -1,0 +1,10 @@
+# pyocd_debug.yaml — конфигурация для отладки через GDB
+#
+# Используется: just host::debug-server
+# Не использовать для HIL-тестов — для них pyocd.yaml (target: cortex_m, RAM-режим)
+#
+# Первый запуск — установить CMSIS pack:
+#   just host::debug-pack-install
+
+target_override: mimxrt1050_quadspi
+frequency: 4000000

@@ -1,12 +1,12 @@
 """
 conftest.py — pytest-фикстуры для HIL-тестов MIMXRT1052.
 Вся работа с железом делегирована pyocd_utils.
+Конфигурация читается из env_config (приоритет: env > .env > default).
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Generator
@@ -14,28 +14,19 @@ from typing import Generator
 import pytest
 import serial
 
+import env_config as cfg
 from pyocd_utils import flexram_init, load_elf, open_target, run_from_vectors
 
 log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Конфигурация — переопределяется через переменные окружения
-# ---------------------------------------------------------------------------
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_BUILD_DIR = Path(os.environ.get("HIL_BUILD_DIR",
-                                  _REPO_ROOT / "build" / "target-debug"))
-_VCOM_PORT = os.environ.get("HIL_VCOM_PORT", "/dev/tty.usbmodemGUXFBWDJBWTGQ3")
-_VCOM_BAUD = int(os.environ.get("HIL_VCOM_BAUD", "115200"))
-_READY_TIMEOUT = float(os.environ.get("HIL_READY_TIMEOUT", "5.0"))
-
 
 # ---------------------------------------------------------------------------
-# CLI-опции pytest
+# CLI-опции pytest (перекрывают .env и os.environ)
 # ---------------------------------------------------------------------------
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--elf",     default=None,       help="Путь к .elf файлу")
-    parser.addoption("--vcom",    default=_VCOM_PORT,  help="VCOM-порт MCU-Link")
-    parser.addoption("--no-load", action="store_true", help="ELF уже запущен")
+    parser.addoption("--elf",     default=None,          help="Путь к .elf файлу")
+    parser.addoption("--vcom",    default=cfg.VCOM_PORT,  help="VCOM-порт MCU-Link")
+    parser.addoption("--no-load", action="store_true",    help="ELF уже запущен")
 
 
 # ---------------------------------------------------------------------------
@@ -49,7 +40,7 @@ def _load_elf(request: pytest.FixtureRequest, default_elf: Path) -> None:
     elf = Path(request.config.getoption("--elf") or default_elf)
     assert elf.exists(), f"ELF не найден: {elf}"
 
-    with open_target() as target:
+    with open_target(frequency=cfg.PYOCD_FREQUENCY) as target:
         flexram_init(target)
         load_elf(target, str(elf))
         run_from_vectors(target)
@@ -60,16 +51,12 @@ def _load_elf(request: pytest.FixtureRequest, default_elf: Path) -> None:
 # ---------------------------------------------------------------------------
 # Фикстуры загрузки (scope=module — один раз на файл с тестами)
 # ---------------------------------------------------------------------------
-@pytest.fixture(scope="module")
-def loaded_firmware_test(request: pytest.FixtureRequest) -> None:
-    _load_elf(request, _BUILD_DIR / "firmware/test/firmware_test.elf")
-
 
 @pytest.fixture(scope="module")
 def loaded_host_uart(request: pytest.FixtureRequest) -> None:
     _load_elf(
         request,
-        _BUILD_DIR / "tests/target/host_uart/test_host_uart.elf",
+        Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
     )
 
 
@@ -79,21 +66,21 @@ def loaded_host_uart(request: pytest.FixtureRequest) -> None:
 @pytest.fixture(scope="module")
 def uart(
     request: pytest.FixtureRequest,
-    loaded_host_uart,           # гарантирует порядок: сначала загрузка
+    loaded_host_uart,
 ) -> Generator[serial.Serial, None, None]:
 
     port = request.config.getoption("--vcom")
-    log.info("UART %s @ %d baud", port, _VCOM_BAUD)
+    log.info("UART %s @ %d baud", port, cfg.VCOM_BAUD)
 
     ser = serial.Serial(
         port=port,
-        baudrate=_VCOM_BAUD,
+        baudrate=cfg.VCOM_BAUD,
         timeout=2.0,
         write_timeout=1.0,
     )
 
-    # Ждём "READY" — прошивка отправляет его один раз при старте
-    deadline = time.monotonic() + _READY_TIMEOUT
+    # Ждём READY
+    deadline = time.monotonic() + cfg.READY_TIMEOUT
     ready = False
     while time.monotonic() < deadline:
         line = ser.readline().decode("ascii", errors="replace").strip()
@@ -105,8 +92,8 @@ def uart(
     if not ready:
         ser.close()
         pytest.fail(
-            f"Прошивка не отправила READY за {_READY_TIMEOUT} с. "
-            "Проверьте VCOM-порт и bsp_uart_host_init()."
+            f"Прошивка не отправила READY за {cfg.READY_TIMEOUT} с — "
+            "проверьте VCOM-порт и bsp_uart_host_init()."
         )
 
     ser.reset_input_buffer()

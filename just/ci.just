@@ -4,50 +4,53 @@
 #
 # Предполагается что CI работает внутри devcontainer.
 # =============================================================================
-
 # === Импорт общих переменных ===
+
 BUILD_DIR := env('BUILD_DIR', justfile_directory() / 'build')
+
 set working-directory := '..'
+
 # =============================================================================
 # ГРУППА: ci — полные пайплайны
 # =============================================================================
 
-# Полный CI pipeline: сборка + тесты + линтеры
+[doc('Полный CI pipeline: сборка + тесты + линтеры')]
 [group('ci')]
 pipeline: build test lint
     @echo "  ✅  CI pipeline complete"
 
-# Сборка всех проектов в Release
+[doc('Собрать все проекты в Release')]
 [group('ci')]
 build:
     just build::build-all-release
 
-# Unit-тесты
+[doc('Запустить host unit-тесты (Release)')]
 [group('ci')]
 test:
     just build::test-host-release
 
-# TODO: Линтеры + статический анализ
+[doc('Запустить линтеры и статический анализ')]
 [group('ci')]
 lint:
     echo "TODO"
+
 #just build::lint
 #just build::check
 
-# Генерация HAB-образов для релиза
+[doc('Собрать HAB Release-артефакты для выкладки')]
 [group('ci')]
 release: build
     just build::hab-all-release
-    @echo "  ✅  Release artifacts ready in {{BUILD_DIR}}/Release/"
+    @echo "  ✅  Release artifacts ready in {{ BUILD_DIR }}/Release/"
 
-# Генерация coverage отчёта (если gcov настроен)
-[group('ci'), private]
+[group('ci')]
+[private]
 _coverage:
     #!/usr/bin/env bash
     set -euo pipefail
     if command -v gcovr &>/dev/null; then
         echo "  📊  Generating coverage report..."
-        gcovr --xml -o {{BUILD_DIR}}/coverage.xml
+        gcovr --xml -o {{ BUILD_DIR }}/coverage.xml
     else
         echo "  ⚠️   gcovr not found, skipping coverage"
     fi

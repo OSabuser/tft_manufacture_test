@@ -18,6 +18,7 @@
 
 /* BSP */
 #include "bsp/tick.h"
+#include "clock_config.h"
 
 /* Utils */
 #include "ring_buffer/ring_buffer.h"
@@ -35,12 +36,9 @@
 #define BSP_UART_HOST_RX_BUFFER_SIZE (256U)
 #endif
 
-/* Частота источника тактирования LPUART1.
- * BOARD_BootClockRUN() -> 80000000UL настраивает OSC → 24 MHz на LPUART.
- * Скорректируй если у вас другой clock source. */
+/* Частота источника тактирования LPUART1 (NXP Config Tools) */
 #ifndef BSP_UART_HOST_SRC_CLOCK_HZ
-//TODO:  брать из generated/clock_config.h!
-#define BSP_UART_HOST_SRC_CLOCK_HZ (80000000UL)
+#define BSP_UART_HOST_SRC_CLOCK_HZ BOARD_BOOTCLOCKRUN_UART_CLK_ROOT
 #endif
 
 /* Приоритет прерывания LPUART1 (0 = наивысший на CM7). */

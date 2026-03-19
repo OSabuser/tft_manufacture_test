@@ -65,6 +65,29 @@
             "problemMatcher": []
         },
         // =============================================================
+        // HIL TARGET-ТЕСТЫ
+        // =============================================================
+        {
+            "label": "🎯 Build HIL Target Tests",
+            "group": "build",
+            "type": "shell",
+            "command": "just",
+            "args": [
+                "build::build-hil"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "statusbar": {
+                    "color": "#00e5ff",
+                    "label": "$(circuit-board) HIL Build",
+                    "detail": "Build HIL target firmware"
+                }
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        // =============================================================
         // HAB-ОБРАЗЫ
         // =============================================================
         {
@@ -131,6 +154,66 @@
                 }
             },
             "problemMatcher": []
+        },
+        // =============================================================
+        // СБОРКА ДЛЯ ОТЛАДКИ (preLaunchTask — без интерактивных inputs)
+        // =============================================================
+        {
+            "label": "build:firmware-test-debug",
+            "type": "shell",
+            "hide": true,
+            "command": "just",
+            "args": [
+                "build::build-firmware-test-debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "build:bootloader-debug",
+            "hide": true,
+            "type": "shell",
+            "command": "just",
+            "args": [
+                "build::build-bootloader-debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "build:app-debug",
+            "hide": true,
+            "type": "shell",
+            "command": "just",
+            "args": [
+                "build::build-app-debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
         }
     ],
     "inputs": [

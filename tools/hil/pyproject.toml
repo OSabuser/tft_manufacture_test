@@ -1,7 +1,7 @@
 [project]
 name = "hil"
 version = "0.1.0"
-description = "Add your description here"
+description = "HIL-тесты для MIMXRT1052 — pytest + pyOCD + pyserial"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
