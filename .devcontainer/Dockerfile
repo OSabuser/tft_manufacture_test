@@ -54,6 +54,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         clang-17 clangd-17 libclang-rt-17-dev clang-tidy-17 clang-format-17 \
         gdb-multiarch \
         build-essential \
+        libncurses5 \
     && update-alternatives --install /usr/bin/clangd       clangd       /usr/bin/clangd-17       100 \
     && update-alternatives --install /usr/bin/clang        clang        /usr/bin/clang-17       100 \
     && update-alternatives --install /usr/bin/clang-tidy   clang-tidy   /usr/bin/clang-tidy-17   100 \

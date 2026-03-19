@@ -346,3 +346,11 @@ debug-server:
 [group('debug')]
 debug-list-targets:
     uv run --directory {{ _hil_dir }} pyocd list --targets | grep -i mimx
+
+[doc('Собрать HAB Debug и прошить через MCU-Link')]
+[group('flash')]
+flash-test-debug-swd:
+    uv run --directory {{ _hil_dir }} pyocd flash \
+        --config {{ justfile_directory() }}/pyocd_debug.yaml \
+        --base-address 0x60000000 \
+        {{ BUILD_DIR }}/Debug/firmware_test_hab.bin
