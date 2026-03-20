@@ -206,10 +206,11 @@ bootstrap:
     echo ""
 
 # =============================================================================
-# ГРУППА: flash
+# ГРУППА: flash — USB Serial Downloader (SDP через ROM-загрузчик)
+# Требует: плата в режиме Serial Downloader (BOOT_MODE = 01)
 # =============================================================================
 
-[doc('Прошить образ во Flash через USB ROM: flash <firmware_test|bootloader|app> <debug|release>')]
+[doc('Прошить образ через USB SDP: flash <firmware_test|bootloader|app> <debug|release>')]
 [group('flash')]
 flash project type="release":
     #!/usr/bin/env bash
@@ -222,7 +223,7 @@ flash project type="release":
     cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run python flash_usb.py \
         --firmware "{{ project }}" --build-type "${BUILD_TYPE}"
 
-[doc('Прошить образ в RAM через USB ROM: flash-ram <firmware_test|bootloader|app> <debug|release>')]
+[doc('Прошить образ в RAM через USB SDP: flash-ram <firmware_test|bootloader|app> <debug|release>')]
 [group('flash')]
 flash-ram project type="debug":
     #!/usr/bin/env bash
@@ -235,22 +236,66 @@ flash-ram project type="debug":
     cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run python flash_usb.py \
         --firmware "{{ project }}" --build-type "${BUILD_TYPE}" --ram-only
 
-[doc('Прошить firmware_test Debug во Flash')]
+[doc('Прошить firmware_test Debug через USB SDP')]
 [group('flash')]
 flash-test-debug:
     @just host::flash firmware_test debug
 
-[doc('Прошить firmware_test Release во Flash')]
+[doc('Прошить firmware_test Release через USB SDP')]
 [group('flash')]
 flash-test-release:
     @just host::flash firmware_test release
 
 [confirm("Flash bootloader + app (Release)?")]
-[doc('Прошить bootloader + tft_app Release во Flash (производство)')]
+[doc('Прошить bootloader + tft_app Release через USB SDP (производство)')]
 [group('flash')]
 flash-production:
     @just host::flash bootloader release
     @just host::flash app release
+
+# =============================================================================
+# ГРУППА: flash-swd — прошивка через SWD (MCU-Link, без смены BOOT_MODE)
+# Требует: GDB-сервер НЕ запущен (pyOCD занимает пробник монопольно)
+# После записи — обязательный power cycle платы
+# =============================================================================
+
+_flash_swd := TOOLS_DIR / "flash_swd.py"
+
+[doc('Прошить firmware_test Debug через SWD. Нужен power cycle после')]
+[group('flash-swd')]
+flash-swd-test-debug:
+    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+        --firmware firmware_test --build-type Debug
+
+[doc('Прошить firmware_test Release через SWD. Нужен power cycle после')]
+[group('flash-swd')]
+flash-swd-test-release:
+    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+        --firmware firmware_test --build-type Release
+
+[doc('Прошить bootloader Debug через SWD. Нужен power cycle после')]
+[group('flash-swd')]
+flash-swd-bootloader-debug:
+    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+        --firmware bootloader --build-type Debug
+
+[doc('Прошить bootloader Release через SWD. Нужен power cycle после')]
+[group('flash-swd')]
+flash-swd-bootloader-release:
+    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+        --firmware bootloader --build-type Release
+
+[doc('Прошить tft_app Debug через SWD. Нужен power cycle после')]
+[group('flash-swd')]
+flash-swd-app-debug:
+    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+        --firmware app --build-type Debug
+
+[doc('Прошить tft_app Release через SWD. Нужен power cycle после')]
+[group('flash-swd')]
+flash-swd-app-release:
+    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+        --firmware app --build-type Release
 
 # =============================================================================
 # ГРУППА: hil — запуск HIL-тестов на реальном железе
@@ -283,6 +328,36 @@ hil-smoke:
 hil-run-fast:
     HIL_BUILD_DIR={{ _hil_build }} \
         uv run --directory {{ HIL_DIR }} pytest -v --no-load
+
+# =============================================================================
+# ГРУППА: debug — GDB-сервер для отладки из VSCode (devcontainer)
+#
+# Рабочий цикл А — прошивка уже в Flash:
+#   just host::debug-server  →  VSCode: 🐛 Debug: <project>  →  F5
+#
+# Рабочий цикл Б — прошить и отладить без USB SDP:
+#   just host::flash-swd-test-debug  →  power cycle  →
+#   just host::debug-server          →  VSCode: 🐛 Debug: firmware_test  →  F5
+#
+# Важно: debug-server и flash-swd используют MCU-Link монопольно.
+#        Остановите сервер (Ctrl+C) перед flash-swd и наоборот.
+# =============================================================================
+
+_hil_dir := "tools/hil"
+
+[doc('Запустить GDB-сервер. Оставить запущенным, подключаться из VSCode')]
+[group('debug')]
+debug-server:
+    uv run --directory {{ _hil_dir }} pyocd gdbserver \
+        --config {{ justfile_directory() }}/pyocd_debug.yaml \
+        --port {{ env('GDB_PORT', '3333') }} \
+        --persist \
+        --semihosting
+
+[doc('Показать доступные builtin-таргеты pyOCD для MIMXRT')]
+[group('debug')]
+debug-list-targets:
+    uv run --directory {{ _hil_dir }} pyocd list --targets | grep -i mimx
 
 # =============================================================================
 # ГРУППА: pipeline
@@ -327,30 +402,9 @@ upgrade-tools version:
     cd "{{ TOOLS_DIR }}" && uv add "spsdk=={{ version }}" && uv sync
     @echo "  ✅  spsdk upgraded to {{ version }}"
 
-# =============================================================================
-# ГРУППА: debug
-# =============================================================================
-
-_hil_dir := "tools/hil"
-
-[doc('Запустить GDB-сервер на порту 3333. Оставить запущенным, подключаться из VSCode')]
-[group('debug')]
-debug-server:
-    uv run --directory {{ _hil_dir }} pyocd gdbserver \
-        --config {{ justfile_directory() }}/pyocd_debug.yaml \
-        --port 3333 \
-        --persist \
-        --semihosting
-
-[doc('Показать доступные builtin-таргеты pyOCD для MIMXRT')]
-[group('debug')]
-debug-list-targets:
-    uv run --directory {{ _hil_dir }} pyocd list --targets | grep -i mimx
-
-[doc('Собрать HAB Debug и прошить через MCU-Link')]
-[group('flash')]
-flash-test-debug-swd:
-    uv run --directory {{ _hil_dir }} pyocd flash \
-        --config {{ justfile_directory() }}/pyocd_debug.yaml \
-        --base-address 0x60000000 \
-        {{ BUILD_DIR }}/Debug/firmware_test_hab.bin
+[doc('Открыть UART монитор на MCU-Link VCOM (кроссплатформенный)')]
+[group('util')]
+uart-monitor:
+    uv run --directory {{ HIL_DIR }} python3 -m serial.tools.miniterm \
+        {{ env('HIL_VCOM_PORT') }} {{ env('HIL_VCOM_BAUD', '115200') }} \
+        --raw

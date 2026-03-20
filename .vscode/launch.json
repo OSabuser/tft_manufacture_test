@@ -15,21 +15,11 @@
             "device": "MIMXRT1052CVJ5B",
             "svdFile": "${workspaceFolder}/bsp/generated/startup/MIMXRT1052.xml",
             "interface": "swd",
-            "showDevDebugOutput": "raw",
             "loadFiles": [],
             "runToEntryPoint": "main",
             "preLaunchTask": "build:firmware-test-debug",
             "rttConfig": {
-                "enabled": true,
-                "address": "auto",
-                "clearSearch": false,
-                "decoders": [
-                    {
-                        "port": 0,
-                        "type": "console",
-                        "label": "RTT"
-                    }
-                ]
+                "enabled": false
             }
         },
         // =============================================================
@@ -42,25 +32,13 @@
             "servertype": "external",
             "gdbTarget": "host.docker.internal:3333",
             "gdbPath": "arm-none-eabi-gdb",
-            "executable": "${workspaceFolder}/build/Debug/firmware/bootloader/bootloader.elf",
+            "executable": "${workspaceFolder}/build/Debug/bootloader.elf",
             "device": "MIMXRT1052CVJ5B",
             "svdFile": "${workspaceFolder}/bsp/generated/startup/MIMXRT1052.xml",
             "interface": "swd",
             "loadFiles": [],
             "runToEntryPoint": "main",
-            "preLaunchTask": "build:bootloader-debug",
-            "rttConfig": {
-                "enabled": true,
-                "address": "auto",
-                "clearSearch": false,
-                "decoders": [
-                    {
-                        "port": 0,
-                        "type": "console",
-                        "label": "RTT"
-                    }
-                ]
-            }
+            "preLaunchTask": "build-and-rtt:firmware-test-debug",
         },
         // =============================================================
         // firmware/tft_app — FreeRTOS task view
@@ -72,26 +50,14 @@
             "servertype": "external",
             "gdbTarget": "host.docker.internal:3333",
             "gdbPath": "arm-none-eabi-gdb",
-            "executable": "${workspaceFolder}/build/Debug/firmware/tft_app/app.elf",
+            "executable": "${workspaceFolder}/build/Debug/app.elf",
             "device": "MIMXRT1052CVJ5B",
             "svdFile": "${workspaceFolder}/bsp/generated/startup/MIMXRT1052.xml",
             "interface": "swd",
             "loadFiles": [],
             "runToEntryPoint": "main",
             "rtos": "FreeRTOS",
-            "preLaunchTask": "build:app-debug",
-            "rttConfig": {
-                "enabled": true,
-                "address": "auto",
-                "clearSearch": false,
-                "decoders": [
-                    {
-                        "port": 0,
-                        "type": "console",
-                        "label": "RTT"
-                    }
-                ]
-            }
+            "preLaunchTask": "build:firmware-test-debug",
         }
     ]
 }
