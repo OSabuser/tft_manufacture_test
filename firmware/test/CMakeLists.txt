@@ -15,7 +15,12 @@ target_compile_definitions(${TARGET_NAME}
 # -----------------------------------------------------------------------------
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE bsp_board bsp_led bsp_tick bsp_uart_host bsp_boot_xip
+  PRIVATE bsp_board
+          bsp_led
+          bsp_tick
+          bsp_uart_host
+          bsp_boot_xip
+          port_log_uart
           lib_external # SEGGER RTT если включён через SEGGER_RTT_ENABLED
 )
 

@@ -140,6 +140,7 @@
             "configurePreset": "host-debug",
             "targets": [
                 "test_bsp_led",
+                "test_log",
                 "test_ring_buffer",
                 "test_timeout_pattern",
                 "uart_host_mock_example"
@@ -151,6 +152,7 @@
             "configurePreset": "host-release",
             "targets": [
                 "test_bsp_led",
+                "test_log",
                 "test_ring_buffer",
                 "test_timeout_pattern",
                 "uart_host_mock_example"
