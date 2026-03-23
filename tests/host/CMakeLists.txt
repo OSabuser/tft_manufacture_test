@@ -94,8 +94,7 @@ add_host_test(
 )
 
 # -----------------------------------------------------------------------------
-# Тест кода, использующего bsp_uart_host через мок (замените SOURCES на свой
-# реальный тест и код под тестом)
+# Тест кода, использующего bsp_uart_host через мок
 # -----------------------------------------------------------------------------
 add_host_test(
   NAME
@@ -112,3 +111,18 @@ add_host_test(
   # ${CMAKE_SOURCE_DIR}/bsp/protocol/include  # protocol.h
   MOCKS
   ${CMAKE_SOURCE_DIR}/bsp/uart_host/mocks/uart_host_mock.c)
+
+# -----------------------------------------------------------------------------
+# Тест кода, использующего bsp_opto через мок
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_bsp_opto
+  SOURCES
+  opto/test_bsp_opto.c
+  ${PROJECT_SOURCE_DIR}/bsp/opto/src/opto.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/bsp/opto/include
+  ${PROJECT_SOURCE_DIR}/bsp/common/include
+  MOCKS
+  ${BSP_MOCKS_DIR})

@@ -26,26 +26,27 @@ __attribute__((weak)) void bsp_systick_hook(void)
 
 #ifndef BSP_TICK_FREERTOS_MODE
 
-#include "fsl_common.h" /* SystemCoreClock, SysTick_Config */
+#include "fsl_common.h"
 
-static volatile uint32_t s_tick_ms = 0U;
+static volatile uint32_t g_s_tick_ms = 0U;
 
+static const uint16_t MS_DIVIDER = 1000; // Переполнение раз в 1 мс
 void bsp_tick_init(void)
 {
-    SysTick_Config(SystemCoreClock / 1000U);
+    SysTick_Config(SystemCoreClock / MS_DIVIDER);
 }
 
 void bsp_tick_inc(void)
 {
-    s_tick_ms++;
+    g_s_tick_ms++;
 }
 
 uint32_t bsp_tick_get_ms(void)
 {
-    return s_tick_ms;
+    return g_s_tick_ms;
 }
 
-void SysTick_Handler(void)
+void SysTick_Handler(void) // NOLINT(readability-identifier-naming)
 {
     bsp_tick_inc();
     bsp_systick_hook();

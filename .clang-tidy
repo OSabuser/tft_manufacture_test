@@ -10,6 +10,7 @@ Checks: >
   hicpp-signed-bitwise,
   performance-*,
   portability-*,
+  -performance-no-int-to-ptr,
   readability-braces-around-statements,
   readability-container-size-empty,
   readability-function-size,

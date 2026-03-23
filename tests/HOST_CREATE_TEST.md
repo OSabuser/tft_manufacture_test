@@ -2,7 +2,7 @@
 
 ## Обзор стека
 
-```
+```bash
 devcontainer
 ─────────────────────────────────────────────────────────────────
 tests/host/<n>/test_<n>.c      ← тест (Unity + опционально fff)
@@ -366,7 +366,7 @@ just build::test-host
 
 ## Чеклист
 
-```
+```bash
 [ ] Определена категория (A или B)
 [ ] tests/host/<n>/test_<n>.c           — тест с main(), setUp(), tearDown()
 [ ] tests/host/mocks/fsl_<driver>.h     — stub (только категория B, если нет)

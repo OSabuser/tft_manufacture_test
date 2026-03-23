@@ -3,7 +3,7 @@ if(BUILD_TESTS_HOST)
 endif()
 
 # -----------------------------------------------------------------------------
-# bsp_board — стартап, сгенерированные файлы Config Tools, инициализация платы
+# bsp_board — генерированные файлы Config Tools, инициализация платы
 # -----------------------------------------------------------------------------
 
 add_library(bsp_board STATIC generated/board.c generated/pin_mux.c)
@@ -12,7 +12,7 @@ add_subdirectory(common)
 add_subdirectory(led)
 add_subdirectory(tick)
 add_subdirectory(uart_host)
-
+add_subdirectory(opto)
 # Подавляем предупреждения при компиляции собственных .c файлов библиотеки
 target_compile_options(bsp_board PRIVATE -w)
 

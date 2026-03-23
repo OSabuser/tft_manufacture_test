@@ -65,6 +65,7 @@ Diagnostics:
       - readability-*
       - portability-*
     Remove:
+      - performance-no-int-to-ptr 
       - readability-magic-numbers
       - readability-isolate-declaration
       - bugprone-easily-swappable-parameters
