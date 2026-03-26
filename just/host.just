@@ -195,6 +195,7 @@ bootstrap:
     if [[ "${PLATFORM}" == "linux" ]]; then
         echo "  === Bootstrap: step 2/3 -- setup-udev ==="
         just host::setup-udev
+        just host::setup-m5-udev
     else
         echo "  ℹ️  step 2/3 -- setup-udev skipped (${PLATFORM})"
     fi
@@ -204,6 +205,22 @@ bootstrap:
     echo "  ✅  Bootstrap complete."
     echo "  Next: open project in VSCode -> 'Reopen in Container'"
     echo ""
+
+[doc('Добавить пользователя в группу dialout (для /dev/ttyACM* — M5Stack, Linux)')]
+[group('setup')]
+setup-m5-udev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(uname -s)" in
+        Linux*) ;;
+        *) echo "  ℹ️  dialout group — Linux only, skipping."; exit 0 ;;
+    esac
+    if groups "$USER" | grep -q dialout; then
+        echo "  ✅  User '${USER}' already in dialout"
+    else
+        sudo usermod -a -G dialout "$USER"
+        echo "  ✅  Added '${USER}' to dialout. Re-login required."
+    fi
 
 # =============================================================================
 # ГРУППА: flash — USB Serial Downloader (SDP через ROM-загрузчик)
@@ -360,21 +377,92 @@ debug-list-targets:
     uv run --directory {{ _hil_dir }} pyocd list --targets | grep -i mimx
 
 # =============================================================================
-# ГРУППА: pipeline
+# ГРУППА: m5 — работа с M5Stack StamPLC
 # =============================================================================
 
-[doc('Входной контроль: прошить firmware_test Release + запустить HIL-тесты')]
-[group('pipeline')]
-incoming: flash-test-release
+M5_PORT := env('HIL_M5_PORT', '/dev/ttyACM1')
+_m5_agent := justfile_directory() / 'tools/hil/m5_agent.py'
+
+[doc('Показать подключённые M5Stack устройства (USB CDC)')]
+[group('m5')]
+m5-scan:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "  ▶  Running HIL tests..."
-    just host::hil-run
 
-[doc('Производственная прошивка: bootloader + tft_app Release')]
-[group('pipeline')]
-production: flash-production
-    @echo "  ✅  Production firmware flashed"
+    echo ""
+    echo "  Сканируем устройства через mpremote..."
+    echo ""
+
+    devices=$(uv run --directory "{{ HIL_DIR }}" mpremote devs 2>&1)
+
+    if [[ -z "$devices" ]]; then
+        echo "  ⚠️  Устройства не найдены"
+        echo "  Проверьте USB-кабель и права доступа к порту"
+        echo "  Linux: sudo usermod -a -G dialout \$USER && newgrp dialout"
+        echo "  macOS: никаких дополнительных прав не требуется"
+        exit 1
+    fi
+
+    echo "$devices"
+    echo ""
+
+    # Подсветить известный VID:PID для Espressif (M5StamPLC JTAG/serial)
+    if echo "$devices" | grep -qi "303a:1001"; then
+        echo "  ✅  M5StamPLC (Espressif USB JTAG/serial) обнаружен"
+    elif echo "$devices" | grep -qi "303a:"; then
+        echo "  ✅  Espressif устройство обнаружено"
+    else
+        echo "  ⚠️  M5StamPLC не найден среди устройств"
+    fi
+    echo ""
+
+[doc('Открыть MicroPython REPL на M5Stack (Ctrl+X для выхода)')]
+[group('m5')]
+m5-repl:
+    uv run --directory {{ HIL_DIR }} mpremote connect {{ M5_PORT }} repl
+
+[doc('Скопировать агент на M5Stack (tools/hil/m5_agent.py → /main.py)')]
+[group('m5')]
+m5-deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "  📤  Копируем агент на M5Stack..."
+    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" \
+        cp "{{ _m5_agent }}" :main.py
+    echo "  ✅  m5_agent.py → /main.py"
+    echo "  ✅  M5Stack перезапущен"
+
+
+
+
+[doc('Показать /main.py на M5Stack (что сейчас установлено)')]
+[group('m5')]
+m5-show:
+    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" \
+        run - <<< "$(printf 'with open(\"/main.py\") as f:\n    print(f.read())\n')"
+
+[doc('Запустить интерактивный CLI для ручного тестирования агента')]
+[group('m5')]
+m5-cli:
+    uv run --directory {{ HIL_DIR }} python m5_host_cli.py --port {{ M5_PORT }}
+
+[doc('Проверить версию MicroPython на M5Stack')]
+[group('m5')]
+m5-version:
+    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" \
+        exec 'import sys; print("MicroPython:", sys.version); import machine; print("Freq:", machine.freq(), "Hz")'
+
+[doc('Развернуть агент + запустить CLI одной командой (быстрый старт)')]
+[group('m5')]
+m5-start:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    just host::m5-deploy
+    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" reset
+    sleep 2
+    just host::m5-cli
+
 
 # =============================================================================
 # ГРУППА: util
@@ -408,3 +496,20 @@ uart-monitor:
     uv run --directory {{ HIL_DIR }} python3 -m serial.tools.miniterm \
         {{ env('HIL_VCOM_PORT') }} {{ env('HIL_VCOM_BAUD', '115200') }} \
         --raw
+
+# =============================================================================
+# ГРУППА: pipeline
+# =============================================================================
+
+[doc('Входной контроль: прошить firmware_test Release + запустить HIL-тесты')]
+[group('pipeline')]
+incoming: flash-test-release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "  ▶  Running HIL tests..."
+    just host::hil-run
+
+[doc('Производственная прошивка: bootloader + tft_app Release')]
+[group('pipeline')]
+production: flash-production
+    @echo "  ✅  Production firmware flashed"

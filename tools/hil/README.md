@@ -26,6 +26,11 @@ tools/hil/
 
 ## Концепция HIL-тестов
 
+```bash
+espflash write-bin 0 ESP32_GENERIC_S3-20251209-v1.27.0.bin # microPython
+
+```
+
 Каждый HIL-тест — это пара:
 
 ```

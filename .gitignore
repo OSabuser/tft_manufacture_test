@@ -62,6 +62,7 @@ Testing/
 # Файлы настройки среды разработки
 .project
 compile_commands.json
+.pytest_cache/
 .cache/
 .DS_Store
 .venv/
