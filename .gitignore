@@ -69,6 +69,7 @@ compile_commands.json
 __pycache__/
 *.pyc
 .env
+.claude
 tools/host/.venv-host/
 tools/host/.venv-host-win/
 

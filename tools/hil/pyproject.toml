@@ -15,9 +15,10 @@ testpaths = ["."]
 python_files = ["test_*.py"]
  
 markers = [
-    "smoke: быстрые sanity-тесты",
     "gpio:  тесты GPIO",
     "uart:  тесты UART CLI",
+    "opto:  тесты оптоизолированных входов",
+    "m5:    тесты с участием M5StampPLC",
     "slow:  тесты с большими таймаутами",
 ]
  

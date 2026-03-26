@@ -1,5 +1,5 @@
 """
-m5_agent.py — MicroPython агент для M5Stack StamPLC.
+m5/agent.py — MicroPython агент для M5Stack StamPLC.
 Размещение: /main.py на устройстве.
 
 Деплой:

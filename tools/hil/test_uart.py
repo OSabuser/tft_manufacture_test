@@ -7,8 +7,8 @@ test_uart.py — HIL тест bsp_uart_host.
   тесты                     → uart_cmd() → assert
 
 Запуск:
+  just host::hil-uart
   uv run pytest test_uart.py -v
-  uv run pytest test_uart.py -v -m smoke
   uv run pytest test_uart.py -v --no-load   # ELF уже запущен
 """
 
@@ -25,12 +25,10 @@ class TestUartBasic:
         self.ser = uart
 
     # ------------------------------------------------------------------
-    @pytest.mark.smoke
     def test_ping(self):
         """PING → PONG: канал работает в обе стороны."""
         assert uart_cmd(self.ser, "PING") == "PONG"
 
-    @pytest.mark.smoke
     def test_ping_repeated(self):
         """Десять PING подряд — нет зависаний, нет потерь."""
         for i in range(10):

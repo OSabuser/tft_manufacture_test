@@ -105,7 +105,7 @@ def _wait_ready(ser: serial.Serial) -> None:
             print(_ok("OK"))
             return
     print(_err("TIMEOUT"))
-    print(_err("  Агент не ответил. Проверьте порт и что m5_agent.py загружен на m5stamPLC."))
+    print(_err("  Агент не ответил. Проверьте порт и что m5/agent.py загружен (just host::m5-deploy)."))
     sys.exit(1)
 
 

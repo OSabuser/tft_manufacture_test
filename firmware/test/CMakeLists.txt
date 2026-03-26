@@ -20,6 +20,7 @@ target_link_libraries(
           bsp_tick
           bsp_uart_host
           bsp_boot_xip
+          bsp_opto
           port_log_uart
           lib_external # SEGGER RTT если включён через SEGGER_RTT_ENABLED
 )

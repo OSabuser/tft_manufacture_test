@@ -165,7 +165,8 @@
             "displayName": "Target Tests — Debug (HIL)",
             "configurePreset": "target-debug",
             "targets": [
-                "test_host_uart"
+                "test_host_uart",
+                "test_hil_opto"
             ]
         }
     ],

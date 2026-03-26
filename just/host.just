@@ -223,12 +223,12 @@ setup-m5-udev:
     fi
 
 # =============================================================================
-# ГРУППА: flash — USB Serial Downloader (SDP через ROM-загрузчик)
+# ГРУППА: flash-sdp — USB Serial Downloader (SDP через ROM-загрузчик)
 # Требует: плата в режиме Serial Downloader (BOOT_MODE = 01)
 # =============================================================================
 
 [doc('Прошить образ через USB SDP: flash <firmware_test|bootloader|app> <debug|release>')]
-[group('flash')]
+[group('flash-sdp')]
 flash project type="release":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -241,7 +241,7 @@ flash project type="release":
         --firmware "{{ project }}" --build-type "${BUILD_TYPE}"
 
 [doc('Прошить образ в RAM через USB SDP: flash-ram <firmware_test|bootloader|app> <debug|release>')]
-[group('flash')]
+[group('flash-sdp')]
 flash-ram project type="debug":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -254,18 +254,18 @@ flash-ram project type="debug":
         --firmware "{{ project }}" --build-type "${BUILD_TYPE}" --ram-only
 
 [doc('Прошить firmware_test Debug через USB SDP')]
-[group('flash')]
+[group('flash-sdp')]
 flash-test-debug:
     @just host::flash firmware_test debug
 
 [doc('Прошить firmware_test Release через USB SDP')]
-[group('flash')]
+[group('flash-sdp')]
 flash-test-release:
     @just host::flash firmware_test release
 
 [confirm("Flash bootloader + app (Release)?")]
 [doc('Прошить bootloader + tft_app Release через USB SDP (производство)')]
-[group('flash')]
+[group('flash-sdp')]
 flash-production:
     @just host::flash bootloader release
     @just host::flash app release
@@ -314,6 +314,15 @@ flash-swd-app-release:
     uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
         --firmware app --build-type Release
 
+[confirm("Стереть всю Flash (W25Q128)? Все прошивки будут удалены.")]
+[doc('Стереть всю Flash (W25Q128) через SWD (chip erase). Нужен power cycle после')]
+[group('flash-swd')]
+flash-swd-erase:
+    uv run --directory {{ HIL_DIR }} pyocd erase \
+        --target {{ env('PYOCD_TARGET', 'mimxrt1050_quadspi') }} \
+        --frequency {{ env('PYOCD_FREQUENCY', '4000000') }} \
+        --chip
+
 # =============================================================================
 # ГРУППА: hil — запуск HIL-тестов на реальном железе
 # Сборка target-прошивок — в devcontainer: just build::build-hil
@@ -321,30 +330,23 @@ flash-swd-app-release:
 
 _hil_build := BUILD_DIR / "target-debug"
 
-[doc('Загрузить test_host_uart.elf на таргет без запуска тестов (для ручной отладки)')]
-[group('hil')]
-hil-load:
-    HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} python load_and_run.py \
-        {{ _hil_build }}/tests/target/host_uart/test_host_uart.elf
-
 [doc('Запустить все HIL-тесты')]
 [group('hil')]
 hil-run:
     HIL_BUILD_DIR={{ _hil_build }} \
         uv run --directory {{ HIL_DIR }} pytest -v
 
-[doc('Запустить только smoke HIL-тесты (быстро, для CI)')]
+[doc('Запустить HIL-тест UART')]
 [group('hil')]
-hil-smoke:
+hil-uart:
     HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest -v -m smoke
+        uv run --directory {{ HIL_DIR }} pytest test_uart.py -v
 
-[doc('Запустить HIL-тесты без перезагрузки ELF (прошивка уже запущена)')]
+[doc('Запустить HIL-тест оптоизолированных входов')]
 [group('hil')]
-hil-run-fast:
+hil-opto:
     HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest -v --no-load
+        uv run --directory {{ HIL_DIR }} pytest test_opto.py -v
 
 # =============================================================================
 # ГРУППА: debug — GDB-сервер для отладки из VSCode (devcontainer)
@@ -381,7 +383,7 @@ debug-list-targets:
 # =============================================================================
 
 M5_PORT := env('HIL_M5_PORT', '/dev/ttyACM1')
-_m5_agent := justfile_directory() / 'tools/hil/m5_agent.py'
+_m5_agent := justfile_directory() / 'tools/hil/m5/agent.py'
 
 [doc('Показать подключённые M5Stack устройства (USB CDC)')]
 [group('m5')]
@@ -421,31 +423,6 @@ m5-scan:
 m5-repl:
     uv run --directory {{ HIL_DIR }} mpremote connect {{ M5_PORT }} repl
 
-[doc('Скопировать агент на M5Stack (tools/hil/m5_agent.py → /main.py)')]
-[group('m5')]
-m5-deploy:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "  📤  Копируем агент на M5Stack..."
-    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" \
-        cp "{{ _m5_agent }}" :main.py
-    echo "  ✅  m5_agent.py → /main.py"
-    echo "  ✅  M5Stack перезапущен"
-
-
-
-
-[doc('Показать /main.py на M5Stack (что сейчас установлено)')]
-[group('m5')]
-m5-show:
-    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" \
-        run - <<< "$(printf 'with open(\"/main.py\") as f:\n    print(f.read())\n')"
-
-[doc('Запустить интерактивный CLI для ручного тестирования агента')]
-[group('m5')]
-m5-cli:
-    uv run --directory {{ HIL_DIR }} python m5_host_cli.py --port {{ M5_PORT }}
-
 [doc('Проверить версию MicroPython на M5Stack')]
 [group('m5')]
 m5-version:
@@ -463,6 +440,27 @@ m5-start:
     sleep 2
     just host::m5-cli
 
+[doc('Управление питанием таргета через M5 RLY1: m5-power <on|off>')]
+[group('m5')]
+m5-power state:
+    uv run --directory {{ HIL_DIR }} python m5/power.py \
+        --port {{ M5_PORT }} --state {{ state }}
+
+[doc('Скопировать агент на M5Stack (tools/hil/m5_agent.py → /main.py)')]
+[group('m5')]
+m5-deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "  📤  Копируем агент на M5Stack..."
+    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" \
+        cp "{{ _m5_agent }}" :main.py
+    echo "  ✅  m5_agent.py → /main.py"
+    echo "  ✅  M5Stack перезапущен"
+
+[doc('Запустить интерактивный CLI для ручного тестирования агента')]
+[group('m5')]
+m5-cli:
+    uv run --directory {{ HIL_DIR }} python m5/cli.py --port {{ M5_PORT }}
 
 # =============================================================================
 # ГРУППА: util

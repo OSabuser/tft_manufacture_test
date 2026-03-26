@@ -23,8 +23,9 @@
 #define OPTO_IN2_PIN 21U
 #define OPTO_RS_PIN  23U
 
-/* Active-low: оптопара тянет пин к GND → ACTIVE = LOW = 0 */
-#define OPTO_PIN_TO_STATE(raw) ((raw) == 0U ? BSP_OPTO_STATE_ACTIVE : BSP_OPTO_STATE_INACTIVE)
+//FIXME: fixed (оптопара неинтвертирующая: когда на входе 1, на выходе тоже будет 1)
+/* Active-HIGH: оптопара тянет пин к VCC → ACTIVE = HIGH = 1 */
+#define OPTO_PIN_TO_STATE(raw) ((raw) == 1U ? BSP_OPTO_STATE_ACTIVE : BSP_OPTO_STATE_INACTIVE)
 
 /* ── Состояние канала ────────────────────────────────────────────────────── */
 
@@ -71,6 +72,7 @@ static void enable_irq(uint8_t pin, bsp_opto_edge_t edge)
  * Общий обработчик для GPIO1[16..31].
  * Все три канала (пины 21, 22, 23) попадают сюда.
  */
+
 void GPIO1_Combined_16_31_IRQHandler(void) // NOLINT(readability-identifier-naming)
 {
     uint32_t flags = GPIO_GetPinsInterruptFlags(OPTO_GPIO_BASE);
@@ -185,11 +187,11 @@ void bsp_opto_process(void)
     for (bsp_opto_ch_t ch = 0U; ch < BSP_OPTO_CH_COUNT; ch++)
     {
         opto_ch_state_t *p_ch = &g_s_opto.channels[ch];
-
-        if (!p_ch->enabled || !p_ch->pending)
-        {
-            continue;
-        }
+        // TODO: разобраться как ловить ситуацию, когда сигнал отключается (Возможно нужно включить, как RISING, так и FALLING (кроме RS))
+        // if (!p_ch->enabled || !p_ch->pending)
+        // {
+        //     continue;
+        // }
 
         uint32_t elapsed = now - p_ch->last_edge_ms;
         if (elapsed < g_s_opto.debounce_ms)

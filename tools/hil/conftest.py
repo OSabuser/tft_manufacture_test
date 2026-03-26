@@ -6,6 +6,7 @@ conftest.py — pytest-фикстуры для HIL-тестов MIMXRT1052.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -19,14 +20,18 @@ from pyocd_utils import flexram_init, load_elf, open_target, run_from_vectors
 
 log = logging.getLogger(__name__)
 
+# Задержка после включения питания таргета (мс стабилизации + POR)
+_POWER_ON_SETTLE_S = 1.0
+
 
 # ---------------------------------------------------------------------------
 # CLI-опции pytest (перекрывают .env и os.environ)
 # ---------------------------------------------------------------------------
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--elf",     default=None,          help="Путь к .elf файлу")
-    parser.addoption("--vcom",    default=cfg.VCOM_PORT,  help="VCOM-порт MCU-Link")
-    parser.addoption("--no-load", action="store_true",    help="ELF уже запущен")
+    parser.addoption("--elf",      default=None,           help="Путь к .elf файлу")
+    parser.addoption("--vcom",     default=cfg.VCOM_PORT,  help="VCOM-порт MCU-Link")
+    parser.addoption("--m5-port",  default=None,           help="M5StampPLC serial port")
+    parser.addoption("--no-load",  action="store_true",    help="ELF уже запущен")
 
 
 # ---------------------------------------------------------------------------
@@ -49,26 +54,10 @@ def _load_elf(request: pytest.FixtureRequest, default_elf: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Фикстуры загрузки (scope=module — один раз на файл с тестами)
+# Общая логика UART: открыть порт, дождаться READY
 # ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="module")
-def loaded_host_uart(request: pytest.FixtureRequest) -> None:
-    _load_elf(
-        request,
-        Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
-    )
-
-
-# ---------------------------------------------------------------------------
-# Фикстура UART — открывает порт и ждёт "READY\r\n" от прошивки
-# ---------------------------------------------------------------------------
-@pytest.fixture(scope="module")
-def uart(
-    request: pytest.FixtureRequest,
-    loaded_host_uart,
-) -> Generator[serial.Serial, None, None]:
-
+def _open_uart_and_wait_ready(request: pytest.FixtureRequest) -> serial.Serial:
+    """Открыть VCOM, дождаться READY от прошивки."""
     port = request.config.getoption("--vcom")
     log.info("UART %s @ %d baud", port, cfg.VCOM_BAUD)
 
@@ -97,7 +86,157 @@ def uart(
         )
 
     ser.reset_input_buffer()
+    return ser
+
+
+# ---------------------------------------------------------------------------
+# Фикстуры загрузки (scope=module — один раз на файл с тестами)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def loaded_host_uart(request: pytest.FixtureRequest) -> None:
+    _load_elf(
+        request,
+        Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
+    )
+
+
+@pytest.fixture(scope="module")
+def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+    """Загрузить test_hil_opto.elf. Зависит от m5 — таргет должен быть запитан."""
+    _load_elf(
+        request,
+        Path(cfg.BUILD_DIR) / "tests/target/hil_opto/test_hil_opto.elf",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Фикстура UART — открывает порт и ждёт "READY\r\n" от прошивки
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def uart(
+    request: pytest.FixtureRequest,
+    loaded_host_uart,
+) -> Generator[serial.Serial, None, None]:
+    ser = _open_uart_and_wait_ready(request)
     yield ser
+    ser.close()
+
+
+@pytest.fixture(scope="module")
+def uart_opto(
+    request: pytest.FixtureRequest,
+    loaded_hil_opto,
+) -> Generator[serial.Serial, None, None]:
+    ser = _open_uart_and_wait_ready(request)
+    yield ser
+    ser.close()
+
+
+# ---------------------------------------------------------------------------
+# M5StampPLC — драйвер для pytest (JSON-lines протокол)
+# ---------------------------------------------------------------------------
+class M5Agent:
+    """Драйвер M5StampPLC для pytest (JSON-lines протокол через USB CDC)."""
+
+    def __init__(self, ser: serial.Serial) -> None:
+        self._ser = ser
+
+    def cmd(self, command: str, **kwargs) -> dict:
+        """Отправить JSON-команду, вернуть parsed-ответ. RuntimeError при ok=false."""
+        payload = {"cmd": command, **kwargs}
+        self._ser.reset_input_buffer()
+        self._ser.write((json.dumps(payload) + "\r\n").encode("ascii"))
+
+        deadline = time.monotonic() + cfg.M5_TIMEOUT
+        while time.monotonic() < deadline:
+            raw = self._ser.readline()
+            if not raw:
+                continue
+            text = raw.decode("ascii", errors="replace").strip()
+            if not text or text == "READY" or not text.startswith("{"):
+                continue
+            try:
+                resp = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            if not resp.get("ok"):
+                raise RuntimeError(
+                    f"M5 error: {resp.get('err', '?')} (cmd={command})"
+                )
+            return resp
+
+        raise TimeoutError(f"M5: нет ответа на '{command}'")
+
+    def ping(self) -> None:
+        self.cmd("ping")
+
+    def power(self, state: bool) -> None:
+        """Включить/выключить питание таргета (RLY1)."""
+        self.cmd("power", state=state)
+
+    def opto_set(self, ch: int, state: bool) -> None:
+        self.cmd("opto_set", ch=ch, state=state)
+
+    def opto_all_off(self) -> None:
+        self.cmd("opto_all_off")
+
+
+# ---------------------------------------------------------------------------
+# Фикстура M5StampPLC
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def m5(request: pytest.FixtureRequest) -> Generator[M5Agent, None, None]:
+    port = request.config.getoption("--m5-port") or cfg.M5_PORT
+    log.info("M5 %s @ %d baud", port, cfg.M5_BAUD)
+
+    ser = serial.Serial(
+        port=port,
+        baudrate=cfg.M5_BAUD,
+        timeout=cfg.M5_TIMEOUT,
+        write_timeout=1.0,
+    )
+
+    # Ждём READY; fallback на ping если агент уже работает
+    deadline = time.monotonic() + cfg.READY_TIMEOUT
+    ready = False
+    while time.monotonic() < deadline:
+        line = ser.readline().decode("ascii", errors="replace").strip()
+        if line == "READY":
+            ready = True
+            log.info("M5 READY получен")
+            break
+
+    agent = M5Agent(ser)
+    if not ready:
+        try:
+            agent.ping()
+            log.info("M5 уже работает (READY пропущен, ping OK)")
+        except Exception:
+            ser.close()
+            pytest.fail(
+                "M5 agent не отвечает — проверьте HIL_M5_PORT и "
+                "что m5/agent.py развёрнут (just host::m5-deploy)."
+            )
+
+    # Включаем питание таргета и ждём стабилизации
+    agent.power(True)
+    log.info("Питание таргета включено, ждём %.1f с", _POWER_ON_SETTLE_S)
+    time.sleep(_POWER_ON_SETTLE_S)
+
+    agent.opto_all_off()  # безопасное начальное состояние
+    yield agent
+
+    # Teardown: выключить всё
+    try:
+        agent.opto_all_off()
+    except Exception:
+        pass
+    try:
+        agent.power(False)
+        log.info("Питание таргета выключено")
+    except Exception:
+        pass
     ser.close()
 
 
