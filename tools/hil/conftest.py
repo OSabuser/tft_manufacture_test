@@ -90,51 +90,9 @@ def _open_uart_and_wait_ready(request: pytest.FixtureRequest) -> serial.Serial:
 
 
 # ---------------------------------------------------------------------------
-# Фикстуры загрузки (scope=module — один раз на файл с тестами)
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="module")
-def loaded_host_uart(request: pytest.FixtureRequest) -> None:
-    _load_elf(
-        request,
-        Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
-    )
-
-
-@pytest.fixture(scope="module")
-def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
-    """Загрузить test_hil_opto.elf. Зависит от m5 — таргет должен быть запитан."""
-    _load_elf(
-        request,
-        Path(cfg.BUILD_DIR) / "tests/target/hil_opto/test_hil_opto.elf",
-    )
-
-
-# ---------------------------------------------------------------------------
-# Фикстура UART — открывает порт и ждёт "READY\r\n" от прошивки
-# ---------------------------------------------------------------------------
-@pytest.fixture(scope="module")
-def uart(
-    request: pytest.FixtureRequest,
-    loaded_host_uart,
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
-
-
-@pytest.fixture(scope="module")
-def uart_opto(
-    request: pytest.FixtureRequest,
-    loaded_hil_opto,
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
-
-
-# ---------------------------------------------------------------------------
 # M5StampPLC — драйвер для pytest (JSON-lines протокол)
+#
+# Определяем РАНЬШЕ фикстур, которые его используют в аннотациях.
 # ---------------------------------------------------------------------------
 class M5Agent:
     """Драйвер M5StampPLC для pytest (JSON-lines протокол через USB CDC)."""
@@ -237,6 +195,58 @@ def m5(request: pytest.FixtureRequest) -> Generator[M5Agent, None, None]:
         log.info("Питание таргета выключено")
     except Exception:
         pass
+    ser.close()
+
+
+# ---------------------------------------------------------------------------
+# Фикстуры загрузки (scope=module — один раз на файл с тестами)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def loaded_host_uart(request: pytest.FixtureRequest) -> None:
+    _load_elf(
+        request,
+        Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
+    )
+
+
+@pytest.fixture(scope="module")
+def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+    """
+    Загрузить test_hil_opto.elf.
+
+    Явная зависимость от фикстуры m5 гарантирует порядок:
+      1. m5 создаётся первым → питание таргета включено
+      2. только потом pyOCD подключается и грузит ELF
+    Без этой зависимости pytest мог бы попытаться подключиться
+    к MCU пока он ещё обесточен.
+    """
+    _load_elf(
+        request,
+        Path(cfg.BUILD_DIR) / "tests/target/hil_opto/test_hil_opto.elf",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Фикстуры UART
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def uart(
+    request: pytest.FixtureRequest,
+    loaded_host_uart,
+) -> Generator[serial.Serial, None, None]:
+    ser = _open_uart_and_wait_ready(request)
+    yield ser
+    ser.close()
+
+
+@pytest.fixture(scope="module")
+def uart_opto(
+    request: pytest.FixtureRequest,
+    loaded_hil_opto,
+) -> Generator[serial.Serial, None, None]:
+    ser = _open_uart_and_wait_ready(request)
+    yield ser
     ser.close()
 
 

@@ -14,8 +14,8 @@
 форматирование, host-тесты, сборка HIL target-прошивок, подготовка HAB-образов.
 Управляется через VSCode tasks и модуль `just build::`.
 
-**Хост** — всё что касается железа: прошивка платы через USB, HIL-тесты
-через pyOCD + pytest, отладка через GDB-сервер.
+**Хост** — всё что касается железа: прошивка платы через USB или SWD,
+HIL-тесты через pyOCD + pytest, GDB-сервер для отладки.
 Управляется через модуль `just host::`.
 
 ---
@@ -28,81 +28,94 @@
 ├── Хост (Linux / macOS / Windows + Git Bash)
 │   ├── just          ← запуск задач хостового уровня (just host::*)
 │   ├── docker        ← управление devcontainer
-│   ├── uv + spsdk    ← прошивка платы (flash_usb.py, sdphost, blhost)
-│   │                    venv: tools/host/.venv-host (Linux/macOS)
-│   │                          tools/host/.venv-host-win (Windows)
-│   ├── uv + pyocd    ← HIL-тесты (tools/hil/.venv)
-│   │     + pyserial
+│   ├── uv + spsdk    ← прошивка через USB ROM (flash_usb.py, sdphost, blhost)
+│   │                    venv: tools/host/
+│   ├── uv + pyocd    ← GDB-сервер отладки + HIL-тесты
+│   │     + pyserial     venv: tools/hil/
 │   │     + pytest
-│   ├── JLinkGDBServer / probe-rs  ← сервер отладки (USB → TCP :2331)
+│   │     + mpremote   ← деплой агента на M5StampPLC
 │   └── VSCode        ← IDE (Dev Containers extension)
 │
 ├── Devcontainer (Docker)
-│   ├── ARM GCC 13.3     ← кросс-компилятор (firmware + HIL target-прошивки)
-│   ├── cmake + ninja    ← система сборки
-│   ├── clang-17         ← компилятор для host-тестов
-│   ├── clangd-17        ← LSP (автодополнение, диагностика)
-│   ├── clang-tidy-17    ← статический анализ
-│   ├── clang-format-17  ← форматирование кода
-│   ├── just             ← запуск задач внутри контейнера (just build::*)
-│   ├── uv + spsdk       ← сборка HAB-образов (только nxpimage)
-│   └── Unity + fff      ← фреймворки host-тестов
+│   ├── arm-none-eabi-gcc  ← кросс-компилятор (firmware + HIL target-прошивки)
+│   ├── cmake + ninja      ← система сборки
+│   ├── clang-17           ← компилятор для host-тестов
+│   ├── clangd-17          ← LSP (автодополнение, диагностика)
+│   ├── clang-tidy-17      ← статический анализ
+│   ├── clang-format-17    ← форматирование кода
+│   ├── just               ← запуск задач внутри контейнера (just build::*)
+│   ├── uv + spsdk         ← сборка HAB-образов (только nxpimage)
+│   └── Unity + fff        ← фреймворки host-тестов
 │
-└── Плата TFT (IMXRT1052)
-    ├── USB ──────────────────▶ хост (SDP-режим, прошивка)
-    ├── NXP MCU-Link (USB) ───▶ хост (CMSIS-DAP SWD + VCOM)
-    │     ├── SWD  ← pyOCD загружает HIL ELF в RAM
-    │     └── VCOM ← pytest общается с прошивкой через UART
-    ├── SWD ──────────────────▶ JLink/probe-rs на хосте (отладка)
-    └── CAN / UART / IO ──────▶ локальный стенд (будущие HIL-тесты)
+├── Плата TFT (MIMXRT1052)
+│   ├── USB ──────────────────────▶ хост (SDP-режим, прошивка через ROM)
+│   └── MCU-Link (USB) ───────────▶ хост (CMSIS-DAP)
+│         ├── SWD  ← pyOCD: GDB-сервер отладки + прошивка Flash + загрузка HIL ELF в RAM
+│         └── VCOM ← pytest общается с HIL прошивкой через UART CLI
+│
+└── HIL стенд (M5Stack StamPLC)
+    ├── USB ──────────────────────▶ хост (M5 агент, JSON-lines CLI)
+    ├── RLY1 ─────────────────────▶ VIN таргета (управление питанием)
+    ├── RLY2 ─────────────────────▶ RS_RX  таргета (BSP_OPTO_CH_RS)
+    ├── RLY3 ─────────────────────▶ EXT_IN1 таргета (BSP_OPTO_CH_IN1)
+    └── RLY4 ─────────────────────▶ EXT_IN2 таргета (BSP_OPTO_CH_IN2)
 ```
 
 ---
 
 ## 3. Что устанавливается и где
 
-| Инструмент | Хост | Devcontainer | Сервер |
-|------------|------|--------------|--------|
-| `just` | ✅ | ✅ Dockerfile | ✅ |
-| `docker` | ✅ | — | — |
-| `uv` | ✅ | ✅ Dockerfile | ✅ |
-| `spsdk` | ✅ uv sync | ✅ uv sync | ✅ uv sync |
-| `pyocd` + `pyserial` + `pytest` | ✅ uv sync | — | ✅ uv sync |
-| ARM GCC toolchain | — | ✅ | — |
-| `cmake` / `ninja` | — | ✅ | — |
-| `clang` / `clangd` | — | ✅ | — |
-| Unity / fff | — | ✅ | — |
-| JLink / probe-rs | ✅ | — | — |
+| Инструмент | Хост | Devcontainer |
+|------------|------|--------------|
+| `just` | ✅ | ✅ Dockerfile |
+| `docker` | ✅ | — |
+| `uv` | ✅ | ✅ Dockerfile |
+| `spsdk` (sdphost, blhost, nxpimage) | ✅ `tools/host/` | ✅ `tools/host/` |
+| `pyocd` + `pyserial` + `pytest` | ✅ `tools/hil/` | — |
+| `mpremote` | ✅ `tools/hil/` | — |
+| ARM GCC toolchain | — | ✅ |
+| `cmake` / `ninja` | — | ✅ |
+| `clang` / `clangd` / `clang-tidy` | — | ✅ |
+| Unity / fff | — | ✅ vendored |
 
-`spsdk` и `pyocd` — разные venv с разными ролями:
+`spsdk` и `pyocd` — отдельные uv-проекты с разными ролями:
 
-- `tools/host/` — `spsdk`: `nxpimage` + `sdphost` + `blhost` — прошивка через USB ROM
-- `tools/hil/` — `pyocd` + `pyserial` + `pytest` — HIL-тесты через SWD + VCOM
+- `tools/host/` — `spsdk`: `nxpimage` + `sdphost` + `blhost` — прошивка через USB ROM и HAB-образы
+- `tools/hil/` — `pyocd` + `pyserial` + `pytest` + `mpremote` — GDB-сервер, HIL-тесты, деплой M5 агента
 
 ---
 
 ## 3.1 Конфигурация проекта — `.env`
 
 `.env` в корне репозитория — единый источник конфигурации для всего стека.
+`.env.example` — шаблон без значений, коммитится в репозиторий.
 
 ```ini
-# USB VID:PID (NXP)
+# Hardware
+BOARD=MIMXRT1052
+
+# USB VID:PID (NXP ROM + Flashloader)
 BOOTROM_VID=1fc9
 BOOTROM_PID=0130
 FLASHLOADER_VID=15a2
 FLASHLOADER_PID=0073
 
-# GDB / отладка
+# Debug / SWD
 GDB_PORT=3333
-GDB_EXECUTABLE=gdb-multiarch
-OPENOCD_INTERFACE=cmsis-dap.cfg
-TARGET_CFG=target/imxrt.cfg
+GDB_EXECUTABLE=arm-none-eabi-gdb
+PYOCD_TARGET=mimxrt1050_quadspi
+PYOCD_FREQUENCY=4000000
+FCB_PATH=tools/host/dcd/w25q128_fdcb.bin
 
 # HIL — аппаратный стенд
-HIL_VCOM_PORT=/dev/tty.usbmodemXXXX   # VCOM-порт MCU-Link (macOS/Linux)
-# HIL_VCOM_BAUD=115200                 # default: 115200
-# HIL_READY_TIMEOUT=5.0               # default: 5.0 сек
-# HIL_PYOCD_FREQUENCY=1000000         # default: 1 МГц
+HIL_VCOM_PORT=/dev/cu.usbmodemXXXX   # MCU-Link VCOM (macOS: cu.usbmodem*, Linux: ttyACM*)
+HIL_M5_PORT=/dev/cu.usbmodemYYYY     # M5StampPLC USB CDC
+HIL_VCOM_BAUD=115200
+HIL_M5_BAUD=115200
+HIL_READY_TIMEOUT=5.0
+HIL_M5_TIMEOUT=3.0
+HIL_PYOCD_FREQUENCY=1000000
+HIL_BUILD_DIR=build/target-debug
 ```
 
 **Как значения попадают в инструменты:**
@@ -111,15 +124,14 @@ HIL_VCOM_PORT=/dev/tty.usbmodemXXXX   # VCOM-порт MCU-Link (macOS/Linux)
 .env
  │
  ├─▶ just (set dotenv-load + set export)
- │     ├─▶ just-рецепты: {{BOOTROM_VID}}, {{HIL_VCOM_PORT}}
+ │     ├─▶ just-рецепты: {{BOOTROM_VID}}, {{HIL_VCOM_PORT}}, {{GDB_PORT}}
  │     └─▶ uv run python ← наследует os.environ автоматически
- │           ├─▶ flash_usb.py:   os.environ.get("BOOTROM_VID")
- │           └─▶ env_config.py:  os.environ.get("HIL_VCOM_PORT")
+ │           ├─▶ flash_usb.py:   os.environ["BOOTROM_VID"]
+ │           ├─▶ flash_swd.py:   os.environ["PYOCD_TARGET"]
+ │           └─▶ env_config.py:  os.environ["HIL_VCOM_PORT"]
  │
- └─▶ .vscode/launch.json  ← через ${env:GDB_PORT}
+ └─▶ .vscode/launch.json ← через ${env:GDB_PORT}
 ```
-
-`.env.example` — шаблон без значений, коммитится в репозиторий.
 
 ---
 
@@ -128,37 +140,74 @@ HIL_VCOM_PORT=/dev/tty.usbmodemXXXX   # VCOM-порт MCU-Link (macOS/Linux)
 ```bash
 /
 ├── justfile                      ← корневой оркестратор; модули: build, host, ci
-├── bootstrap.sh                  ← уровень 0: устанавливает just+uv → just host::bootstrap
-├── pyocd.yaml                    ← конфигурация pyOCD (target: cortex_m, RAM-режим)
+├── bootstrap.sh                  ← уровень 0: устанавливает just + uv → just host::bootstrap
+├── pyocd.yaml                    ← конфигурация pyOCD (HIL RAM-режим)
+├── pyocd_debug.yaml              ← конфигурация pyOCD (GDB-сервер отладки)
 ├── .env / .env.example
+│
 ├── just/
 │   ├── build.just                ← devcontainer: сборка firmware, host-тесты,
 │   │                                HAB-образы, HIL target-прошивки
-│   ├── host.just                 ← хост: прошивка, bootstrap, HIL-тесты
+│   ├── host.just                 ← хост: прошивка (USB + SWD), HIL-тесты,
+│   │                                GDB-сервер, M5StampPLC, bootstrap
 │   └── ci.just
+│
 ├── .devcontainer/
 │   ├── Dockerfile
 │   └── devcontainer.json
+│
 ├── .vscode/
+│   ├── launch.json               ← cortex-debug конфигурации (firmware_test, bootloader, tft_app)
 │   └── tasks.json                ← UI для just build::* (внутри devcontainer)
+│
 ├── tools/
 │   ├── host/                     ← spsdk-окружение (прошивка через USB ROM)
-│   │   ├── flash_usb.py
-│   │   ├── hab/                  ← HAB yaml-конфиги
-│   │   ├── dcd/                  ← ivt_flashloader.bin, dcd.bin
+│   │   ├── flash_usb.py          ← USB SDP: sdphost + blhost
+│   │   ├── flash_swd.py          ← SWD: FCB + HAB → pyOCD Flash
+│   │   ├── hab/                  ← HAB yaml-конфиги (nxpimage)
+│   │   ├── dcd/                  ← w25q128_fdcb.bin, ivt_flashloader.bin
 │   │   └── uv.lock
+│   │
 │   └── hil/                      ← HIL pytest-окружение
-│       ├── conftest.py           ← фикстуры: loaded_<n>, uart
-│       ├── pyocd_utils.py        ← FLEXRAM, ELF loader, run_from_vectors
-│       ├── env_config.py         ← конфигурация из os.environ
-│       ├── load_and_run.py       ← CLI-утилита загрузки ELF
-│       ├── test_uart.py          ← HIL тесты bsp_uart_host
+│       ├── conftest.py           ← фикстуры: m5, loaded_<n>, uart_<n>
+│       ├── pyocd_utils.py        ← FLEXRAM init, ELF loader, run_from_vectors
+│       ├── env_config.py         ← конфигурация из os.environ / .env
+│       ├── load_and_run.py       ← CLI-утилита загрузки ELF в RAM вручную
+│       ├── test_uart.py          ← HIL тест bsp_uart_host (без M5)
+│       ├── test_opto.py          ← HIL тест bsp_opto (через M5StampPLC)
+│       ├── m5/
+│       │   ├── agent.py          ← MicroPython агент на M5StampPLC
+│       │   ├── cli.py            ← интерактивный CLI для ручного тестирования стенда
+│       │   └── power.py          ← управление питанием таргета из командной строки
 │       └── uv.lock
+│
 ├── CMakePresets.json             ← Debug · Release · host-debug · target-debug
-└── tests/
-    ├── host/                     ← host unit-тесты (Unity + fff)
-    └── target/                   ← HIL target-прошивки (RAM, pyOCD)
-        └── host_uart/            ← CLI для тестирования UART
+│
+├── tests/
+│   ├── host/                     ← host unit-тесты (Unity + fff)
+│   │   ├── mocks/                ← stub-хедеры NXP SDK для компиляции на хосте
+│   │   ├── led/
+│   │   ├── opto/
+│   │   ├── ring_buffer/
+│   │   ├── timeout/
+│   │   └── uart_host/
+│   └── target/                   ← HIL target-прошивки (RAM, pyOCD)
+│       ├── host_uart/            ← CLI для тестирования bsp_uart_host
+│       └── hil_opto/             ← CLI для тестирования bsp_opto
+│
+└── docs/
+    ├── DEV_ARCH.md               ← этот документ
+    ├── HOW_TO_FLASH.md           ← прошивка (USB SDP + SWD)
+    ├── HOW_TO_DEBUG.md           ← отладка (GDB + RTT + FreeRTOS)
+    ├── hardware/                 ← схемы, datasheet платы
+    ├── mimxrt1052/               ← MCU: BOOT_FLAGS, reference manual
+    └── testing/
+        ├── hil/
+        │   ├── HIL_HOWTO.md     ← как проводить HIL-тесты
+        │   ├── HIL_BENCH.md     ← стенд: оборудование, подключение
+        │   └── HIL_CREATE_TEST.md ← как добавить новый HIL-тест
+        └── host/
+            └── HOST_CREATE_TEST.md ← как добавить host unit-тест
 ```
 
 ---
@@ -186,36 +235,32 @@ git clone <repo-url> && cd <repo>
 bootstrap.sh  (уровень 0)
 │
 ├── определить платформу (Linux / macOS / Windows Git Bash)
-├── проверить/установить just >= 1.36.0
 ├── проверить/установить uv >= 0.4.0
+├── проверить/установить just >= 1.36.0 (через uv tool)
 │
 └── exec just host::bootstrap
       ├── [1/3] check-deps    — just · uv · docker
       ├── [2/3] setup-udev    — udev-правила NXP USB (только Linux)
       │           1FC9:0130 ← BootROM SDP
       │           15A2:0073 ← Flashloader
+      │           dialout   ← группа для /dev/ttyACM* (M5StampPLC)
       └── [3/3] setup-tools   — uv sync в tools/host/
                   SHA-256 uv.lock кешируется → повторный вызов мгновенный
 ```
 
-### 5.4 Настройка HIL-окружения (один раз, на хосте)
-
-```bash
-cd tools/hil
-uv sync              # установить pyocd, pyserial, pytest
-
-# Прописать VCOM-порт в .env
-# macOS: ls /dev/tty.usbmodem*
-# Linux: ls /dev/ttyACM*
-# Добавить в .env: HIL_VCOM_PORT=/dev/tty.usbmodemXXXX
-```
-
-### 5.5 После bootstrap
+### 5.4 После bootstrap
 
 ```bash
 # Открыть VSCode → "Reopen in Container"
 # postCreateCommand выполняется автоматически:
 #   uv sync (tools/host) + cmake --preset host-debug + cmake --preset Debug
+
+# Настроить .env (один раз):
+cp .env.example .env
+# Заполнить HIL_VCOM_PORT и HIL_M5_PORT под свои порты
+
+# Задеплоить агент на M5StampPLC (один раз, и каждый раз после изменений в agent.py):
+just host::m5-deploy
 ```
 
 ---
@@ -227,7 +272,7 @@ uv sync              # установить pyocd, pyserial, pytest
 | Пресет | Toolchain | Назначение | Линкер-скрипт |
 |--------|-----------|------------|---------------|
 | `Debug` / `Release` | ARM GCC | firmware_test, bootloader, tft_app | `flexspi_nor.ld` |
-| `host-debug` / `host-release` | clang (host) | Unity + fff тесты | — |
+| `host-debug` / `host-release` | clang (хост) | Unity + fff тесты | — |
 | `target-debug` | ARM GCC | HIL target-прошивки | `ram.ld` |
 
 ### 6.2 CMake пресеты
@@ -245,22 +290,24 @@ buildPresets (ARM firmware):
   all-debug / all-release
 
 buildPresets (host-тесты):
-  host-debug-build / host-release-build
+  host-debug-build:   test_bsp_led, test_log, test_bsp_opto,
+                      test_ring_buffer, test_timeout_pattern, uart_host_mock_example
+  host-release-build: то же
 
 buildPresets (HIL):
-  target-debug-build           ← test_host_uart (и будущие HIL-прошивки)
+  target-debug-build: test_host_uart, test_hil_opto
 ```
 
 ### 6.3 Boot-стратегии
 
-| Прошивка | Стратегия | DCD | Инструмент загрузки |
-|----------|-----------|-----|---------------------|
-| `firmware_test` | XIP из Flash | ✅ | SPSDK → Flash |
-| `bootloader` | Копирование в ITCM | ❌ | SPSDK → Flash |
-| `tft_app` | XIP + буферы в SDRAM | ✅ | SPSDK → Flash |
-| HIL target (`tests/target/`) | Исполнение из ITCM/DTCM | ❌ | pyOCD → RAM |
+| Прошивка | Стратегия | Инструмент загрузки |
+|----------|-----------|---------------------|
+| `firmware_test` | XIP из Flash (`flexspi_nor.ld`) | SPSDK → Flash |
+| `bootloader` | Копирование в ITCM | SPSDK → Flash |
+| `tft_app` | XIP + буферы в SDRAM | SPSDK → Flash |
+| HIL target (`tests/target/`) | Исполнение из ITCM/DTCM (`ram.ld`) | pyOCD → RAM |
 
-**HIL boot-стратегия (`bsp_boot_ram`):** pyOCD настраивает FLEXRAM (128KB ITCM + 128KB DTCM), записывает сегменты ELF по физическим адресам, устанавливает SP/PC из таблицы векторов и запускает выполнение. Flash не используется.
+**HIL boot-стратегия:** pyOCD настраивает FLEXRAM (128 KB ITCM + 128 KB DTCM + 256 KB OCRAM), записывает PT_LOAD сегменты ELF по физическим адресам, устанавливает SP/PC из таблицы векторов и запускает выполнение. Flash не используется — прошивка исчезает при отключении питания.
 
 ---
 
@@ -276,29 +323,38 @@ buildPresets (HIL):
 | Сборка ARM firmware (ELF) | devcontainer |
 | Сборка HIL target-прошивок | devcontainer |
 | Подготовка HAB-образов (nxpimage) | devcontainer |
-| Прошивка платы через USB ROM | **хост** |
-| HIL-тесты (pyOCD + pytest) | **хост** |
-| Отладка — GDB-сервер (JLink) | **хост** |
-| Отладка — GDB-клиент | devcontainer → хост по TCP |
+| Прошивка платы через USB ROM | хост |
+| Прошивка платы через SWD | хост |
+| HIL-тесты (pyOCD + pytest + M5) | хост |
+| Отладка — GDB-сервер (pyOCD) | хост |
+| Отладка — GDB-клиент (cortex-debug) | devcontainer → хост по TCP |
 
 ### 7.2 Типичная сессия разработки
 
 ```bash
-# Devcontainer (терминал VSCode)
+# ── Devcontainer (терминал VSCode) ──────────────────────────────────────────
+
 just build::test-host                    # host unit-тесты — зелёные?
 just build::build-firmware-test-debug    # ELF собирается?
-just build::hab-firmware-test-debug      # HAB-образ готов
+just build::hab-firmware-test-debug      # HAB-образ для прошивки
 
-# Хостовый терминал — прошивка
-just flash                               # прошить firmware_test debug во Flash
+# ── Хостовый терминал — прошивка ─────────────────────────────────────────────
 
-# Хостовый терминал — HIL
-just build::build-hil                    # собрать HIL target-прошивку
-# (можно делать в devcontainer)
-just host::hil-run                       # загрузить ELF → запустить pytest
+just host::flash-test-debug              # прошить через USB SDP
+# или
+just host::flash-swd-test-debug          # прошить через SWD (power cycle после)
 
-# Отладка
-# F5 в VSCode → запустить JLinkGDBServer на хосте → attach через cortex-debug
+# ── Хостовый терминал — HIL ──────────────────────────────────────────────────
+
+just build::build-hil                    # (devcontainer) собрать HIL ELF
+just host::hil-run                       # загрузить ELF → запустить все тесты
+just host::hil-uart                      # только UART тесты
+just host::hil-opto                      # только opto тесты (нужен стенд M5)
+
+# ── Отладка ───────────────────────────────────────────────────────────────────
+
+just host::debug-server                  # запустить pyOCD GDB-сервер на хосте
+# F5 в VSCode → 🐛 Debug: firmware_test
 ```
 
 ### 7.3 VSCode Tasks (внутри devcontainer)
@@ -317,68 +373,68 @@ just host::hil-run                       # загрузить ELF → запус
 
 ## 8. Прошивка платы (хост)
 
-### Перевод в SDP-режим
+Подробно — [docs/HOW_TO_FLASH.md](HOW_TO_FLASH.md). Краткая сводка:
+
+### USB SDP (Serial Download Protocol)
+
+Требует перевода платы в SDP-режим (`BOOT_MOD_1 → 3V3 → Reset`).
 
 ```bash
-1. BOOT_MOD_1 → 3V3
-2. Reset
-3. Подключить USB → плата как VID:PID 1FC9:0130
-4. just host::flash <project> <type>
-5. После прошивки: BOOT_MOD_1 → GND → Reset
+just host::flash-test-debug       # firmware_test Debug → Flash
+just host::flash-test-release     # firmware_test Release → Flash
+just host::flash-production       # bootloader + tft_app Release (с подтверждением)
 ```
 
-### Команды прошивки
+### SWD (через MCU-Link, без смены режима загрузки)
 
 ```bash
-# project × type
-just host::flash firmware_test debug
-just host::flash firmware_test release
-just host::flash bootloader release
-just host::flash tft_app release
-
-# В RAM — быстро, без износа Flash
-just host::flash-ram firmware_test
-
-# Псевдонимы
-just flash                       # = firmware_test debug → Flash
-just host::flash-production      # bootloader + tft_app release
+just host::flash-swd-test-debug
+just host::flash-swd-test-release
+# После любого flash-swd — обязательный power cycle платы
 ```
 
 ---
 
 ## 9. HIL-тесты (хост)
 
-HIL-тесты проверяют периферию на реальном железе. MCU-Link обеспечивает два канала по одному USB: SWD (прошивка через pyOCD) и VCOM (UART CLI).
+HIL-тесты проверяют периферию на реальном железе. Два типа:
+
+### Базовые (без стенда) — `test_uart.py`
+
+Только MCU-Link: SWD загружает ELF в RAM, VCOM обеспечивает UART CLI.
 
 ```bash
-pytest → uart_cmd("PING\r\n")
+pytest → uart_cmd("PING")
   ↓ pyserial / VCOM
 MCU-Link
   ↓ LPUART1
-RT1052 (HIL прошивка)
-  → "PONG\r\n"
+RT1052 → "PONG"
 ```
+
+### С M5StampPLC — `test_opto.py` и другие
+
+`M5StampPLC` управляет входными сигналами таргета через реле. pytest оркестрирует оба канала одновременно.
+
+```bash
+pytest
+  ├─▶ m5.opto_set(1, True)    → M5 (JSON) → RLY3 → EXT_IN1 таргета
+  └─▶ uart_cmd("OPTO_READ 1") → MCU-Link VCOM → RT1052 → "ACTIVE"
+```
+
+Перед каждой тест-сессией фикстура `m5` автоматически включает питание таргета (RLY1), ждёт стабилизации, затем `loaded_<n>` загружает ELF через pyOCD.
 
 ### Команды
 
 ```bash
-# Сборка HIL target-прошивок (devcontainer)
-just build::build-hil
-
-# Запуск тестов (хост)
-just host::hil-run          # загрузить ELF + все тесты
-just host::hil-smoke        # только smoke-тесты (-m smoke)
-just host::hil-run-fast     # тесты без перезагрузки ELF (--no-load)
-just host::hil-load         # только загрузить ELF (без pytest)
+just build::build-hil        # (devcontainer) собрать HIL ELF
+just host::hil-run           # прогнать все HIL тесты
+just host::hil-uart          # только test_uart.py
+just host::hil-opto          # только test_opto.py
 ```
 
-### Архитектура HIL-теста
-
-Каждый HIL-тест — пара: C-прошивка в `tests/target/<n>/` и pytest-файл в `tools/hil/test_<n>.py`. Прошивка реализует текстовый CLI через `bsp_uart_host`. pytest управляет через `uart_cmd()`.
-
-Протокол готовности: прошивка шлёт `READY\r\n` в цикле пока хост не откроет порт — исключает race condition между загрузкой ELF и открытием COM-порта.
-
-Гайд по добавлению нового HIL-теста — [tests/HIL_CREATE_TEST.md](../tests/HIL_CREATE_TEST.md).
+Подробно — [docs/testing/hil/HIL_HOWTO.md](testing/hil/HIL_HOWTO.md).
+Добавление нового теста — [docs/testing/hil/HIL_CREATE_TEST.md](testing/hil/HIL_CREATE_TEST.md).
+Стенд и подключение — [docs/testing/hil/HIL_BENCH.md](testing/hil/HIL_BENCH.md).
 
 ---
 
@@ -390,58 +446,51 @@ just host::hil-load         # только загрузить ELF (без pytest
 Фреймворк:  Unity + fff
 Пресеты:    host-debug / host-release
 Компилятор: clang-17 (не ARM GCC)
-Запуск:     just build::test-host
+Запуск:     just build::test-host   (внутри devcontainer)
 ```
 
-BSP-модули тестируются через fff-фейки и stub-хедеры в `tests/host/mocks/`. `BUILD_TESTS_HOST=ON` отключает ARM-специфику.
+BSP-модули тестируются через fff-фейки и stub-хедеры в `tests/host/mocks/`.
+`BUILD_TESTS_HOST=ON` отключает ARM-специфику и SDK-заголовки.
 
+Покрытие: `bsp_led`, `bsp_opto`, `bsp_uart_host`, `ring_buffer`, timeout-паттерн.
 Гайд — [tests/HOST_CREATE_TEST.md](../tests/HOST_CREATE_TEST.md).
 
 ### 10.2 HIL target-тесты
 
 ```bash
-Инструменты: pyOCD (SWD) + pyserial (UART) + pytest
-Пресет:      target-debug  →  ram.ld  →  ITCM/DTCM
-Запуск:      just host::hil-run
+Инструменты: pyOCD (SWD) + pyserial (UART) + pytest + M5StampPLC (реле)
+Пресет:      target-debug → ram.ld → ITCM/DTCM
+Запуск:      just host::hil-run   (на хосте)
 ```
 
-Текущие тесты: `test_uart.py` — PING/ECHO/BUF_SIZE через `bsp_uart_host`.
-
-### 10.3 Будущие HIL-тесты (с M5StampPLC)
-
-Для тестов с внешними интерфейсами (CAN, GPIO, RS485) понадобится промежуточное звено:
-
-```bash
-pytest → M5StampPLC (Arduino CLI) → CAN/GPIO → RT1052
-```
-
-M5StampPLC реализует тот же текстовый CLI — pytest работает одинаково с обоими каналами.
+Текущие тесты: `test_uart.py` (PING/ECHO/BUF_SIZE), `test_opto.py` (оптовходы IN1/IN2/RS через M5).
 
 ---
 
 ## 11. Отладка
 
+Подробно — [docs/HOW_TO_DEBUG.md](HOW_TO_DEBUG.md). Краткая схема:
+
 ```bash
 Хост
-├── JLinkGDBServer -device MIMXRT1052 -if SWD -port 2331
-│     USB/SWD → плата
-└── host.docker.internal:2331  ← доступен из devcontainer
+├── just host::debug-server
+│   └── pyocd gdbserver :3333
+│         USB/SWD → MCU-Link → плата
+└── host.docker.internal:3333 ← доступен из devcontainer
 
 Devcontainer
-└── arm-none-eabi-gdb
-      target remote host.docker.internal:2331
+└── cortex-debug (VSCode)
+      ↔ arm-none-eabi-gdb
+            target remote host.docker.internal:3333
 ```
 
-`.vscode/launch.json` (cortex-debug, тип `external`):
+Три конфигурации в `.vscode/launch.json`:
 
-```json
-{
-    "type": "cortex-debug",
-    "servertype": "external",
-    "gdbTarget": "host.docker.internal:2331",
-    "executable": "${workspaceFolder}/build/Debug/firmware/test/firmware_test.elf"
-}
-```
+- `🐛 Debug: firmware_test` — bare-metal, входной контроль
+- `🐛 Debug: bootloader` — bare-metal, A/B обновление
+- `🐛 Debug: tft_app (FreeRTOS)` — FreeRTOS task view
+
+RTT-логи (`SEGGER_RTT_ENABLED=ON`) пока что не используются вместо этого можно использовать `port/log`.
 
 ---
 
@@ -456,14 +505,14 @@ feature-ветка
   │     just build::build-hil               ← HIL-прошивки собираются?
   │
   ├── хост
-  │     just flash                          ← прошить, проверить на железе
+  │     just host::flash-test-debug         ← прошить, проверить на железе
   │     just host::hil-run                  ← HIL зелёные?
   │
   ├── подготовка к MR
   │     just build::hab-all-release
   │     just host::flash firmware_test release
   │
-  └── Merge Request → GitLab CI
+  └── Merge Request → CI
         host-тесты · сборка · HIL · публикация артефактов
               ↓
         Производственный сервер
@@ -489,56 +538,4 @@ feature-ветка
 
 Установлено:     just · uv + spsdk · uv + pyocd/pytest · git
 НЕ установлено:  docker · cmake · компилятор · ARM toolchain
-```
-
----
-
-## Приложение А: минимальные версии
-
-| Инструмент | Версия | Причина |
-|------------|--------|---------|
-| `just` | 1.36.0 | поддержка `mod` с кастомным путём |
-| `uv` | 0.4.0 | стабильный lockfile формат |
-| `docker` | 24.0.0 | Compose v2 |
-| `spsdk` | 3.7.x | совместимость с HAB yaml-форматом |
-| `pyocd` | 0.36+ | cortex_m target, write_core_register API |
-| ARM GCC | 13.3.rel1 | C11, текущий SDK |
-| clang/clangd | 17 | поддержка `If:` в `.clangd` |
-
----
-
-## Приложение Б: шпаргалка
-
-```bash
-# ── Первый запуск ───────────────────────────────────────────
-./bootstrap.sh
-cd tools/hil && uv sync
-# VSCode → Reopen in Container
-
-# ── devcontainer ────────────────────────────────────────────
-just build::test-host                    # host unit-тесты
-just build::build-firmware-test-debug    # сборка firmware
-just build::build-hil                    # сборка HIL target-прошивок
-just build::hab-firmware-test-debug      # HAB-образ Debug
-just build::hab-all-release              # все HAB Release
-just build::clean                        # очистить build/
-
-# ── хост — прошивка ─────────────────────────────────────────
-just flash                               # firmware_test debug → Flash
-just host::flash firmware_test release
-just host::flash bootloader release
-just host::flash-production              # bootloader + tft_app release
-just host::flash-ram firmware_test       # в RAM (без износа Flash)
-
-# ── хост — HIL-тесты ────────────────────────────────────────
-just host::hil-run                       # загрузить ELF + все тесты
-just host::hil-smoke                     # только smoke
-just host::hil-run-fast                  # без перезагрузки ELF
-just host::hil-load                      # только загрузить ELF
-
-# ── хост — обслуживание ─────────────────────────────────────
-just host::check-deps                    # проверить версии
-just host::setup-tools                   # uv sync после git pull
-just host::scan                          # найти NXP USB-устройства
-just host::upgrade-tools 3.8.0           # обновить spsdk
 ```

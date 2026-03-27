@@ -80,6 +80,7 @@ uint32_t GPIO_PinRead(GPIO_Type *base, uint32_t pin);
 void GPIO_SetPinInterruptConfig(GPIO_Type *base, uint32_t pin,
                                 gpio_interrupt_mode_t pinInterruptMode);
 void GPIO_EnableInterrupts(GPIO_Type *base, uint32_t mask);
+void GPIO_DisableInterrupts(GPIO_Type *base, uint32_t mask);
 uint32_t GPIO_GetPinsInterruptFlags(GPIO_Type *base);
 void GPIO_ClearPinsInterruptFlags(GPIO_Type *base, uint32_t mask);
 

@@ -139,12 +139,21 @@ int main(void)
     bsp_led_init();
     bsp_uart_host_init(CLI_BAUD_RATE);
 
-    /* --- Opto init --- */
+    /* --- Opto init: все три канала MODE_LEVEL --- */
     bsp_opto_config_t opto_cfg = {
-        .callbacks   = { opto_callback, opto_callback, opto_callback },
-        .edges       = { BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING },
+        .callbacks = { opto_callback, opto_callback, opto_callback },
+        .modes     = {
+            [BSP_OPTO_CH_IN1] = BSP_OPTO_MODE_LEVEL,
+            [BSP_OPTO_CH_IN2] = BSP_OPTO_MODE_LEVEL,
+            [BSP_OPTO_CH_RS]  = BSP_OPTO_MODE_LEVEL,
+        },
+        .edges = {
+            [BSP_OPTO_CH_IN1] = BSP_OPTO_EDGE_RISING,
+            [BSP_OPTO_CH_IN2] = BSP_OPTO_EDGE_RISING,
+            [BSP_OPTO_CH_RS]  = BSP_OPTO_EDGE_RISING,
+        },
         .rs_as_gpio  = true,
-        .debounce_ms = 10U, /* instant — для быстрого тестирования */
+        .debounce_ms = 10U,
     };
     bsp_opto_init(&opto_cfg);
 

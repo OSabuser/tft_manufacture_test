@@ -57,6 +57,7 @@ Debug/
 Release/
 build*
 Testing/
+!docs/testing
 !build.just
 
 # Файлы настройки среды разработки

@@ -97,6 +97,14 @@ def _send(ser: serial.Serial, cmd: dict) -> dict:
 
 
 def _wait_ready(ser: serial.Serial) -> None:
+    """
+    Ждём READY от агента.
+
+    Два сценария:
+      1. Агент только что запустился (после reset/deploy) → пришлёт READY.
+      2. Агент уже работает → READY давно отправлен, не придёт снова.
+         Fallback: пробуем ping. Если отвечает — считаем что всё ок.
+    """
     print(_info("  Ожидаем READY от агента..."), end=" ", flush=True)
     deadline = time.monotonic() + _READY_WAIT
     while time.monotonic() < deadline:
@@ -104,8 +112,20 @@ def _wait_ready(ser: serial.Serial) -> None:
         if line == "READY":
             print(_ok("OK"))
             return
-    print(_err("TIMEOUT"))
-    print(_err("  Агент не ответил. Проверьте порт и что m5/agent.py загружен (just host::m5-deploy)."))
+
+    # READY не пришёл — агент, вероятно, уже работает. Пробуем ping.
+    print(_hint("(не получен, пробуем ping...)"), end=" ", flush=True)
+    try:
+        resp = _send(ser, {"cmd": "ping"})
+        if resp.get("ok"):
+            print(_ok("OK (агент уже работал)"))
+            return
+    except TimeoutError:
+        pass
+
+    print(_err("FAILED"))
+    print(_err("  Агент не отвечает. Проверьте порт и задеплойте агент:"))
+    print(_hint("    just host::m5-deploy"))
     sys.exit(1)
 
 

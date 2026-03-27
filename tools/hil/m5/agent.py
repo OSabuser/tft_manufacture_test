@@ -21,9 +21,9 @@ m5/agent.py — MicroPython агент для M5Stack StamPLC.
 
   Раскладка реле (конфигурация стенда):
     RLY1 → питание таргета  (VIN)
-    RLY2 → EXT_IN1 таргета  (BSP_OPTO_CH_IN1)
-    RLY3 → EXT_IN2 таргета  (BSP_OPTO_CH_IN2)
-    RLY4 → RS_RX  таргета   (BSP_OPTO_CH_RS)
+    RLY2 → RS_RX  таргета   (BSP_OPTO_CH_RS)
+    RLY3 → EXT_IN1 таргета  (BSP_OPTO_CH_IN1)
+    RLY4 → EXT_IN2 таргета  (BSP_OPTO_CH_IN2)
 
 ─────────────────────────────────────────────────────
 Протокол: JSON-lines через USB CDC (115200, нет flow control).
@@ -69,7 +69,10 @@ _CFG = {
 
 _RST_PIN = 3                       # G3_PHY_RST → нога сброса AW9523B
 
-_OPTO_TO_RELAY = {1: 2, 2: 3, 3: 4}  # оптоканал таргета → реле стенда
+_OPTO_TO_RELAY = {1: 3, 2: 4, 3: 2}  # оптоканал таргета → реле стенда
+#   ch1 (BSP_OPTO_CH_IN1 / EXT_IN1) → RLY3
+#   ch2 (BSP_OPTO_CH_IN2 / EXT_IN2) → RLY4
+#   ch3 (BSP_OPTO_CH_RS  / RS_RX  ) → RLY2
 _IN_PIN_LIST = [4, 5, 6, 7, 12, 13, 14, 15]  # нумерация пинов AW9523
 # ---------------------------------------------------------------------------
 # AW9523B — регистры

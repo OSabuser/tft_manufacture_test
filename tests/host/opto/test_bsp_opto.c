@@ -8,6 +8,10 @@
  *   BSP_OPTO_CH_IN1 → GPIO1 pin 22
  *   BSP_OPTO_CH_IN2 → GPIO1 pin 21
  *   BSP_OPTO_CH_RS  → GPIO1 pin 23
+ *
+ * Полярность: active-HIGH (неинвертирующая оптопара).
+ *   raw=1 → BSP_OPTO_STATE_ACTIVE
+ *   raw=0 → BSP_OPTO_STATE_INACTIVE
  */
 
 #include "fff.h"
@@ -25,6 +29,7 @@ FAKE_VALUE_FUNC(uint32_t, GPIO_PinRead, GPIO_Type *, uint32_t);
 
 FAKE_VOID_FUNC(GPIO_SetPinInterruptConfig, GPIO_Type *, uint32_t, gpio_interrupt_mode_t);
 FAKE_VOID_FUNC(GPIO_EnableInterrupts, GPIO_Type *, uint32_t);
+FAKE_VOID_FUNC(GPIO_DisableInterrupts, GPIO_Type *, uint32_t);
 FAKE_VALUE_FUNC(uint32_t, GPIO_GetPinsInterruptFlags, GPIO_Type *);
 FAKE_VOID_FUNC(GPIO_ClearPinsInterruptFlags, GPIO_Type *, uint32_t);
 
@@ -50,7 +55,7 @@ FAKE_VALUE_FUNC(uint32_t, bsp_tick_get_ms);
 
 #define DEBOUNCE_MS 10U
 
-/* Capture конфигурации GPIO_PinInit (та же техника что в test_bsp_led.c) */
+/* Capture конфигурации GPIO_PinInit */
 #define MAX_INIT_CALLS 3U
 static gpio_pin_config_t s_captured_cfg[MAX_INIT_CALLS];
 static uint32_t s_captured_pin[MAX_INIT_CALLS];
@@ -67,8 +72,8 @@ static void GPIO_PinInit_capture(GPIO_Type *base, uint32_t pin, const gpio_pin_c
     }
 }
 
-/* Capture SetPinInterruptConfig */
-#define MAX_IRQ_CONFIG_CALLS 3U
+/* Capture SetPinInterruptConfig — увеличен буфер: при MODE_LEVEL ISR меняет фронт */
+#define MAX_IRQ_CONFIG_CALLS 8U
 static gpio_interrupt_mode_t s_captured_irq_mode[MAX_IRQ_CONFIG_CALLS];
 static uint32_t s_captured_irq_pin[MAX_IRQ_CONFIG_CALLS];
 static uint32_t s_irq_config_idx;
@@ -97,11 +102,20 @@ static void test_callback(bsp_opto_ch_t ch, bsp_opto_state_t state)
     s_cb_count++;
 }
 
-/* Конфигурация по умолчанию (rs_as_gpio = false, 2 канала) */
+/*
+ * Конфигурация по умолчанию:
+ *   IN1, IN2 — MODE_LEVEL
+ *   RS       — отключён (rs_as_gpio = false)
+ */
 static bsp_opto_config_t make_default_cfg(void)
 {
     bsp_opto_config_t cfg = {
         .callbacks   = { test_callback, test_callback, NULL },
+        .modes       = {
+            [BSP_OPTO_CH_IN1] = BSP_OPTO_MODE_LEVEL,
+            [BSP_OPTO_CH_IN2] = BSP_OPTO_MODE_LEVEL,
+            [BSP_OPTO_CH_RS]  = BSP_OPTO_MODE_LEVEL,
+        },
         .edges       = {
             [BSP_OPTO_CH_IN1] = BSP_OPTO_EDGE_RISING,
             [BSP_OPTO_CH_IN2] = BSP_OPTO_EDGE_RISING,
@@ -133,6 +147,7 @@ void setUp(void)
     RESET_FAKE(GPIO_PinRead);
     RESET_FAKE(GPIO_SetPinInterruptConfig);
     RESET_FAKE(GPIO_EnableInterrupts);
+    RESET_FAKE(GPIO_DisableInterrupts);
     RESET_FAKE(GPIO_GetPinsInterruptFlags);
     RESET_FAKE(GPIO_ClearPinsInterruptFlags);
     RESET_FAKE(EnableIRQ);
@@ -147,8 +162,11 @@ void setUp(void)
     GPIO_PinInit_fake.custom_fake               = GPIO_PinInit_capture;
     GPIO_SetPinInterruptConfig_fake.custom_fake = GPIO_SetPinInterruptConfig_capture;
 
-    /* По умолчанию пины INACTIVE (active-low → raw = 1) */
-    GPIO_PinRead_fake.return_val = 1U;
+    /*
+     * По умолчанию пины INACTIVE.
+     * active-HIGH: raw=0 → INACTIVE.
+     */
+    GPIO_PinRead_fake.return_val = 0U;
 }
 
 void tearDown(void)
@@ -232,15 +250,19 @@ void test_init_rs_as_gpio_false_no_board_init(void)
     TEST_ASSERT_EQUAL(0U, BOARD_InitRS_GPIO_fake.call_count);
 }
 
-/* ── Тесты: edge config ──────────────────────────────────────────────────── */
+/* ── Тесты: начальный фронт MODE_LEVEL ──────────────────────────────────── */
 
-void test_init_rising_edge_sets_rising_irq_mode(void)
+/*
+ * При init пин LOW (raw=0, INACTIVE) → ожидаем RISING фронт
+ * (сигнал ещё не пришёл, ждём его появления).
+ */
+void test_init_level_pin_low_selects_rising_edge(void)
 {
-    bsp_opto_config_t cfg      = make_default_cfg();
-    cfg.edges[BSP_OPTO_CH_IN1] = BSP_OPTO_EDGE_RISING;
+    GPIO_PinRead_fake.return_val = 0U; /* INACTIVE */
+    bsp_opto_config_t cfg        = make_default_cfg();
     bsp_opto_init(&cfg);
 
-    /* Найти запись для пина IN1 */
+    /* Найти первую запись для IN1 */
     uint32_t idx = 0U;
     for (uint32_t i = 0U; i < s_irq_config_idx; i++)
     {
@@ -253,10 +275,14 @@ void test_init_rising_edge_sets_rising_irq_mode(void)
     TEST_ASSERT_EQUAL(kGPIO_IntRisingEdge, s_captured_irq_mode[idx]);
 }
 
-void test_init_falling_edge_sets_falling_irq_mode(void)
+/*
+ * При init пин HIGH (raw=1, ACTIVE) → ожидаем FALLING фронт
+ * (сигнал уже активен, ждём его снятия).
+ */
+void test_init_level_pin_high_selects_falling_edge(void)
 {
-    bsp_opto_config_t cfg      = make_default_cfg();
-    cfg.edges[BSP_OPTO_CH_IN1] = BSP_OPTO_EDGE_FALLING;
+    GPIO_PinRead_fake.return_val = 1U; /* ACTIVE */
+    bsp_opto_config_t cfg        = make_default_cfg();
     bsp_opto_init(&cfg);
 
     uint32_t idx = 0U;
@@ -271,12 +297,52 @@ void test_init_falling_edge_sets_falling_irq_mode(void)
     TEST_ASSERT_EQUAL(kGPIO_IntFallingEdge, s_captured_irq_mode[idx]);
 }
 
+/* ── Тесты: переключение фронта в ISR (MODE_LEVEL) ──────────────────────── */
+
+/*
+ * После RISING фронта ISR должен переключить направление на FALLING,
+ * чтобы поймать возврат сигнала.
+ */
+void test_isr_level_toggles_edge_after_rising(void)
+{
+    GPIO_PinRead_fake.return_val = 0U; /* init: pin LOW → начинаем с RISING */
+    bsp_opto_config_t cfg        = make_default_cfg();
+    bsp_opto_init(&cfg);
+
+    uint32_t irq_calls_after_init = s_irq_config_idx;
+
+    /* ISR: RISING фронт (pin стал HIGH) */
+    simulate_isr(OPTO_IN1_PIN, 1U);
+
+    /* Должна появиться новая запись SetPinInterruptConfig с FALLING */
+    TEST_ASSERT_GREATER_THAN(irq_calls_after_init, s_irq_config_idx);
+    TEST_ASSERT_EQUAL(kGPIO_IntFallingEdge, s_captured_irq_mode[s_irq_config_idx - 1U]);
+}
+
+/*
+ * После FALLING фронта ISR должен переключить направление обратно на RISING.
+ */
+void test_isr_level_toggles_edge_after_falling(void)
+{
+    GPIO_PinRead_fake.return_val = 1U; /* init: pin HIGH → начинаем с FALLING */
+    bsp_opto_config_t cfg        = make_default_cfg();
+    bsp_opto_init(&cfg);
+
+    uint32_t irq_calls_after_init = s_irq_config_idx;
+
+    /* ISR: FALLING фронт (pin стал LOW) */
+    simulate_isr(OPTO_IN1_PIN, 0U);
+
+    TEST_ASSERT_GREATER_THAN(irq_calls_after_init, s_irq_config_idx);
+    TEST_ASSERT_EQUAL(kGPIO_IntRisingEdge, s_captured_irq_mode[s_irq_config_idx - 1U]);
+}
+
 /* ── Тесты: bsp_opto_read — начальное состояние ─────────────────────────── */
 
-void test_read_initial_inactive_when_pin_high(void)
+void test_read_initial_inactive_when_pin_low(void)
 {
-    /* active-low: raw=1 → INACTIVE */
-    GPIO_PinRead_fake.return_val = 1U;
+    /* active-HIGH: raw=0 → INACTIVE */
+    GPIO_PinRead_fake.return_val = 0U;
     bsp_opto_config_t cfg        = make_default_cfg();
     bsp_opto_init(&cfg);
 
@@ -284,10 +350,10 @@ void test_read_initial_inactive_when_pin_high(void)
     TEST_ASSERT_EQUAL(BSP_OPTO_STATE_INACTIVE, bsp_opto_read(BSP_OPTO_CH_IN2));
 }
 
-void test_read_initial_active_when_pin_low(void)
+void test_read_initial_active_when_pin_high(void)
 {
-    /* active-low: raw=0 → ACTIVE */
-    GPIO_PinRead_fake.return_val = 0U;
+    /* active-HIGH: raw=1 → ACTIVE */
+    GPIO_PinRead_fake.return_val = 1U;
     bsp_opto_config_t cfg        = make_default_cfg();
     bsp_opto_init(&cfg);
 
@@ -308,20 +374,20 @@ void test_read_invalid_channel_returns_inactive(void)
     TEST_ASSERT_EQUAL(BSP_OPTO_STATE_INACTIVE, bsp_opto_read((bsp_opto_ch_t) BSP_OPTO_CH_COUNT));
 }
 
-/* ── Тесты: bsp_opto_process — дебаунс ──────────────────────────────────── */
+/* ── Тесты: bsp_opto_process — дебаунс (MODE_LEVEL) ─────────────────────── */
 
 void test_process_before_debounce_no_callback(void)
 {
     bsp_opto_config_t cfg = make_default_cfg();
     bsp_opto_init(&cfg);
 
-    /* ISR фиксирует фронт в момент T=100 */
+    /* ISR: RISING фронт в T=100 (pin стал HIGH = ACTIVE) */
     bsp_tick_get_ms_fake.return_val = 100U;
-    simulate_isr(OPTO_IN1_PIN, 0U); /* pin → ACTIVE */
+    simulate_isr(OPTO_IN1_PIN, 1U);
 
     /* process в T=105: прошло 5ms < debounce_ms(10) */
     bsp_tick_get_ms_fake.return_val = 105U;
-    GPIO_PinRead_fake.return_val    = 0U;
+    GPIO_PinRead_fake.return_val    = 1U;
     bsp_opto_process();
 
     TEST_ASSERT_EQUAL(0U, s_cb_count);
@@ -333,11 +399,11 @@ void test_process_after_debounce_fires_callback(void)
     bsp_opto_init(&cfg);
 
     bsp_tick_get_ms_fake.return_val = 100U;
-    simulate_isr(OPTO_IN1_PIN, 0U); /* pin → ACTIVE */
+    simulate_isr(OPTO_IN1_PIN, 1U); /* RISING → ACTIVE */
 
     /* process в T=112: прошло 12ms >= debounce_ms(10) */
     bsp_tick_get_ms_fake.return_val = 112U;
-    GPIO_PinRead_fake.return_val    = 0U;
+    GPIO_PinRead_fake.return_val    = 1U;
     bsp_opto_process();
 
     TEST_ASSERT_EQUAL(1U, s_cb_count);
@@ -349,10 +415,10 @@ void test_process_callback_receives_correct_channel(void)
     bsp_opto_init(&cfg);
 
     bsp_tick_get_ms_fake.return_val = 0U;
-    simulate_isr(OPTO_IN1_PIN, 0U);
+    simulate_isr(OPTO_IN1_PIN, 1U);
 
     bsp_tick_get_ms_fake.return_val = DEBOUNCE_MS + 1U;
-    GPIO_PinRead_fake.return_val    = 0U;
+    GPIO_PinRead_fake.return_val    = 1U;
     bsp_opto_process();
 
     TEST_ASSERT_EQUAL(BSP_OPTO_CH_IN1, s_cb_ch);
@@ -364,10 +430,10 @@ void test_process_callback_receives_active_state(void)
     bsp_opto_init(&cfg);
 
     bsp_tick_get_ms_fake.return_val = 0U;
-    simulate_isr(OPTO_IN1_PIN, 0U); /* raw=0 → ACTIVE */
+    simulate_isr(OPTO_IN1_PIN, 1U); /* raw=1 → ACTIVE */
 
     bsp_tick_get_ms_fake.return_val = DEBOUNCE_MS + 1U;
-    GPIO_PinRead_fake.return_val    = 0U;
+    GPIO_PinRead_fake.return_val    = 1U;
     bsp_opto_process();
 
     TEST_ASSERT_EQUAL(BSP_OPTO_STATE_ACTIVE, s_cb_state);
@@ -375,17 +441,17 @@ void test_process_callback_receives_active_state(void)
 
 void test_process_callback_receives_inactive_state(void)
 {
-    /* Начинаем с ACTIVE — init с pin=0 */
-    GPIO_PinRead_fake.return_val = 0U;
+    /* Начинаем с ACTIVE: init с pin HIGH */
+    GPIO_PinRead_fake.return_val = 1U;
     bsp_opto_config_t cfg        = make_default_cfg();
     bsp_opto_init(&cfg);
 
-    /* Фронт: pin → INACTIVE (raw=1) */
+    /* FALLING фронт: pin стал LOW → INACTIVE */
     bsp_tick_get_ms_fake.return_val = 0U;
-    simulate_isr(OPTO_IN1_PIN, 1U);
+    simulate_isr(OPTO_IN1_PIN, 0U);
 
     bsp_tick_get_ms_fake.return_val = DEBOUNCE_MS + 1U;
-    GPIO_PinRead_fake.return_val    = 1U;
+    GPIO_PinRead_fake.return_val    = 0U;
     bsp_opto_process();
 
     TEST_ASSERT_EQUAL(BSP_OPTO_STATE_INACTIVE, s_cb_state);
@@ -393,17 +459,17 @@ void test_process_callback_receives_inactive_state(void)
 
 void test_process_no_callback_if_state_unchanged(void)
 {
-    /* Init с pin=0 → ACTIVE */
-    GPIO_PinRead_fake.return_val = 0U;
+    /* Init с pin HIGH → ACTIVE */
+    GPIO_PinRead_fake.return_val = 1U;
     bsp_opto_config_t cfg        = make_default_cfg();
     bsp_opto_init(&cfg);
 
     /* ISR срабатывает, но пин при перечитке всё ещё ACTIVE */
     bsp_tick_get_ms_fake.return_val = 0U;
-    simulate_isr(OPTO_IN1_PIN, 0U);
+    simulate_isr(OPTO_IN1_PIN, 1U);
 
     bsp_tick_get_ms_fake.return_val = DEBOUNCE_MS + 1U;
-    GPIO_PinRead_fake.return_val    = 0U; /* состояние не изменилось */
+    GPIO_PinRead_fake.return_val    = 1U; /* состояние не изменилось */
     bsp_opto_process();
 
     TEST_ASSERT_EQUAL(0U, s_cb_count);
@@ -415,10 +481,10 @@ void test_process_pending_cleared_after_debounce(void)
     bsp_opto_init(&cfg);
 
     bsp_tick_get_ms_fake.return_val = 0U;
-    simulate_isr(OPTO_IN1_PIN, 0U);
+    simulate_isr(OPTO_IN1_PIN, 1U);
 
     bsp_tick_get_ms_fake.return_val = DEBOUNCE_MS + 1U;
-    GPIO_PinRead_fake.return_val    = 0U;
+    GPIO_PinRead_fake.return_val    = 1U;
     bsp_opto_process();
 
     /* Второй вызов process без нового ISR — коллбэк не должен стрелять снова */
@@ -436,16 +502,147 @@ void test_channels_are_independent(void)
 
     /* ISR только для IN1 */
     bsp_tick_get_ms_fake.return_val = 0U;
-    simulate_isr(OPTO_IN1_PIN, 0U);
+    simulate_isr(OPTO_IN1_PIN, 1U);
 
     bsp_tick_get_ms_fake.return_val = DEBOUNCE_MS + 1U;
-    GPIO_PinRead_fake.return_val    = 0U;
+    GPIO_PinRead_fake.return_val    = 1U;
     bsp_opto_process();
 
-    /* IN1 изменился, IN2 — нет */
+    /* IN1 изменился (INACTIVE→ACTIVE), IN2 — нет */
     TEST_ASSERT_EQUAL(BSP_OPTO_STATE_ACTIVE, bsp_opto_read(BSP_OPTO_CH_IN1));
     TEST_ASSERT_EQUAL(BSP_OPTO_STATE_INACTIVE, bsp_opto_read(BSP_OPTO_CH_IN2));
     TEST_ASSERT_EQUAL(1U, s_cb_count); /* ровно один коллбэк */
+}
+
+/* ── Тесты: MODE_PROTO ───────────────────────────────────────────────────── */
+
+/*
+ * Вспомогательная конфигурация: IN1/IN2 — LEVEL, RS — PROTO.
+ */
+static bsp_opto_config_t make_proto_cfg(void)
+{
+    bsp_opto_config_t cfg = {
+        .callbacks   = { test_callback, test_callback, test_callback },
+        .modes       = {
+            [BSP_OPTO_CH_IN1] = BSP_OPTO_MODE_LEVEL,
+            [BSP_OPTO_CH_IN2] = BSP_OPTO_MODE_LEVEL,
+            [BSP_OPTO_CH_RS]  = BSP_OPTO_MODE_PROTO,
+        },
+        .edges       = {
+            [BSP_OPTO_CH_IN1] = BSP_OPTO_EDGE_RISING,
+            [BSP_OPTO_CH_IN2] = BSP_OPTO_EDGE_RISING,
+            [BSP_OPTO_CH_RS]  = BSP_OPTO_EDGE_RISING,
+        },
+        .rs_as_gpio  = true,
+        .debounce_ms = DEBOUNCE_MS,
+    };
+    return cfg;
+}
+
+/*
+ * ISR для MODE_PROTO должен немедленно вызвать коллбэк,
+ * не дожидаясь bsp_opto_process().
+ */
+void test_proto_isr_fires_callback_immediately(void)
+{
+    bsp_opto_config_t cfg = make_proto_cfg();
+    bsp_opto_init(&cfg);
+
+    /* ISR: RISING фронт на RS */
+    simulate_isr(OPTO_RS_PIN, 1U);
+
+    /* Коллбэк должен уже сработать — process ещё не вызывался */
+    TEST_ASSERT_EQUAL(1U, s_cb_count);
+    TEST_ASSERT_EQUAL(BSP_OPTO_CH_RS, s_cb_ch);
+    TEST_ASSERT_EQUAL(BSP_OPTO_STATE_ACTIVE, s_cb_state);
+}
+
+/*
+ * После ISR прерывание RS должно быть отключено
+ * (GPIO_DisableInterrupts вызван с маской 1<<23).
+ */
+void test_proto_isr_disables_irq_after_callback(void)
+{
+    bsp_opto_config_t cfg = make_proto_cfg();
+    bsp_opto_init(&cfg);
+
+    simulate_isr(OPTO_RS_PIN, 1U);
+
+    TEST_ASSERT_EQUAL(1U, GPIO_DisableInterrupts_fake.call_count);
+    TEST_ASSERT_EQUAL(1UL << OPTO_RS_PIN, GPIO_DisableInterrupts_fake.arg1_val);
+}
+
+/*
+ * bsp_opto_process() НЕ должен вызывать коллбэк для MODE_PROTO каналов —
+ * они обрабатываются в ISR.
+ */
+void test_proto_process_does_not_fire_callback(void)
+{
+    bsp_opto_config_t cfg = make_proto_cfg();
+    bsp_opto_init(&cfg);
+
+    /* Сбрасываем счётчик после ISR */
+    simulate_isr(OPTO_RS_PIN, 1U);
+    s_cb_count = 0U;
+
+    /* process не должен добавить ещё один вызов */
+    bsp_tick_get_ms_fake.return_val = DEBOUNCE_MS + 1U;
+    bsp_opto_process();
+
+    TEST_ASSERT_EQUAL(0U, s_cb_count);
+}
+
+/*
+ * bsp_opto_proto_arm() должен перевзвести прерывание RS:
+ * вызвать GPIO_ClearPinsInterruptFlags + GPIO_EnableInterrupts
+ * + GPIO_SetPinInterruptConfig для нужного пина.
+ */
+void test_proto_arm_reenables_irq(void)
+{
+    bsp_opto_config_t cfg = make_proto_cfg();
+    bsp_opto_init(&cfg);
+
+    simulate_isr(OPTO_RS_PIN, 1U);
+
+    /* Сбрасываем счётчики — смотрим только на arm */
+    RESET_FAKE(GPIO_EnableInterrupts);
+    RESET_FAKE(GPIO_ClearPinsInterruptFlags);
+
+    bsp_opto_proto_arm(BSP_OPTO_CH_RS);
+
+    TEST_ASSERT_EQUAL(1U, GPIO_EnableInterrupts_fake.call_count);
+    TEST_ASSERT_EQUAL(1U, GPIO_ClearPinsInterruptFlags_fake.call_count);
+}
+
+/*
+ * bsp_opto_proto_arm() для канала MODE_LEVEL — no-op,
+ * не должен трогать прерывания.
+ */
+void test_proto_arm_noop_for_level_channel(void)
+{
+    bsp_opto_config_t cfg = make_default_cfg();
+    bsp_opto_init(&cfg);
+
+    RESET_FAKE(GPIO_EnableInterrupts);
+    RESET_FAKE(GPIO_ClearPinsInterruptFlags);
+
+    bsp_opto_proto_arm(BSP_OPTO_CH_IN1);
+
+    TEST_ASSERT_EQUAL(0U, GPIO_EnableInterrupts_fake.call_count);
+    TEST_ASSERT_EQUAL(0U, GPIO_ClearPinsInterruptFlags_fake.call_count);
+}
+
+/*
+ * bsp_opto_read() для канала MODE_PROTO всегда возвращает INACTIVE —
+ * состояние RS отслеживается коллбэком из ISR.
+ */
+void test_proto_read_always_returns_inactive(void)
+{
+    GPIO_PinRead_fake.return_val = 1U; /* пин HIGH */
+    bsp_opto_config_t cfg        = make_proto_cfg();
+    bsp_opto_init(&cfg);
+
+    TEST_ASSERT_EQUAL(BSP_OPTO_STATE_INACTIVE, bsp_opto_read(BSP_OPTO_CH_RS));
 }
 
 /* ── main ────────────────────────────────────────────────────────────────── */
@@ -466,13 +663,17 @@ int main(void)
     RUN_TEST(test_init_rs_as_gpio_calls_board_init);
     RUN_TEST(test_init_rs_as_gpio_false_no_board_init);
 
-    /* edge config */
-    RUN_TEST(test_init_rising_edge_sets_rising_irq_mode);
-    RUN_TEST(test_init_falling_edge_sets_falling_irq_mode);
+    /* начальный фронт MODE_LEVEL */
+    RUN_TEST(test_init_level_pin_low_selects_rising_edge);
+    RUN_TEST(test_init_level_pin_high_selects_falling_edge);
+
+    /* переключение фронта в ISR */
+    RUN_TEST(test_isr_level_toggles_edge_after_rising);
+    RUN_TEST(test_isr_level_toggles_edge_after_falling);
 
     /* read — начальное состояние */
-    RUN_TEST(test_read_initial_inactive_when_pin_high);
-    RUN_TEST(test_read_initial_active_when_pin_low);
+    RUN_TEST(test_read_initial_inactive_when_pin_low);
+    RUN_TEST(test_read_initial_active_when_pin_high);
     RUN_TEST(test_read_disabled_rs_channel_returns_inactive);
     RUN_TEST(test_read_invalid_channel_returns_inactive);
 
@@ -487,6 +688,14 @@ int main(void)
 
     /* независимость каналов */
     RUN_TEST(test_channels_are_independent);
+
+    /* MODE_PROTO */
+    RUN_TEST(test_proto_isr_fires_callback_immediately);
+    RUN_TEST(test_proto_isr_disables_irq_after_callback);
+    RUN_TEST(test_proto_process_does_not_fire_callback);
+    RUN_TEST(test_proto_arm_reenables_irq);
+    RUN_TEST(test_proto_arm_noop_for_level_channel);
+    RUN_TEST(test_proto_read_always_returns_inactive);
 
     return UNITY_END();
 }

@@ -10,28 +10,35 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-static volatile bool is_in1_activated = false;
-static volatile bool is_in2_activated = false;
-static volatile bool is_rs_activated  = false;
+static volatile bool g_is_in1_activated   = false;
+static volatile bool g_is_in2_activated   = false;
+static volatile bool g_is_in1_deactivated = false;
+static volatile bool g_is_in2_deactivated = false;
 
 static void on_opto_change(bsp_opto_ch_t ch, bsp_opto_state_t state)
 {
     if (ch == BSP_OPTO_CH_IN1 && state == BSP_OPTO_STATE_ACTIVE)
     {
         /* IN1 активирован */
-        is_in1_activated = true;
+        g_is_in1_activated = true;
     }
 
     if (ch == BSP_OPTO_CH_IN2 && state == BSP_OPTO_STATE_ACTIVE)
     {
         /* IN2 активирован */
-        is_in2_activated = true;
+        g_is_in2_activated = true;
     }
 
-    if (ch == BSP_OPTO_CH_RS && state == BSP_OPTO_STATE_ACTIVE)
+    if (ch == BSP_OPTO_CH_IN1 && state == BSP_OPTO_STATE_INACTIVE)
     {
-        /* RS активирован */
-        is_rs_activated = true;
+        /* IN1 деактивирован */
+        g_is_in1_deactivated = true;
+    }
+
+    if (ch == BSP_OPTO_CH_IN2 && state == BSP_OPTO_STATE_INACTIVE)
+    {
+        /* IN2 деактивирован */
+        g_is_in2_deactivated = true;
     }
 }
 
@@ -45,58 +52,44 @@ int main(void)
     bsp_uart_host_init(UART_BAUDRATE);
     log_uart_init();
 
-    /* --- Opto init --- */
     bsp_opto_config_t opto_cfg = {
-        .callbacks   = { on_opto_change, on_opto_change, on_opto_change },
+        .callbacks   = { on_opto_change, on_opto_change, NULL },
+        .modes       = { BSP_OPTO_MODE_LEVEL, BSP_OPTO_MODE_LEVEL, BSP_OPTO_MODE_LEVEL },
         .edges       = { BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING },
-        .rs_as_gpio  = true,
-        .debounce_ms = 0, /* instant — для быстрого тестирования */
+        .rs_as_gpio  = false,
+        .debounce_ms = DELAY_MS,
     };
     bsp_opto_init(&opto_cfg);
     bsp_led_on(LED_APP);
     LOG_I("BOOT", "firmware_test started, tick=%lu", (unsigned long) bsp_tick_get_ms());
 
-    bool in1_enable = false;
-    bool in2_enable = false;
-    bool rs_enable  = false;
     while (1)
     {
         bsp_opto_process();
         // Контроль включения
-        if (is_in1_activated)
+        if (g_is_in1_activated)
         {
-            is_in1_activated = false;
-            in1_enable       = true;
+            g_is_in1_activated = false;
             LOG_D("INPUT", "CH1: ACTIVE!");
         }
-        if (is_in2_activated)
+        if (g_is_in2_activated)
         {
-            is_in2_activated = false;
-            in2_enable       = true;
+            g_is_in2_activated = false;
             LOG_D("INPUT", "CH2: ACTIVE!");
         }
-        if (is_rs_activated)
-        {
-            is_rs_activated = false;
-            rs_enable       = true;
-            LOG_D("INPUT", "RS: ACTIVE!");
-        }
+
         // Контроль выключения
-        if (in1_enable && bsp_opto_read(BSP_OPTO_CH_IN1) == BSP_OPTO_STATE_INACTIVE)
+        if (g_is_in1_deactivated)
         {
-            in1_enable = false;
+            g_is_in1_deactivated = false;
             LOG_D("INPUT", "CH1: DISABLED!");
         }
-        if (in2_enable && bsp_opto_read(BSP_OPTO_CH_IN2) == BSP_OPTO_STATE_INACTIVE)
+        if (g_is_in2_deactivated)
         {
-            in2_enable = false;
+            g_is_in2_deactivated = false;
             LOG_D("INPUT", "CH2: DISABLED!");
         }
-        if (rs_enable && bsp_opto_read(BSP_OPTO_CH_RS) == BSP_OPTO_STATE_INACTIVE)
-        {
-            rs_enable = false;
-            LOG_D("INPUT", "RS: DISABLED!");
-        }
+
         bsp_delay(DELAY_MS);
     }
 }
