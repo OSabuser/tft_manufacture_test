@@ -126,3 +126,20 @@ add_host_test(
   ${PROJECT_SOURCE_DIR}/bsp/common/include
   MOCKS
   ${BSP_MOCKS_DIR})
+
+# -----------------------------------------------------------------------------
+# Тест кода, использующего bsp_can через мок
+# ----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_bsp_can
+  SOURCES
+  can/test_bsp_can.c
+  ${PROJECT_SOURCE_DIR}/bsp/can/src/can.c
+  ${PROJECT_SOURCE_DIR}/utils/ring_buffer/ring_buffer.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/bsp/can/include
+  ${PROJECT_SOURCE_DIR}/bsp/common/include
+  ${PROJECT_SOURCE_DIR}/utils/ring_buffer
+  MOCKS
+  ${BSP_MOCKS_DIR})

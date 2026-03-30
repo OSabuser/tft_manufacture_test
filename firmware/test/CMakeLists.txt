@@ -18,6 +18,7 @@ target_link_libraries(
   PRIVATE bsp_board
           bsp_led
           bsp_tick
+          bsp_can
           bsp_uart_host
           bsp_boot_xip
           bsp_opto

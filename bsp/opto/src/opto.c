@@ -62,7 +62,7 @@ typedef struct
     bool initialised;
 } opto_module_t;
 
-static opto_module_t s_opto;
+static opto_module_t g_s_opto;
 
 /* ── Вспомогательные функции ─────────────────────────────────────────────── */
 
@@ -113,7 +113,7 @@ void GPIO1_Combined_16_31_IRQHandler(void) // NOLINT(readability-identifier-nami
 
     for (bsp_opto_ch_t ch = (bsp_opto_ch_t) 0U; ch < BSP_OPTO_CH_COUNT; ch++)
     {
-        opto_ch_state_t *p_ch = &s_opto.channels[ch];
+        opto_ch_state_t *p_ch = &g_s_opto.channels[ch];
 
         if (!p_ch->enabled)
         {
@@ -137,9 +137,9 @@ void GPIO1_Combined_16_31_IRQHandler(void) // NOLINT(readability-identifier-nami
             GPIO_DisableInterrupts(OPTO_GPIO_BASE, mask);
 
             /* Вызвать коллбэк прямо из ISR */
-            if (s_opto.callbacks[ch] != NULL)
+            if (g_s_opto.callbacks[ch] != NULL)
             {
-                s_opto.callbacks[ch](ch, OPTO_PIN_TO_STATE(p_ch->raw_pin));
+                g_s_opto.callbacks[ch](ch, OPTO_PIN_TO_STATE(p_ch->raw_pin));
             }
         }
         else /* BSP_OPTO_MODE_LEVEL */
@@ -169,9 +169,9 @@ bsp_status_t bsp_opto_init(const bsp_opto_config_t *p_config)
     /* Сохранить конфигурацию */
     for (bsp_opto_ch_t ch = (bsp_opto_ch_t) 0U; ch < BSP_OPTO_CH_COUNT; ch++)
     {
-        s_opto.callbacks[ch] = p_config->callbacks[ch];
+        g_s_opto.callbacks[ch] = p_config->callbacks[ch];
     }
-    s_opto.debounce_ms = p_config->debounce_ms;
+    g_s_opto.debounce_ms = p_config->debounce_ms;
 
     static const uint8_t K_PINS[BSP_OPTO_CH_COUNT] = {
         [BSP_OPTO_CH_IN1] = OPTO_IN1_PIN,
@@ -187,7 +187,7 @@ bsp_status_t bsp_opto_init(const bsp_opto_config_t *p_config)
 
     for (bsp_opto_ch_t ch = (bsp_opto_ch_t) 0U; ch < BSP_OPTO_CH_COUNT; ch++)
     {
-        opto_ch_state_t *p_ch = &s_opto.channels[ch];
+        opto_ch_state_t *p_ch = &g_s_opto.channels[ch];
 
         if (ch == BSP_OPTO_CH_RS && !p_config->rs_as_gpio)
         {
@@ -235,7 +235,7 @@ bsp_status_t bsp_opto_init(const bsp_opto_config_t *p_config)
 
     EnableIRQ(GPIO1_Combined_16_31_IRQn);
 
-    s_opto.initialised = true;
+    g_s_opto.initialised = true;
     return BSP_OK;
 }
 
@@ -243,12 +243,12 @@ bsp_status_t bsp_opto_init(const bsp_opto_config_t *p_config)
 
 bsp_opto_state_t bsp_opto_read(bsp_opto_ch_t input_channel)
 {
-    if (input_channel >= BSP_OPTO_CH_COUNT || !s_opto.channels[input_channel].enabled ||
-        s_opto.channels[input_channel].mode == BSP_OPTO_MODE_PROTO)
+    if (input_channel >= BSP_OPTO_CH_COUNT || !g_s_opto.channels[input_channel].enabled ||
+        g_s_opto.channels[input_channel].mode == BSP_OPTO_MODE_PROTO)
     {
         return BSP_OPTO_STATE_INACTIVE;
     }
-    return s_opto.channels[input_channel].confirmed_state;
+    return g_s_opto.channels[input_channel].confirmed_state;
 }
 
 /* ── Взвод MODE_PROTO для следующего пакета ──────────────────────────────── */
@@ -260,7 +260,7 @@ void bsp_opto_proto_arm(bsp_opto_ch_t ch)
         return;
     }
 
-    opto_ch_state_t *p_ch = &s_opto.channels[ch];
+    opto_ch_state_t *p_ch = &g_s_opto.channels[ch];
 
     if (!p_ch->enabled || p_ch->mode != BSP_OPTO_MODE_PROTO)
     {
@@ -276,7 +276,7 @@ void bsp_opto_proto_arm(bsp_opto_ch_t ch)
 
 void bsp_opto_process(void)
 {
-    if (!s_opto.initialised)
+    if (!g_s_opto.initialised)
     {
         return;
     }
@@ -285,7 +285,7 @@ void bsp_opto_process(void)
 
     for (bsp_opto_ch_t ch = (bsp_opto_ch_t) 0U; ch < BSP_OPTO_CH_COUNT; ch++)
     {
-        opto_ch_state_t *p_ch = &s_opto.channels[ch];
+        opto_ch_state_t *p_ch = &g_s_opto.channels[ch];
 
         /* Пропускаем: выключен, нет события, или proto-канал (обрабатывается в ISR) */
         if (!p_ch->enabled || !p_ch->pending || p_ch->mode == BSP_OPTO_MODE_PROTO)
@@ -294,7 +294,7 @@ void bsp_opto_process(void)
         }
 
         uint32_t elapsed = now - p_ch->last_edge_ms;
-        if (elapsed < s_opto.debounce_ms)
+        if (elapsed < g_s_opto.debounce_ms)
         {
             continue;
         }
@@ -307,9 +307,9 @@ void bsp_opto_process(void)
         {
             p_ch->confirmed_state = new_state;
 
-            if (s_opto.callbacks[ch] != NULL)
+            if (g_s_opto.callbacks[ch] != NULL)
             {
-                s_opto.callbacks[ch](ch, new_state);
+                g_s_opto.callbacks[ch](ch, new_state);
             }
         }
     }

@@ -147,27 +147,28 @@ uv run --directory tools/hil pytest test_opto.py -v --no-load
 
 ### Зелёный прогон
 
-```
+```bash
 18 passed in 13.4s
 ```
 
 ### Типичные ошибки и их причины
 
-**`TimeoutError: Прошивка не отправила READY`**
+#### `TimeoutError: Прошивка не отправила READY`
 
 Прошивка не запустилась. Возможные причины:
+
 - ELF не пересобран после изменений — `just build::build-hil`
 - MCU не получает питание — `just host::m5-power on`, проверить RLY1
 - Неверный порт в `.env` — `HIL_VCOM_PORT`
 - MCU-Link занят GDB-сервером — закрыть `just host::debug-server`
 
-**`M5 agent не отвечает`**
+#### `M5 agent не отвечает`
 
 - Агент не задеплоен — `just host::m5-deploy`
 - M5 завис — отключить и подключить USB, повторить деплой
 - Неверный порт — `HIL_M5_PORT` в `.env`
 
-**Тест читает INACTIVE вместо ACTIVE (или наоборот)**
+#### Тест читает INACTIVE вместо ACTIVE (или наоборот)
 
 - Провод подключён не к тому реле — сверить [HIL_BENCH.md](HIL_BENCH.md)
 - `agent.py` изменился но не задеплоен — `just host::m5-deploy`

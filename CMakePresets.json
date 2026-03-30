@@ -142,6 +142,7 @@
                 "test_bsp_led",
                 "test_log",
                 "test_bsp_opto",
+                "uart_host_mock_example",
                 "test_ring_buffer",
                 "test_timeout_pattern",
                 "uart_host_mock_example"
@@ -154,6 +155,7 @@
             "targets": [
                 "test_bsp_led",
                 "test_log",
+                "uart_host_mock_example",
                 "test_bsp_opto",
                 "test_ring_buffer",
                 "test_timeout_pattern",

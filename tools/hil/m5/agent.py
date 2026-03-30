@@ -64,7 +64,7 @@ _CFG = {
     "aw_addr":  0x59,
     "can_tx":   42,
     "can_rx":   43,
-    "can_baud": 500_000,
+    "can_baud": 125_000,
 }
 
 _RST_PIN = 3                       # G3_PHY_RST → нога сброса AW9523B

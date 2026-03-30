@@ -1,5 +1,6 @@
 
 #include "board.h"
+#include "bsp/can.h"
 #include "bsp/led.h"
 #include "bsp/opto.h"
 #include "bsp/tick.h"
@@ -46,11 +47,21 @@ int main(void)
 {
     const uint16_t DELAY_MS      = 10;
     const uint32_t UART_BAUDRATE = 115200;
+    const uint32_t CAN_BAUDRATE  = 125000;
     board_hw_init();
     bsp_led_init();
     bsp_tick_init();
     bsp_uart_host_init(UART_BAUDRATE);
     log_uart_init();
+
+    LOG_I("BOOT", "firmware_test started, tick=%lu", (unsigned long) bsp_tick_get_ms());
+
+    bsp_can_config_t can_cfg = { .bitrate = CAN_BAUDRATE };
+    bsp_status_t status      = bsp_can_init(&can_cfg);
+    if (status != BSP_OK)
+    {
+        LOG_E("CAN", "CAN init failed:%d", can_cfg.bitrate);
+    }
 
     bsp_opto_config_t opto_cfg = {
         .callbacks   = { on_opto_change, on_opto_change, NULL },
@@ -61,11 +72,28 @@ int main(void)
     };
     bsp_opto_init(&opto_cfg);
     bsp_led_on(LED_APP);
-    LOG_I("BOOT", "firmware_test started, tick=%lu", (unsigned long) bsp_tick_get_ms());
+
+    status = bsp_can_accept_all();
+    if (status != BSP_OK)
+    {
+        LOG_E("CAN", "CAN init failed:%d", can_cfg.bitrate);
+    }
+    else
+    {
+        LOG_I("CAN", "CAN init OK");
+    }
+
+    bsp_can_frame_t rx_frame;
 
     while (1)
     {
         bsp_opto_process();
+
+        if (bsp_can_receive(&rx_frame, 0) == BSP_OK)
+        {
+            LOG_D("CAN", "RX: ID=0x%08X, DATA=%02X %02X %02X %02X", rx_frame.id, rx_frame.data[0],
+                  rx_frame.data[1], rx_frame.data[2], rx_frame.data[3]);
+        }
         // Контроль включения
         if (g_is_in1_activated)
         {
