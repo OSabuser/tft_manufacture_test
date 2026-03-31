@@ -143,3 +143,18 @@ add_host_test(
   ${CMAKE_SOURCE_DIR}/utils/
   MOCKS
   ${BSP_MOCKS_DIR})
+
+# -----------------------------------------------------------------------------
+# Тест логики bsp_button (категория B — SDK мокается через fff в тест-файле)
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_bsp_button
+  SOURCES
+  button/test_bsp_button.c
+  ${CMAKE_SOURCE_DIR}/bsp/button/src/button.c
+  INCLUDES
+  ${CMAKE_SOURCE_DIR}/bsp/button/include
+  ${CMAKE_SOURCE_DIR}/bsp/common/include
+  MOCKS
+  ${BSP_MOCKS_DIR})

@@ -142,6 +142,7 @@
                 "test_bsp_led",
                 "test_log",
                 "test_bsp_opto",
+                "test_bsp_button",
                 "test_bsp_can",
                 "uart_host_mock_example",
                 "test_ring_buffer",
@@ -156,9 +157,10 @@
             "targets": [
                 "test_bsp_led",
                 "test_log",
+                "test_bsp_opto",
+                "test_bsp_button",
                 "test_bsp_can",
                 "uart_host_mock_example",
-                "test_bsp_opto",
                 "test_ring_buffer",
                 "test_timeout_pattern",
                 "uart_host_mock_example"
@@ -170,6 +172,7 @@
             "configurePreset": "target-debug",
             "targets": [
                 "test_host_uart",
+                "test_hil_button",
                 "test_hil_can",
                 "test_hil_opto"
             ]

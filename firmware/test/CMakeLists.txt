@@ -19,6 +19,7 @@ target_link_libraries(
           bsp_led
           bsp_tick
           bsp_can
+          bsp_button
           bsp_uart_host
           bsp_boot_xip
           bsp_opto

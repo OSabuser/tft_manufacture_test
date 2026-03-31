@@ -226,6 +226,12 @@ def loaded_host_uart(request: pytest.FixtureRequest, m5: M5Agent) -> None:
         Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
     )
 
+@pytest.fixture(scope="module")
+def loaded_hil_button(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+    _load_elf(
+        request,
+        Path(cfg.BUILD_DIR) / "tests/target/hil_button/test_hil_button.elf",
+    )
 
 @pytest.fixture(scope="module")
 def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
@@ -282,6 +288,15 @@ def uart_opto(
 def uart_can(
     request: pytest.FixtureRequest,
     loaded_hil_can,
+) -> Generator[serial.Serial, None, None]:
+    ser = _open_uart_and_wait_ready(request)
+    yield ser
+    ser.close()
+
+@pytest.fixture(scope="module")
+def uart_button(
+    request: pytest.FixtureRequest,
+    loaded_hil_button,
 ) -> Generator[serial.Serial, None, None]:
     ser = _open_uart_and_wait_ready(request)
     yield ser

@@ -330,11 +330,17 @@ flash-swd-erase:
 
 _hil_build := BUILD_DIR / "target-debug"
 
-[doc('Запустить все HIL-тесты')]
+[doc('Запустить все не интерактивные HIL-тесты')]
 [group('hil')]
 hil-run:
     HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest -v
+        uv run --directory {{ HIL_DIR }} pytest -m "not interactive" -v 
+
+[doc('Запустить все интерактивные HIL-тесты: кнопки, дисплей')]
+[group('hil')]
+hil-run-interactive:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} pytest -m interactive -s -v
 
 [doc('Запустить HIL-тест UART')]
 [group('hil')]
@@ -347,6 +353,12 @@ hil-uart:
 hil-opto:
     HIL_BUILD_DIR={{ _hil_build }} \
         uv run --directory {{ HIL_DIR }} pytest 02_test_opto.py -v
+
+[doc('Запустить HIL-тест кнопок')]
+[group('hil')]
+hil-button:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} pytest 04_test_button.py -s -v
 
 [doc('Запустить HIL тест bsp_can')]
 [group('hil')]

@@ -1,5 +1,6 @@
 
 #include "board.h"
+#include "bsp/button.h"
 #include "bsp/can.h"
 #include "bsp/led.h"
 #include "bsp/opto.h"
@@ -45,10 +46,11 @@ static void on_opto_change(bsp_opto_ch_t ch, bsp_opto_state_t state)
 
 int main(void)
 {
-    const uint16_t DELAY_MS      = 10;
+    const uint16_t DELAY_MS      = 5;
     const uint32_t UART_BAUDRATE = 115200;
     const uint32_t CAN_BAUDRATE  = 125000;
     board_hw_init();
+    bsp_button_init();
     bsp_led_init();
     bsp_tick_init();
     bsp_uart_host_init(UART_BAUDRATE);
@@ -88,6 +90,27 @@ int main(void)
     while (1)
     {
         bsp_opto_process();
+        bsp_button_poll();
+
+        if (bsp_button_get_event_pressed(BSP_BUTTON_1))
+        {
+            LOG_D("BUTTON", "B1 was pressed");
+        }
+
+        if (bsp_button_get_event_released(BSP_BUTTON_1))
+        {
+            LOG_D("BUTTON", "B1 was released");
+        }
+
+        if (bsp_button_get_event_pressed(BSP_BUTTON_2))
+        {
+            LOG_D("BUTTON", "B2 was pressed");
+        }
+
+        if (bsp_button_get_event_released(BSP_BUTTON_2))
+        {
+            LOG_D("BUTTON", "B2 was released");
+        }
 
         if (bsp_can_receive(&rx_frame, 0) == BSP_OK)
         {

@@ -110,20 +110,31 @@ ls build/target-debug/tests/target/
 
 ## Шаг 4 — Запуск тестов (на хосте, вне контейнера)
 
-### Все HIL-тесты
+### Автоматические HIL-тесты (без оператора)
 
 ```bash
 just host::hil-run
 ```
 
-pytest обходит все `test_*.py` в `tools/hil/`, запускает их по очереди.
+pytest обходит все `test_*.py` в `tools/hil/`, **исключая** помеченные `@pytest.mark.interactive`.
 Каждый файл — своя загрузка ELF, свой UART-сеанс, MCU перезагружается между файлами.
 
-### Конкретный тест
+### Интерактивные HIL-тесты (требуют оператора)
+
+```bash
+just host::hil-run-interactive   # все интерактивные (кнопки, дисплей и т.п.)
+just host::hil-button            # конкретный интерактивный
+```
+
+Запускаются с флагом `-s` — pytest не перехватывает stdin/stdout, оператор видит
+подсказки и может нажимать Enter. Не входят в `hil-run` и не запускаются в CI.
+
+### Конкретный автоматический тест
 
 ```bash
 just host::hil-uart    # только test_uart.py
 just host::hil-opto    # только test_opto.py
+just host::hil-can     # только test_can.py
 ```
 
 ### Один тест-кейс (для отладки)
@@ -140,8 +151,6 @@ uv run --directory tools/hil pytest test_opto.py -v --no-load
 
 Удобно при отладке тестов когда прошивка уже в RAM и не нужно каждый раз
 ждать загрузки через pyOCD.
-
----
 
 ## Шаг 5 — Интерпретация результатов
 

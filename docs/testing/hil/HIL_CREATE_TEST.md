@@ -17,12 +17,15 @@ just/build.just
   build-hil
 ```
 
-Два типа тестов:
+Три типа тестов:
 
-| Тип | Использует M5 | Когда применять |
-|-----|--------------|-----------------|
-| **Базовый** | Нет | Тестирование UART CLI, алгоритмов, таймингов |
-| **С M5** | Да | Тестирование GPIO, оптовходов, реле, питания |
+| Тип | Использует M5 | Запуск | Когда применять |
+|-----|--------------|--------|-----------------|
+| **Базовый** | Нет | `hil-run` | Тестирование UART CLI, алгоритмов, таймингов |
+| **С M5** | Да | `hil-run` | Тестирование GPIO, оптовходов, реле, питания |
+| **Интерактивный** | Нет / Да | `hil-run-interactive` | Периферия требует действий оператора: кнопки, дисплей |
+
+Интерактивные тесты помечаются `@pytest.mark.interactive` и **никогда не входят в `hil-run`** — они требуют живого оператора и не пригодны для CI.
 
 ---
 
@@ -286,6 +289,54 @@ def wait_until(ser, cmd, expected, timeout_s=1.0):
     raise TimeoutError(f"Ожидали {expected!r} от '{cmd}'")
 ```
 
+### Интерактивный тест (оператор нажимает кнопки / смотрит на дисплей)
+
+Добавить маркер на класс. Для ввода использовать `/dev/tty` напрямую — `input()` не работает под захватом pytest даже с `-s`:
+
+```python
+"""test_<name>.py — интерактивный HIL-тест <что тестируем>."""
+import time
+import pytest
+from conftest import uart_cmd
+
+SETTLE_S = 0.10   # ждать после действия оператора (debounce и т.п.)
+
+
+def _operator_prompt(msg: str) -> None:
+    """Вывести подсказку и дождаться Enter от оператора.
+    Читает /dev/tty напрямую — работает независимо от захвата pytest."""
+    with open("/dev/tty", "w") as tty_out:
+        tty_out.write(f"\n  >>> {msg}\n      Нажмите Enter когда готово...\n")
+        tty_out.flush()
+    with open("/dev/tty", "r") as tty_in:
+        tty_in.readline()
+    time.sleep(SETTLE_S)
+
+
+@pytest.mark.interactive
+class Test<Name>:
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, uart_<name>):
+        self.ser = uart_<name>
+
+    def test_ping(self):
+        assert uart_cmd(self.ser, "PING") == "PONG"
+
+    def test_something(self):
+        _operator_prompt("Выполни действие X на плате")
+        assert uart_cmd(self.ser, "MY_CMD") == "EXPECTED"
+```
+
+**Запуск интерактивных тестов:**
+
+```bash
+just host::hil-run-interactive   # все интерактивные
+just host::hil-button            # конкретный интерактивный
+```
+
+**Правило:** интерактивные тесты **не добавлять** в `hil-run` — они входят только в `hil-run-interactive`.
+
 ---
 
 ## Шаг 7 — `just/host.just`: добавить рецепт (опционально)
@@ -296,6 +347,16 @@ def wait_until(ser, cmd, expected, timeout_s=1.0):
 hil-<name>:
     HIL_BUILD_DIR={{ _hil_build }} \
         uv run --directory {{ HIL_DIR }} pytest test_<name>.py -v
+```
+
+Для интерактивных — добавить флаг `-s`:
+
+```just
+[doc('Запустить HIL-тест <n> (интерактивный, требует оператора)')]
+[group('hil')]
+hil-<n>:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} pytest test_<n>.py -s -v
 ```
 
 ---
@@ -361,14 +422,25 @@ uart.close()                 test_something
 
 ## Чеклист
 
+### Автоматический тест (базовый или с M5)
+
 ```bash
-[ ] tests/target/<name>/main.c           — C-прошивка с CLI + READY-паттерн
-[ ] tests/target/<name>/CMakeLists.txt   — сборка с bsp_boot_ram
-[ ] tests/target/CMakeLists.txt          — add_subdirectory(<name>)
-[ ] CMakePresets.json                    — добавить test_<name> в targets
-[ ] tools/hil/conftest.py                — loaded_<name> + uart_<name>
-[ ] tools/hil/test_<name>.py             — pytest-тесты
-[ ] just/host.just                       — рецепт hil-<name> (опционально)
+[ ] tests/target/<n>/main.c           — C-прошивка с CLI + READY-паттерн
+[ ] tests/target/<n>/CMakeLists.txt   — сборка с bsp_boot_ram
+[ ] tests/target/CMakeLists.txt          — add_subdirectory(<n>)
+[ ] CMakePresets.json                    — добавить test_<n> в targets
+[ ] tools/hil/conftest.py                — loaded_<n> + uart_<n>
+[ ] tools/hil/test_<n>.py             — pytest-тесты
+[ ] just/host.just                       — рецепт hil-<n> (опционально)
 [ ] just build::build-hil                — зелёная сборка
-[ ] just host::hil-<name>                — зелёный прогон
+[ ] just host::hil-<n>                — зелёный прогон
+```
+
+### Интерактивный тест (дополнительно к базовому чеклисту)
+
+```bash
+[ ] @pytest.mark.interactive             — пометить класс в test_<n>.py
+[ ] just/host.just                       — рецепт hil-<n> с флагом -s
+[ ] just host::hil-run-interactive       — зелёный прогон
+[ ] убедиться что just host::hil-run     — NOT в выборке (маркер исключает)
 ```

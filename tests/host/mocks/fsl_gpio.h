@@ -76,7 +76,7 @@ typedef struct
 void GPIO_PinInit(GPIO_Type *base, uint32_t pin, const gpio_pin_config_t *config);
 void GPIO_PinWrite(GPIO_Type *base, uint32_t pin, uint8_t output);
 uint32_t GPIO_PinRead(GPIO_Type *base, uint32_t pin);
-
+uint32_t GPIO_ReadPinInput(GPIO_Type *base, uint32_t pin);
 void GPIO_SetPinInterruptConfig(GPIO_Type *base, uint32_t pin,
                                 gpio_interrupt_mode_t pinInterruptMode);
 void GPIO_EnableInterrupts(GPIO_Type *base, uint32_t mask);

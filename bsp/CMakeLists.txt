@@ -14,6 +14,8 @@ add_subdirectory(tick)
 add_subdirectory(uart_host)
 add_subdirectory(opto)
 add_subdirectory(can)
+add_subdirectory(button)
+
 # Подавляем предупреждения при компиляции собственных .c файлов библиотеки
 target_compile_options(bsp_board PRIVATE -w)
 
