@@ -236,7 +236,7 @@ def _dispatch(cmd: dict) -> dict:
     if c == "info":
         return {
             "ok":     True,
-            "fw":     "agent/1.1",
+            "fw":     "agent/1.2",
             "python": sys.version[:40],
             "can_ok": _can_ok,
             "aw_ok":  _aw is not None,
@@ -307,7 +307,6 @@ def _dispatch(cmd: dict) -> dict:
         if not _can_ok:
             return {"ok": False, "err": "CAN not available"}
         ext  = bool(cmd.get("ext", False))
-        data = bytes(cmd.get("data", []))
         _can.send(list(cmd.get("data", [])), int(cmd["id"]), extframe=ext)
         return {"ok": True}
 
@@ -318,59 +317,9 @@ def _dispatch(cmd: dict) -> dict:
         msg = _can.recv(timeout=timeout_ms)
         if msg is None:
             return {"ok": False, "err": "timeout"}
-        frame_id, _, ext, data = msg
-        return {"ok": True, "id": frame_id, "ext": ext, "data": list(data)}
-
-    if c == "can_loopback":
-        if not _can_ok:
-            return {"ok": False, "err": "CAN not available"}
-        try:
-            import CAN as _CAN_MOD
-
-            # Временно переинициализируем в LOOPBACK режиме
-            _can.deinit()
-            lb = _CAN_MOD(
-                0,
-                extframe=False,
-                tx=_CFG["can_tx"],
-                rx=_CFG["can_rx"],
-                mode=_CAN_MOD.LOOPBACK,
-                bitrate=_CFG["can_baud"],
-                auto_restart=False,
-            )
-
-            test_id   = int(cmd.get("id", 0x123))
-            test_data = list(cmd.get("data", [0x01, 0x02, 0x03, 0x04]))
-            timeout   = int(cmd.get("timeout_ms", 500))
-
-            lb.send(test_data, test_id)
-
-            deadline = time.ticks_ms() + timeout
-            msg = None
-            while time.ticks_diff(deadline, time.ticks_ms()) > 0:
-                if lb.any():
-                    msg = lb.recv()
-                    break
-                time.sleep_ms(5)
-
-            lb.deinit()
-
-            if msg is None:
-                return {"ok": False, "err": "loopback timeout — фрейм не вернулся"}
-
-            recv_id, _, ext, recv_data = msg
-            matched = (recv_id == test_id) and (list(recv_data[:len(test_data)]) == test_data)
-            return {
-                "ok": True,
-                "matched": matched,
-                "sent_id":   test_id,
-                "recv_id":   recv_id,
-                "sent_data": test_data,
-                "recv_data": list(recv_data),
-            }
-
-        except Exception as e:
-            return {"ok": False, "err": "loopback error: %s" % e}
+        # Кортеж от биндинга: (identifier, extd, rtr, data)
+        frame_id, extd, rtr, data = msg          # ← правильная распаковка
+        return {"ok": True, "id": frame_id, "ext": bool(extd), "data": list(data)}
 
     return {"ok": False, "err": "unknown cmd: %r" % c}
 

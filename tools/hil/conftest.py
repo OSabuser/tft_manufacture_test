@@ -21,7 +21,7 @@ from pyocd_utils import flexram_init, load_elf, open_target, run_from_vectors
 log = logging.getLogger(__name__)
 
 # Задержка после включения питания таргета (мс стабилизации + POR)
-_POWER_ON_SETTLE_S = 1.0
+_POWER_ON_SETTLE_S = 1.5
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +138,23 @@ class M5Agent:
 
     def opto_all_off(self) -> None:
         self.cmd("opto_all_off")
+    def info(self) -> dict:
+        """Запросить информацию об агенте (включая can_ok)."""
+        return self.cmd("info")
+ 
+    def can_send(self, can_id: int, data: list, ext: bool = False) -> None:
+        """Отправить CAN-фрейм с шины M5."""
+        self.cmd("can_send", id=can_id, data=list(data), ext=ext)
+ 
+    def can_recv(self, timeout_ms: int = 500) -> dict:
+        """
+        Принять CAN-фрейм на M5.
+        Возвращает dict {id, ext, data}.
+        Выбрасывает TimeoutError если фрейм не пришёл.
+        """
+        resp = self.cmd("can_recv", timeout_ms=timeout_ms)
+        # cmd() уже выбрасывает RuntimeError при ok=false (включая timeout от агента)
+        return resp
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +220,7 @@ def m5(request: pytest.FixtureRequest) -> Generator[M5Agent, None, None]:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def loaded_host_uart(request: pytest.FixtureRequest) -> None:
+def loaded_host_uart(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     _load_elf(
         request,
         Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
@@ -226,6 +243,19 @@ def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
         Path(cfg.BUILD_DIR) / "tests/target/hil_opto/test_hil_opto.elf",
     )
 
+@pytest.fixture(scope="module")
+def loaded_hil_can(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+    """
+    Загрузить test_hil_can.elf.
+ 
+    Явная зависимость от m5 гарантирует порядок:
+      1. m5 создаётся первым → питание таргета включено
+      2. только потом pyOCD подключается и грузит ELF
+    """
+    _load_elf(
+        request,
+        Path(cfg.BUILD_DIR) / "tests/target/hil_can/test_hil_can.elf",
+    )
 
 # ---------------------------------------------------------------------------
 # Фикстуры UART
@@ -239,7 +269,6 @@ def uart(
     yield ser
     ser.close()
 
-
 @pytest.fixture(scope="module")
 def uart_opto(
     request: pytest.FixtureRequest,
@@ -249,7 +278,14 @@ def uart_opto(
     yield ser
     ser.close()
 
-
+@pytest.fixture(scope="module")
+def uart_can(
+    request: pytest.FixtureRequest,
+    loaded_hil_can,
+) -> Generator[serial.Serial, None, None]:
+    ser = _open_uart_and_wait_ready(request)
+    yield ser
+    ser.close()
 # ---------------------------------------------------------------------------
 # Утилита для тестов
 # ---------------------------------------------------------------------------

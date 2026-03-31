@@ -347,7 +347,7 @@ bsp_status_t bsp_can_accept_all(void)
     }
 
     /*
-     * Настраиваем один RX MB (index 0) с маской 0x000
+     * Настраиваем два RX MB с маской 0x000
      * (все биты игнорируются — принимает любой ID).
      * Деактивируем остальные.
      */
@@ -363,23 +363,29 @@ bsp_status_t bsp_can_accept_all(void)
 
     g_s_rx_mb_active_mask = 0U;
 
-    /* Настроить MB1 на приём всех STD-фреймов. */
+    /* Настроить MB2 на приём всех STD-фреймов. */
     flexcan_rx_mb_config_t rx_mb_cfg;
     rx_mb_cfg.format = kFLEXCAN_FrameFormatStandard;
     rx_mb_cfg.type   = kFLEXCAN_FrameTypeData;
     rx_mb_cfg.id     = FLEXCAN_ID_STD(0U);
 
     FLEXCAN_SetRxMbConfig(BSP_CAN_BASE, RX_MB_FIRST, &rx_mb_cfg, true);
-    FLEXCAN_SetRxIndividualMask(BSP_CAN_BASE, RX_MB_FIRST, 0U);
+    /* STD MB — принимать все STD, отвергать EXT */
+    FLEXCAN_SetRxIndividualMask(
+        BSP_CAN_BASE, RX_MB_FIRST,
+        FLEXCAN_RX_MB_STD_MASK(0U, 0U, 1U)); /* mask=0: любой ID; ide=1: проверять IDE */
 
     g_s_rx_mb_active_mask = 1U; /* Только index 0 активен. */
 
-    /* Настроить MB2 на приём всех EXT-фреймов. */
+    /* Настроить MB3 на приём всех EXT-фреймов. */
     rx_mb_cfg.format = kFLEXCAN_FrameFormatExtend;
     rx_mb_cfg.id     = FLEXCAN_ID_EXT(0U);
 
     FLEXCAN_SetRxMbConfig(BSP_CAN_BASE, RX_MB_FIRST + 1U, &rx_mb_cfg, true);
-    FLEXCAN_SetRxIndividualMask(BSP_CAN_BASE, RX_MB_FIRST + 1U, 0U);
+    /* EXT MB — принимать все EXT, отвергать STD */
+    FLEXCAN_SetRxIndividualMask(
+        BSP_CAN_BASE, RX_MB_FIRST + 1U,
+        FLEXCAN_RX_MB_EXT_MASK(0U, 0U, 1U)); /* mask=0: любой ID; ide=1: проверять IDE */
 
     g_s_rx_mb_active_mask |= (1U << 1U); /* index 0 и 1 активны. */
 

@@ -340,13 +340,19 @@ hil-run:
 [group('hil')]
 hil-uart:
     HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest test_uart.py -v
+        uv run --directory {{ HIL_DIR }} pytest 01_test_uart.py -v
 
 [doc('Запустить HIL-тест оптоизолированных входов')]
 [group('hil')]
 hil-opto:
     HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest test_opto.py -v
+        uv run --directory {{ HIL_DIR }} pytest 02_test_opto.py -v
+
+[doc('Запустить HIL тест bsp_can')]
+[group('hil')]
+hil-can:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} pytest 03_test_can.py -v
 
 # =============================================================================
 # ГРУППА: debug — GDB-сервер для отладки из VSCode (devcontainer)
