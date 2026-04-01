@@ -1,0 +1,317 @@
+.
+├── CMakeLists.txt
+├── CMakePresets.json
+├── Justfile
+├── README.md
+├── bootstrap.sh
+├── bsp
+│   ├── CMakeLists.txt
+│   ├── README.md
+│   ├── button
+│   │   ├── CMakeLists.txt
+│   │   ├── README.md
+│   │   ├── include
+│   │   └── src
+│   ├── can
+│   │   ├── CMakeLists.txt
+│   │   ├── README.md
+│   │   ├── include
+│   │   ├── mocks
+│   │   └── src
+│   ├── common
+│   │   ├── CMakeLists.txt
+│   │   └── include
+│   ├── generated
+│   │   ├── README.md
+│   │   ├── TFT_Board.mex
+│   │   ├── board
+│   │   ├── board.c
+│   │   ├── board.h
+│   │   ├── clock_config.c
+│   │   ├── clock_config.h
+│   │   ├── pin_mux.c
+│   │   ├── pin_mux.h
+│   │   ├── startup
+│   │   └── syscalls.c
+│   ├── led
+│   │   ├── CMakeLists.txt
+│   │   ├── README.md
+│   │   ├── include
+│   │   └── src
+│   ├── opto
+│   │   ├── CMakeLists.txt
+│   │   ├── README.md
+│   │   ├── include
+│   │   └── src
+│   ├── sdram
+│   │   ├── README.md
+│   │   ├── include
+│   │   └── src
+│   ├── tick
+│   │   ├── CMakeLists.txt
+│   │   ├── README.md
+│   │   ├── include
+│   │   └── src
+│   ├── uart_host
+│   │   ├── CMakeLists.txt
+│   │   ├── README.md
+│   │   ├── include
+│   │   ├── mocks
+│   │   └── src
+│   └── usb_cdc
+│       ├── CMakeLists.txt
+│       ├── README.md
+│       ├── include
+│       └── src
+├── build
+│   ├── Debug
+│   │   ├── CMakeCache.txt
+│   │   ├── CMakeFiles
+│   │   ├── bsp
+│   │   ├── build.ninja
+│   │   ├── cmake_install.cmake
+│   │   ├── compile_commands.json
+│   │   ├── firmware
+│   │   ├── firmware_test.bin
+│   │   ├── firmware_test.elf
+│   │   ├── firmware_test.map
+│   │   ├── firmware_test_hab.bin
+│   │   ├── lib
+│   │   ├── port
+│   │   ├── sdk
+│   │   └── utils
+│   ├── host-debug
+│   │   ├── CMakeCache.txt
+│   │   ├── CMakeFiles
+│   │   ├── CTestTestfile.cmake
+│   │   ├── Testing
+│   │   ├── bsp
+│   │   ├── build.ninja
+│   │   ├── cmake_install.cmake
+│   │   ├── compile_commands.json
+│   │   ├── lib
+│   │   ├── port
+│   │   ├── sdk
+│   │   ├── tests
+│   │   └── utils
+│   └── host-release
+│       ├── CMakeCache.txt
+│       ├── CMakeFiles
+│       ├── CTestTestfile.cmake
+│       ├── Testing
+│       ├── bsp
+│       ├── build.ninja
+│       ├── cmake_install.cmake
+│       ├── compile_commands.json
+│       ├── lib
+│       ├── port
+│       ├── sdk
+│       ├── tests
+│       └── utils
+├── cmake
+│   ├── linker
+│   │   ├── MIMXRT1052xxxxx_flexspi_nor.ld
+│   │   ├── MIMXRT1052xxxxx_flexspi_nor_sdram.ld
+│   │   ├── MIMXRT1052xxxxx_ram.ld
+│   │   ├── MIMXRT1052xxxxx_sdram.ld
+│   │   └── MIMXRT1052xxxxx_sdram_txt.ld
+│   ├── toolchain_arm.cmake
+│   └── toolchain_host.cmake
+├── docs
+│   ├── DEV_ARCH.md
+│   ├── HOW_TO_DEBUG.md
+│   ├── HOW_TO_FLASH.md
+│   ├── hardware
+│   │   ├── MCULINKINSERT.pdf
+│   │   ├── board
+│   │   └── m5stamPLC
+│   ├── mimxrt1052
+│   │   ├── BOOT_FLAGS.md
+│   │   ├── HAB_GUIDE.md
+│   │   ├── manufacturing_user's_guide.pdf
+│   │   └── mcu_rm.pdf
+│   └── testing
+│       ├── hil
+│       └── host
+├── firmware
+│   ├── bootloader
+│   ├── test
+│   │   ├── CMakeLists.txt
+│   │   ├── README.md
+│   │   ├── arch.svg
+│   │   └── main.c
+│   └── tft_app
+├── just
+│   ├── build.just
+│   ├── ci.just
+│   └── host.just
+├── lib
+│   ├── CMakeLists.txt
+│   ├── SEGGER
+│   │   ├── RTT
+│   │   └── wrapper
+│   ├── Unity
+│   │   ├── CMakeLists.txt
+│   │   ├── LICENSE.txt
+│   │   ├── README.md
+│   │   ├── auto
+│   │   ├── docs
+│   │   ├── examples
+│   │   ├── extras
+│   │   ├── library.json
+│   │   ├── meson.build
+│   │   ├── meson_options.txt
+│   │   ├── platformio-build.py
+│   │   ├── src
+│   │   ├── test
+│   │   └── unityConfig.cmake
+│   └── fff
+│       ├── CMakeLists.txt
+│       ├── LICENSE
+│       ├── README.md
+│       ├── buildandtest
+│       ├── examples
+│       ├── fakegen.rb
+│       ├── fff.h
+│       └── test
+├── port
+│   ├── CMakeLists.txt
+│   ├── README.md
+│   └── log
+│       ├── CMakeLists.txt
+│       ├── README.md
+│       ├── include
+│       └── src
+├── project_tree.txt
+├── pyocd.yaml
+├── pyocd_debug.yaml
+├── sdk
+│   ├── CMSIS
+│   │   ├── Core
+│   │   ├── DSP
+│   │   ├── Driver
+│   │   ├── LICENSE.txt
+│   │   ├── NN
+│   │   └── RTOS2
+│   ├── CMakeLists.txt
+│   ├── COPYING-BSD-3
+│   ├── LA_OPT_NXP_Software_License.txt
+│   ├── MIMXRT1052xxxxB_manifest_v3_15.xml
+│   ├── README.md
+│   ├── SW-Content-Register.txt
+│   ├── boards
+│   │   └── evkbimxrt1050
+│   ├── components
+│   │   ├── audio
+│   │   ├── button
+│   │   ├── codec
+│   │   ├── common_task
+│   │   ├── crc
+│   │   ├── display
+│   │   ├── exception_handling
+│   │   ├── flash
+│   │   ├── gpio
+│   │   ├── i2c
+│   │   ├── internal_flash
+│   │   ├── led
+│   │   ├── lists
+│   │   ├── log
+│   │   ├── mem_manager
+│   │   ├── messaging
+│   │   ├── mx25r_flash
+│   │   ├── osa
+│   │   ├── panic
+│   │   ├── phy
+│   │   ├── pmic
+│   │   ├── reset
+│   │   ├── rng
+│   │   ├── rtt
+│   │   ├── sensor
+│   │   ├── serial_manager
+│   │   ├── silicon_id
+│   │   ├── spi
+│   │   ├── timer
+│   │   ├── timer_manager
+│   │   ├── touch
+│   │   ├── uart
+│   │   ├── video
+│   │   └── wifi_bt_module
+│   ├── devices
+│   │   └── MIMXRT1052
+│   ├── docs
+│   │   └── readme.md
+│   ├── middleware
+│   │   ├── audio_voice
+│   │   ├── cjson
+│   │   ├── dhara
+│   │   ├── fatfs
+│   │   ├── freemaster
+│   │   ├── libjpeg
+│   │   ├── littlefs
+│   │   ├── mcuboot_opensource
+│   │   ├── pkcs11
+│   │   ├── pngdec
+│   │   ├── sdmmc
+│   │   ├── tfm
+│   │   ├── tinycbor
+│   │   └── usb
+│   ├── rtos
+│   │   └── freertos
+│   └── tools
+│       └── cmake_toolchain_files
+├── tests
+│   ├── CMakeLists.txt
+│   ├── host
+│   │   ├── CMakeLists.txt
+│   │   ├── README.md
+│   │   ├── button
+│   │   ├── can
+│   │   ├── led
+│   │   ├── log
+│   │   ├── mocks
+│   │   ├── opto
+│   │   ├── ring_buffer
+│   │   ├── timeout
+│   │   └── uart_host
+│   └── target
+│       ├── CMakeLists.txt
+│       ├── hil_button
+│       ├── hil_can
+│       ├── hil_opto
+│       └── host_uart
+├── tools
+│   ├── hil
+│   │   ├── 01_test_uart.py
+│   │   ├── 02_test_opto.py
+│   │   ├── 03_test_can.py
+│   │   ├── 04_test_button.py
+│   │   ├── README.md
+│   │   ├── __pycache__
+│   │   ├── conftest.py
+│   │   ├── env_config.py
+│   │   ├── load_and_run.py
+│   │   ├── m5
+│   │   ├── pyocd_utils.py
+│   │   ├── pyproject.toml
+│   │   └── uv.lock
+│   └── host
+│       ├── README.md
+│       ├── dcd
+│       ├── flash_swd.py
+│       ├── flash_usb.py
+│       ├── hab
+│       ├── pyproject.toml
+│       └── uv.lock
+└── utils
+    ├── CMakeLists.txt
+    ├── README.md
+    ├── log
+    │   ├── README.md
+    │   ├── log.c
+    │   └── log.h
+    └── ring_buffer
+        ├── README.md
+        ├── ring_buffer.c
+        └── ring_buffer.h
+
+185 directories, 130 files
