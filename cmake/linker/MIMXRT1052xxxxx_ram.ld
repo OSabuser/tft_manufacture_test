@@ -26,8 +26,8 @@
 /* Entry Point */
 ENTRY(Reset_Handler)
 
-HEAP_SIZE  = DEFINED(__heap_size__)  ? __heap_size__  : 0x0400;
-STACK_SIZE = DEFINED(__stack_size__) ? __stack_size__ : 0x0400;
+HEAP_SIZE  = DEFINED(__heap_size__)  ? __heap_size__  : 0x2000;
+STACK_SIZE = DEFINED(__stack_size__) ? __stack_size__ : 0x1000;
 
 /* Specify the memory areas */
 MEMORY
@@ -41,8 +41,12 @@ MEMORY
 /* Define output sections */
 SECTIONS
 {
+  /* Non-cacheable region carved from the start of m_data2 (SRAM_OC).
+   * USB DMA descriptors and endpoint buffers must be placed here via
+   * __attribute__((section("NonCacheable"))) to avoid CM7 D-Cache coherency issues.
+   * Size must be power-of-2 and >= 32 bytes for MPU region validity (ARM errata). */
   __NCACHE_REGION_START = ORIGIN(m_data2);
-  __NCACHE_REGION_SIZE  = 0;
+  __NCACHE_REGION_SIZE  = 0x2000;    /* 8 KB — USB ep bufs + DMA descriptors */
 
   /* The startup code goes first into internal RAM */
   .interrupts :
@@ -161,24 +165,26 @@ SECTIONS
   } > m_data
 
   __NDATA_ROM = __DATA_ROM + (__data_end__ - __data_start__);
-  .ncache.init : AT(__NDATA_ROM)
+  .ncache.init :
   {
-    __noncachedata_start__ = .;   /* create a global symbol at ncache data start */
+    . = ALIGN(32);
+    __noncachedata_start__ = .;
     *(NonCacheable.init)
     . = ALIGN(4);
-    __noncachedata_init_end__ = .;   /* create a global symbol at initialized ncache data end */
-  } > m_data
+    __noncachedata_init_end__ = .;
+  } > m_data2
   . = __noncachedata_init_end__;
   .ncache :
   {
     *(NonCacheable)
     . = ALIGN(4);
-    __noncachedata_end__ = .;     /* define a global symbol at ncache data end */
-  } > m_data
+    __noncachedata_end__ = .;
+  } > m_data2
 
-  __DATA_END = __NDATA_ROM + (__noncachedata_init_end__ - __noncachedata_start__);
-  text_end = ORIGIN(m_text) + LENGTH(m_text);
-  ASSERT(__DATA_END <= text_end, "region m_text overflowed with text and data")
+  /* ncache sections are now in m_data2; DATA_END tracks only m_data usage */
+  __DATA_END = __NDATA_ROM;
+  ASSERT(__DATA_END <= (ORIGIN(m_text) + LENGTH(m_text)), "region m_text overflowed")
+  ASSERT((__noncachedata_end__ - ORIGIN(m_data2)) <= LENGTH(m_data2), "m_data2 ncache overflow")
 
   /* Uninitialized data section */
   .bss :

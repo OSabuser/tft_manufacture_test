@@ -1,56 +1,74 @@
 
 #include "board.h"
-#include "bsp/button.h"
-#include "bsp/can.h"
 #include "bsp/led.h"
-#include "bsp/opto.h"
 #include "bsp/tick.h"
 #include "bsp/uart_host.h"
+#include "fsl_common.h"
 #include "log/log.h"
 #include "port/log_uart.h"
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
-static volatile bool g_is_in1_activated   = false;
-static volatile bool g_is_in2_activated   = false;
-static volatile bool g_is_in1_deactivated = false;
-static volatile bool g_is_in2_deactivated = false;
+/* --------------------------------------------------------------------------
+ * Проверка non-cacheable региона
+ * --------------------------------------------------------------------------
+ * Буфер размещён в секции NonCacheable — OCRAM @ 0x20200000.
+ * MPU Region 9 настраивает эту область как Normal non-cacheable,
+ * поэтому записи CPU сразу видны DMA без SCB_CleanDCache().
+ * -------------------------------------------------------------------------- */
 
-static void on_opto_change(bsp_opto_ch_t ch, bsp_opto_state_t state)
+#define NCACHE_TEST_BUF_SIZE 64U
+#define NCACHE_REGION_BASE   0x20200000U
+#define NCACHE_REGION_END    0x20202000U /* 8 KB — размер из линкер-скрипта */
+
+AT_NONCACHEABLE_SECTION_ALIGN(static uint8_t s_ncache_buf[NCACHE_TEST_BUF_SIZE], 4U);
+
+static bool ncache_test_run(void)
 {
-    if (ch == BSP_OPTO_CH_IN1 && state == BSP_OPTO_STATE_ACTIVE)
+    uint32_t buf_addr = (uint32_t) s_ncache_buf;
+
+    /* Проверяем что буфер физически лежит в ожидаемом ncache регионе */
+    if (buf_addr < NCACHE_REGION_BASE || buf_addr >= NCACHE_REGION_END)
     {
-        /* IN1 активирован */
-        g_is_in1_activated = true;
+        LOG_E("NCACHE", "buf addr 0x%08lx outside ncache region [0x%08x..0x%08x)",
+              (unsigned long) buf_addr, NCACHE_REGION_BASE, NCACHE_REGION_END);
+        return false;
     }
 
-    if (ch == BSP_OPTO_CH_IN2 && state == BSP_OPTO_STATE_ACTIVE)
+    /* Записываем паттерн */
+    for (uint32_t i = 0U; i < NCACHE_TEST_BUF_SIZE; i++)
     {
-        /* IN2 активирован */
-        g_is_in2_activated = true;
+        s_ncache_buf[i] = (uint8_t) (i ^ 0xA5U);
     }
 
-    if (ch == BSP_OPTO_CH_IN1 && state == BSP_OPTO_STATE_INACTIVE)
+    /* Для non-cacheable памяти flush не нужен — данные уже когерентны.
+     * Вызываем CleanDCache чтобы убедиться что он не ломает данные. */
+    SCB_CleanDCache();
+
+    /* Читаем обратно и сравниваем */
+    for (uint32_t i = 0U; i < NCACHE_TEST_BUF_SIZE; i++)
     {
-        /* IN1 деактивирован */
-        g_is_in1_deactivated = true;
+        uint8_t expected = (uint8_t) (i ^ 0xA5U);
+
+        if (s_ncache_buf[i] != expected)
+        {
+            LOG_E("NCACHE", "mismatch at [%lu]: got 0x%02x expected 0x%02x", (unsigned long) i,
+                  s_ncache_buf[i], expected);
+            return false;
+        }
     }
 
-    if (ch == BSP_OPTO_CH_IN2 && state == BSP_OPTO_STATE_INACTIVE)
-    {
-        /* IN2 деактивирован */
-        g_is_in2_deactivated = true;
-    }
+    return true;
 }
 
 int main(void)
 {
-    const uint16_t DELAY_MS      = 5;
+    const uint16_t DELAY_MS      = 100;
     const uint32_t UART_BAUDRATE = 115200;
-    const uint32_t CAN_BAUDRATE  = 125000;
     board_hw_init();
-    bsp_button_init();
+
     bsp_led_init();
     bsp_tick_init();
     bsp_uart_host_init(UART_BAUDRATE);
@@ -58,89 +76,21 @@ int main(void)
 
     LOG_I("BOOT", "firmware_test started, tick=%lu", (unsigned long) bsp_tick_get_ms());
 
-    bsp_can_config_t can_cfg = { .bitrate = CAN_BAUDRATE };
-    bsp_status_t status      = bsp_can_init(&can_cfg);
-    if (status != BSP_OK)
+    if (ncache_test_run())
     {
-        LOG_E("CAN", "CAN init failed:%d", can_cfg.bitrate);
-    }
-
-    bsp_opto_config_t opto_cfg = {
-        .callbacks   = { on_opto_change, on_opto_change, NULL },
-        .modes       = { BSP_OPTO_MODE_LEVEL, BSP_OPTO_MODE_LEVEL, BSP_OPTO_MODE_LEVEL },
-        .edges       = { BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING },
-        .rs_as_gpio  = false,
-        .debounce_ms = DELAY_MS,
-    };
-    bsp_opto_init(&opto_cfg);
-    bsp_led_on(LED_APP);
-
-    status = bsp_can_accept_all();
-    if (status != BSP_OK)
-    {
-        LOG_E("CAN", "CAN init failed:%d", can_cfg.bitrate);
+        LOG_I("NCACHE", "OK addr=0x%08lx size=%u", (unsigned long) (uint32_t) s_ncache_buf,
+              NCACHE_TEST_BUF_SIZE);
     }
     else
     {
-        LOG_I("CAN", "CAN init OK");
+        LOG_E("NCACHE", "FAIL");
     }
 
-    bsp_can_frame_t rx_frame;
+    bsp_led_on(LED_APP);
 
     while (1)
     {
-        bsp_opto_process();
-        bsp_button_poll();
-
-        if (bsp_button_get_event_pressed(BSP_BUTTON_1))
-        {
-            LOG_D("BUTTON", "B1 was pressed");
-        }
-
-        if (bsp_button_get_event_released(BSP_BUTTON_1))
-        {
-            LOG_D("BUTTON", "B1 was released");
-        }
-
-        if (bsp_button_get_event_pressed(BSP_BUTTON_2))
-        {
-            LOG_D("BUTTON", "B2 was pressed");
-        }
-
-        if (bsp_button_get_event_released(BSP_BUTTON_2))
-        {
-            LOG_D("BUTTON", "B2 was released");
-        }
-
-        if (bsp_can_receive(&rx_frame, 0) == BSP_OK)
-        {
-            LOG_D("CAN", "RX: ID=0x%08X, DATA=%02X %02X %02X %02X", rx_frame.id, rx_frame.data[0],
-                  rx_frame.data[1], rx_frame.data[2], rx_frame.data[3]);
-        }
-        // Контроль включения
-        if (g_is_in1_activated)
-        {
-            g_is_in1_activated = false;
-            LOG_D("INPUT", "CH1: ACTIVE!");
-        }
-        if (g_is_in2_activated)
-        {
-            g_is_in2_activated = false;
-            LOG_D("INPUT", "CH2: ACTIVE!");
-        }
-
-        // Контроль выключения
-        if (g_is_in1_deactivated)
-        {
-            g_is_in1_deactivated = false;
-            LOG_D("INPUT", "CH1: DISABLED!");
-        }
-        if (g_is_in2_deactivated)
-        {
-            g_is_in2_deactivated = false;
-            LOG_D("INPUT", "CH2: DISABLED!");
-        }
-
+        bsp_led_toggle(LED_HEARTBEAT);
         bsp_delay(DELAY_MS);
     }
 }
