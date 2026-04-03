@@ -67,3 +67,47 @@ add_sdk_driver(flexspi fsl_flexspi.c)
 
 target_link_libraries(sdk_semc PUBLIC sdk_clock)
 target_link_libraries(sdk_flexspi PUBLIC sdk_clock)
+
+# -----------------------------------------------------------------------------
+# USB middleware — ручные таргеты (middleware/usb/, не drivers/)
+# -----------------------------------------------------------------------------
+
+# --- sdk_osa_bm: OS Abstraction Layer (bare-metal) ---
+# Объявлен первым — от него зависят USB таргеты через fsl_os_abstraction.h
+add_library(sdk_osa_bm STATIC components/osa/fsl_os_abstraction_bm.c
+                              components/lists/fsl_component_generic_list.c)
+target_include_directories(sdk_osa_bm PUBLIC components/osa components/lists)
+target_link_libraries(sdk_osa_bm PUBLIC sdk_device sdk_common sdk_usb_config)
+target_compile_options(sdk_osa_bm PRIVATE -w)
+
+# --- sdk_usb_common: заголовки USB стека ---
+add_library(sdk_usb_common INTERFACE)
+target_include_directories(sdk_usb_common SYSTEM
+                           INTERFACE middleware/usb/include)
+
+# --- sdk_usb_config: application-specific конфиги ---
+add_library(sdk_usb_config INTERFACE)
+target_include_directories(sdk_usb_config SYSTEM
+                           INTERFACE ${CMAKE_SOURCE_DIR}/bsp/usb_cdc/src)
+
+# --- sdk_usb_device_ehci: EHCI контроллер + DCI абстракция ---
+add_library(sdk_usb_device_ehci STATIC middleware/usb/device/usb_device_dci.c
+                                       middleware/usb/device/usb_device_ehci.c)
+target_include_directories(sdk_usb_device_ehci PUBLIC middleware/usb/device)
+target_link_libraries(
+  sdk_usb_device_ehci PUBLIC sdk_device sdk_common sdk_usb_common
+                             sdk_usb_config sdk_osa_bm)
+target_compile_options(sdk_usb_device_ehci PRIVATE -w)
+
+# --- sdk_usb_device_ch9: Chapter 9 standard requests ---
+# add_library(sdk_usb_device_ch9 STATIC middleware/usb/device/usb_device_ch9.c)
+# target_include_directories( sdk_usb_device_ch9 PUBLIC middleware/usb/device
+# middleware/usb/device/class) target_link_libraries(sdk_usb_device_ch9 PUBLIC
+# sdk_usb_device_ehci) target_compile_options(sdk_usb_device_ch9 PRIVATE -w)
+
+# --- sdk_usb_phy: USB PHY ---
+add_library(sdk_usb_phy STATIC middleware/usb/phy/usb_phy.c)
+target_include_directories(sdk_usb_phy PUBLIC middleware/usb/phy)
+target_link_libraries(sdk_usb_phy PUBLIC sdk_device sdk_common sdk_usb_common
+                                         sdk_usb_config sdk_osa_bm)
+target_compile_options(sdk_usb_phy PRIVATE -w)

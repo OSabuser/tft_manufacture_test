@@ -39,6 +39,9 @@ typedef enum bsp_status_e
     BSP_ERR_PARAM   = 4, /**< Невалидный аргумент  */
     BSP_ERR_OVERFLOW = 5, /**< Переполнение буфера, данные потеряны.     */
     BSP_ERR_NOT_SUPPORTED = 6, /**< Функция не поддерживается  */
+    BSP_ERR_INVALID       = 7, /**< Невалидная операция. */
+    BSP_ERR_HW            = 8, /**< Ошибки аппаратного стека. */
+    BSP_ERR_NOT_READY     = 9, /**< Модуль не готов. */
 } bsp_status_t;
 
 #endif /* BSP_STATUS_H */

@@ -18,11 +18,9 @@ target_link_libraries(
   PRIVATE bsp_board
           bsp_led
           bsp_tick
-          bsp_can
-          bsp_button
           bsp_uart_host
           bsp_boot_xip
-          bsp_opto
+          bsp_usb_cdc
           port_log_uart
           lib_external # SEGGER RTT если включён через SEGGER_RTT_ENABLED
 )
