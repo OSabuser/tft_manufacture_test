@@ -1,342 +1,372 @@
-# USB — теория для embedded-разработчика
+# bsp_usb_cdc — USB CDC ACM (Virtual COM Port)
 
-> Памятка: фокус на CDC ACM (Virtual COM Port) для NXP IMXRT1052
+USB CDC ACM device на USB1 (EHCI0). Хост видит устройство как виртуальный COM-порт
+(`/dev/ttyACM*` на Linux/macOS, `COMx` на Windows).
+
+Используется для передачи данных между платой и ПК: отладочные лог-каналы,
+CLI команды, обновление конфигурации. Работает параллельно с `bsp_uart_host`
+(LPUART1) — два независимых канала.
 
 ---
 
-## 1. Основы архитектуры USB
+## Аппаратура
 
-USB — это **master-slave** шина. Хост всегда инициирует обмен, устройство только отвечает. Никакой "самодеятельности" от устройства быть не может — только реакция на запросы хоста.
+| Сигнал       | Пин MCU        | Назначение                       |
+|--------------|----------------|----------------------------------|
+| USB_OTG1_DN  | USB_OTG1_DN    | USB1 Data−                       |
+| USB_OTG1_DP  | USB_OTG1_DP    | USB1 Data+                       |
+| USB_OTG1_VBUS| USB_OTG1_VBUS  | VBUS detect (self-powered)       |
+
+Встроенный HS PHY (480 MHz PLL). Контроллер: EHCI0 (`kUSB_ControllerEhci0`).
+Скорость: High-Speed (480 Mbit/s) при поддержке хоста, fallback Full-Speed (12 Mbit/s).
+
+USB PHY калибровка: `D_CAL=0x0C`, `TXCAL45DP=0x06`, `TXCAL45DM=0x06` — стандартные
+значения для EVKB, подходят для кабелей до 3 м.
+
+**VID/PID**: `0x1234` / `0x0001` (placeholder, заменить на производственные).
+
+---
+
+## Архитектура
 
 ```bash
-HOST (PC)                        DEVICE (MCU)
-──────────                       ────────────
-OS USB stack                     USB device stack
-    ↕                                   ↕
-Host controller (xHCI/EHCI)  ←→  Device controller (EHCI на IMXRT)
-                         D+  D−  VBUS  GND
+                              bsp_usb_cdc_write()
+                                     ↓
+                          memcpy → s_sendBuf (NonCacheable OCRAM)
+                                     ↓
+                          USB_DeviceSendRequest()
+                                     ↓
+                   [EHCI0 DMA] → USB1_DP/DN → Host
+
+Host → USB1_DP/DN → [EHCI0 DMA]
+                          ↓
+              USB_OTG1_IRQHandler → BulkOut callback
+                          ↓
+                    s_recvBuf (NonCacheable OCRAM)
+                          ↓
+                   s_recvSize = len (volatile)
+                          ↓
+                  bsp_usb_cdc_read()  ← main loop polling
 ```
 
-### Физический уровень
-
-| Параметр | USB Full Speed | USB High Speed |
-|----------|---------------|----------------|
-| Скорость | 12 Мбит/с | 480 Мбит/с |
-| IMXRT1052 | ✅ | ✅ |
-| Практическая пропускная способность BULK | ~1 МБ/с | ~40 МБ/с |
-| Применение | CDC ACM, HID | MSD, Video |
-
-IMXRT1052 имеет два USB контроллера: `USB1` (OTG, EHCI) и `USB2` (Host only). Для CDC ACM используем `USB1`.
+Все DMA-буферы (`s_sendBuf`, `s_recvBuf`, дескрипторы) размещены в секции
+`NonCacheable` (OCRAM `0x20200000`). MPU region 9 настраивает эту область
+как Normal non-cacheable — записи CPU видны DMA без `SCB_CleanDCache()`.
 
 ---
 
-## 2. Ключевые понятия
+## USB стек — lite архитектура
 
-### Дескрипторы
+Модуль использует **lite** вариант NXP USB стека (не full class framework).
+Это сознательное решение:
 
-Дескрипторы — это набор структур, которые устройство возвращает хосту при подключении (в ответ на `GET_DESCRIPTOR`). Хост читает их и решает, какой драйвер загрузить.
+| Аспект | Full stack | Lite stack (наш выбор) |
+|--------|-----------|----------------------|
+| Class framework | `usb_device_class.h`, `class_handle_t` | Отсутствует |
+| `usb_device_ch9.c` | SDK middleware, тянет class driver | Приватная копия в `src/` |
+| CDC ACM хедер | Полный: struct + API функции | Только define-ы request codes |
+| Callbacks | Через class driver dispatch | Напрямую в `usb_cdc.c` |
+| Размер кода | ~12 KB | ~6 KB |
+| Гибкость | Multi-class composite | Один CDC ACM |
+
+Lite stack достаточен для одного CDC ACM интерфейса. Переход на full stack
+понадобится только при добавлении composite device (CDC + MSC).
+
+### Стек зависимостей
 
 ```bash
-Device Descriptor
-└── Configuration Descriptor
-    ├── Interface Descriptor #0  (CDC Control)
-    │   ├── CDC Header Functional Descriptor
-    │   ├── CDC Call Management Descriptor
-    │   ├── CDC ACM Functional Descriptor
-    │   ├── CDC Union Functional Descriptor
-    │   └── Endpoint Descriptor (INT IN)
-    └── Interface Descriptor #1  (CDC Data)
-        ├── Endpoint Descriptor (BULK IN)
-        └── Endpoint Descriptor (BULK OUT)
+bsp_usb_cdc
+├── src/usb_cdc.c              ← BSP API + USB device callbacks
+├── src/usb_cdc_descriptors.c  ← дескрипторы + descriptor callbacks
+├── src/usb_cdc_hw.c           ← clock, PHY, IRQ handler
+├── src/usb_device_ch9.c       ← lite Chapter 9 (приватная копия)
+│
+├── SDK (PRIVATE):
+│   ├── sdk_usb_device_ehci    ← EHCI контроллер + DCI абстракция
+│   │   ├── usb_device_ehci.c
+│   │   └── usb_device_dci.c
+│   ├── sdk_usb_phy            ← USB PHY инициализация
+│   │   └── usb_phy.c
+│   └── sdk_osa_bm             ← OS Abstraction (bare-metal)
+│       ├── fsl_os_abstraction_bm.c
+│       └── fsl_component_generic_list.c
+│
+└── Приватные конфиги в src/:
+    ├── usb_device_config.h          ← EHCI=1, CDC_ACM=1, endpoints=4
+    ├── fsl_os_abstraction_config.h  ← bare-metal OSA конфиг
+    ├── usb_device_descriptor.h      ← VID/PID, endpoint numbers
+    ├── usb_device_ch9.h             ← lite ch9 API (1 arg)
+    └── usb_device_cdc_acm.h         ← lite: только CDC request codes
 ```
 
-Важные поля `Device Descriptor`:
+### Проброс конфиг-хедеров (sdk_usb_config)
 
-| Поле | Значение | Смысл |
-|------|----------|-------|
-| `bDeviceClass` | 0xEF | Composite (классы на уровне интерфейсов) |
-| `idVendor` | 0x1FC9 | VID NXP (или свой) |
-| `idProduct` | произвольный | PID — идентификатор продукта |
-| `bcdUSB` | 0x0200 | USB 2.0 |
+NXP USB middleware при компиляции ищет `usb_device_config.h` и
+`fsl_os_abstraction_config.h` через include path. Эти файлы —
+application-specific, живут в `bsp/usb_cdc/src/`.
 
-### Endpoints (эндпоинты)
+Проблема: SDK таргеты (`sdk_usb_device_ehci`, `sdk_usb_phy`, `sdk_osa_bm`)
+компилируются независимо от `bsp_usb_cdc` и не видят его include paths.
 
-Эндпоинт — это буфер в устройстве с определённым направлением и типом передачи. EP0 — всегда управляющий (Control), остальные — настраиваются.
+Решение: INTERFACE библиотека `sdk_usb_config` в `sdk/CMakeLists.txt`:
 
-| Тип | Гарантия доставки | Применение |
-|-----|------------------|------------|
-| Control | да | конфигурация устройства, EP0 |
-| Bulk | да (retry) | большие данные, CDC ACM данные |
-| Interrupt | да (периодически) | HID, CDC ACM нотификации |
-| Isochronous | нет | аудио, видео |
+```cmake
+add_library(sdk_usb_config INTERFACE)
+target_include_directories(sdk_usb_config SYSTEM
+    INTERFACE ${CMAKE_SOURCE_DIR}/bsp/usb_cdc/src)
+```
 
-**Для CDC ACM нужны три эндпоинта:**
+Все SDK USB таргеты линкуют `sdk_usb_config` и находят конфиг-хедеры при
+компиляции. Циклических зависимостей нет — `sdk_usb_config` не содержит кода.
+
+---
+
+## Быстрый старт
+
+```c
+#include "bsp/usb_cdc.h"
+
+/* После board_hw_init() + bsp_tick_init(): */
+bsp_usb_cdc_init();
+
+/* Ждём подключения хоста */
+while (!bsp_usb_cdc_is_ready()) {
+    /* USB enumeration в процессе */
+}
+
+/* TX — неблокирующая отправка */
+const char *msg = "Hello from TFT Board\r\n";
+bsp_usb_cdc_write((const uint8_t *)msg, strlen(msg));
+
+/* RX — polling в main loop */
+uint8_t buf[64];
+size_t n = bsp_usb_cdc_read(buf, sizeof(buf));
+if (n > 0) {
+    /* обработать buf[0..n-1] */
+}
+```
+
+---
+
+## API
+
+### `bsp_usb_cdc_init()`
+
+Полная инициализация: USB PHY clock 480 MHz → EHCI0 init → endpoint registration →
+NVIC enable → USB_DeviceRun. Включает задержку 5 мс для стабилизации DP pull-down.
+
+**Предусловие**: `board_hw_init()` вызван (MPU настроен, NonCacheable регион активен).
+
+Возвращает `BSP_OK` или `BSP_ERR_HW`.
+
+### `bsp_usb_cdc_is_ready()`
+
+`true` когда USB enumeration завершён **и** хост открыл COM-порт (DTR установлен
+через `SET_CONTROL_LINE_STATE`). До этого момента `write()` вернёт `BSP_ERR_NOT_READY`.
+
+### `bsp_usb_cdc_write(data, len)`
+
+Неблокирующая отправка. Копирует данные в NonCacheable TX буфер и ставит в очередь
+USB IN transfer. Максимум `BSP_USB_CDC_MAX_PACKET_SIZE` (512) байт за вызов.
+
+| Возврат | Условие |
+|---------|---------|
+| `BSP_OK` | Transfer поставлен в очередь |
+| `BSP_ERR_BUSY` | Предыдущий transfer не завершён |
+| `BSP_ERR_NOT_READY` | Хост не подключён |
+| `BSP_ERR_INVALID` | `data == NULL`, `len == 0` или `len > 512` |
+
+Проверить готовность TX канала перед отправкой: `bsp_usb_cdc_write_ready()`.
+
+### `bsp_usb_cdc_write_ready()`
+
+`true` если предыдущий TX transfer завершён и хост подключён.
+Удобно для non-blocking write loop:
+
+```c
+if (bsp_usb_cdc_write_ready()) {
+    bsp_usb_cdc_write(data, len);
+}
+```
+
+### `bsp_usb_cdc_read(buf, max_len)`
+
+Неблокирующее чтение. Забирает данные из RX буфера, заполненного USB OUT ISR callback.
+Автоматически перепланирует следующий OUT transfer. Возвращает количество прочитанных
+байт (0 если данных нет).
+
+```c
+/* Polling в main loop: */
+uint8_t buf[64];
+size_t n = bsp_usb_cdc_read(buf, sizeof(buf));
+```
+
+### `bsp_usb_cdc_poll()`
+
+Зарезервировано. Для bare-metal на EHCI NXP стек обрабатывает всё в ISR.
+Для будущего использования с `USB_DEVICE_CONFIG_USE_TASK`.
+
+---
+
+## NonCacheable память
+
+USB EHCI DMA требует некэшируемые буферы. Модуль размещает буферы через макросы
+`USB_DMA_INIT_DATA_ALIGN()` и `USB_DMA_NONINIT_DATA_ALIGN()`, которые помещают
+данные в секции `NonCacheable.init` и `NonCacheable`.
+
+Линкер-скрипт размещает эти секции в OCRAM (`m_data2`, `0x20200000`).
+`board_mpu_init()` настраивает MPU region 9 для этой области.
+
+Проверка: `firmware_test/main.c` содержит `ncache_test_run()` — верификация
+что NonCacheable буфер физически попадает в ожидаемый регион.
+
+**Объём**: ~2.5 KB (два bulk буфера по 512 байт + дескрипторы + ACM info +
+setup buffer). При NonCacheable регионе 8 KB запас достаточный.
+
+---
+
+## ISR и синхронизация
 
 ```bash
-EP0     Control IN/OUT   — управление (всегда есть, не конфигурируется)
-EP1     INT IN           — нотификации CDC (DTR, RTS — наследие модемов)
-EP2     BULK IN          — данные device → host (твои JSON-строки → PC)
-EP3     BULK OUT         — данные host → device (команды PC → плата)
+USB_OTG1_IRQHandler  (usb_cdc_hw.c)
+    └── USB_DeviceEhciIsrFunction()  (SDK)
+            ├── BulkOut callback → s_recvSize = len  (volatile)
+            ├── BulkIn callback  → s_txIdle = 1      (volatile)
+            └── DeviceCallback   → s_cdcState.attach  (volatile)
 ```
 
-### Enumeration — что происходит при подключении кабеля
+Синхронизация между ISR и main loop:
+
+- **RX**: `bsp_usb_cdc_read()` входит в critical section (`DisableGlobalIRQ`),
+  копирует `s_recvSize`, сбрасывает в 0, выходит. Копирование из `s_recvBuf`
+  происходит после выхода из critical section.
+- **TX**: `s_txIdle` — volatile flag, устанавливается в BulkIn callback (ISR),
+  проверяется в `bsp_usb_cdc_write()` (main loop). Гонка исключена: write
+  сбрасывает flag перед `USB_DeviceSendRequest`.
+
+---
+
+## FreeRTOS
+
+Модуль работает без изменений в контексте FreeRTOS-задачи:
+
+| Контекст | TX | RX |
+|----------|----|----|
+| bare-metal | `bsp_usb_cdc_write()` — non-blocking | `bsp_usb_cdc_read()` — polling |
+| FreeRTOS | Из задачи, `write_ready()` + `vTaskDelay()` | Из задачи с yield |
+
+Для минимальной латентности в FreeRTOS — будущий `USB_DEVICE_CONFIG_USE_TASK=1`
+с `bsp_usb_cdc_poll()` из выделенной задачи.
+
+`USB_DEVICE_INTERRUPT_PRIORITY` (3) должен быть ниже
+`configMAX_SYSCALL_INTERRUPT_PRIORITY` при использовании FreeRTOS API из ISR.
+
+---
+
+## Подключение
+
+```cmake
+# bsp/CMakeLists.txt — уже добавлено
+add_subdirectory(usb_cdc)
+
+# firmware/test/CMakeLists.txt
+target_link_libraries(firmware_test PRIVATE
+    bsp_board
+    bsp_tick
+    bsp_usb_cdc
+)
+```
+
+---
+
+## Тестирование
+
+### HIL-тест
+
+USB CDC появляется как второй COM-порт на хосте (помимо MCU-Link VCOM).
+C-прошивка `tests/target/hil_usb_cdc/` — CLI через USB CDC.
+pytest: `tools/hil/test_usb_cdc.py` — отправка/приём через pyserial.
+
+Переменная окружения `HIL_USB_CDC_PORT` — порт USB CDC устройства таргета.
 
 ```bash
-1.  Хост видит устройство (pull-up на D+)
-2.  USB Reset (SE0, 10 мс)
-3.  GET_DESCRIPTOR(Device) → хост узнаёт VID/PID, версию USB
-4.  SET_ADDRESS → устройство получает адрес на шине (1–127)
-5.  GET_DESCRIPTOR(Configuration) → хост видит интерфейсы
-6.  GET_DESCRIPTOR(String) × N → имена для Device Manager
-7.  SET_CONFIGURATION(1) → USB stack поднимает эндпоинты
-        → на стороне устройства срабатывает callback kUSB_DeviceEventSetConfiguration
-8.  Хост загружает драйвер по (bDeviceClass, idVendor, idProduct)
-        → CDC ACM: cdc_acm.ko (Linux) / usbser.sys (Windows)
-9.  Появляется /dev/ttyACM0 или COM3
-10. Пользователь открывает порт → хост посылает SET_CONTROL_LINE_STATE с DTR=1
-        → устройство видит "хост подключён"
+just host::hil-usb-cdc
 ```
 
-Шаг 10 критически важен: **пока терминал не открыт — DTR = 0**. Слать данные до появления DTR бессмысленно — хост их не читает.
+Команды CLI прошивки:
+
+| Команда | Ответ | Описание |
+|---------|-------|----------|
+| `PING`  | `PONG` | Проверка канала |
+| `ECHO <data>` | `<data>` | Echo-back данных |
+
+### Host unit-тесты
+
+Не применяются — модуль полностью завязан на USB hardware и NXP middleware.
+Тестирование только через HIL.
 
 ---
 
-## 3. CDC ACM — детали класса
+## Конфигурация
 
-CDC (Communications Device Class) — класс для коммуникационных устройств. ACM (Abstract Control Model) — подкласс, изначально для модемов, сейчас стандарт де-факто для Virtual COM Port.
+Все настройки находятся в приватных хедерах `src/`:
 
-### Почему CDC ACM а не другие классы
-
-| Класс | Что видит OS | Проблема |
-|-------|-------------|----------|
-| **CDC ACM** | `/dev/ttyACM0`, `COM3` | — нет, это и нужно |
-| Vendor | ничего | нужен свой драйвер под каждую ОС |
-| HID | `/dev/hidraw0` | пакет максимум 64 байта, неудобно |
-| MSC | блочное устройство | совсем не то |
-
-Главное преимущество CDC ACM: **стандартный драйвер есть везде** — Linux, Windows 10+, macOS — без установки чего-либо.
-
-### Ограничения которые надо знать
-
-**USB CDC не гарантирует границы сообщений.** Данные идут потоком через BULK-эндпоинты. Если ты послал `{"type":"result"}\n{"type":"summary"}\n` — хост может получить это как один кусок, два куска, или три куска произвольного размера.
-
-Поэтому **всегда нужен frame delimiter**. В нашем проекте — символ `\n` (JSON-lines). Приёмная сторона буферизирует до `\n` и только тогда парсит JSON.
-
-**Скорость** не ограничена физическими 115200 бод как у UART. USB Full Speed BULK даёт практически ~1 МБ/с. Baudrate в настройках терминала для CDC ACM — декоративный, реально на скорость не влияет.
+| Файл | Настройка | Значение | Описание |
+|------|-----------|----------|----------|
+| `usb_device_config.h` | `USB_DEVICE_CONFIG_EHCI` | `1` | Контроллер EHCI0 |
+| `usb_device_config.h` | `USB_DEVICE_CONFIG_ENDPOINTS` | `4` | EP0 + interrupt IN + bulk IN/OUT |
+| `usb_device_config.h` | `USB_DEVICE_CONFIG_SELF_POWER` | `1` | Self-powered device |
+| `usb_device_descriptor.h` | `USB_DEVICE_VID` | `0x1234` | Vendor ID (placeholder) |
+| `usb_device_descriptor.h` | `USB_DEVICE_PID` | `0x0001` | Product ID (placeholder) |
+| `usb_cdc_hw.c` | `USB_DEVICE_INTERRUPT_PRIORITY` | `3` | NVIC приоритет |
+| `usb_cdc_hw.c` | `BOARD_USB_PHY_D_CAL` | `0x0C` | PHY калибровка |
 
 ---
 
-## 4. NXP USB Stack на IMXRT1052
-
-### Архитектура стека
+## Файловая структура
 
 ```bash
-твой код (bsp_usb_cdc)
-    ↕  callbacks + API
-usb_device_cdc_acm.c       ← CDC ACM класс (middleware/usb/device/class/)
-    ↕
-usb_device_dci.c           ← Device Controller Interface (middleware/usb/device/)
-    ↕
-usb_device_ehci.c          ← EHCI контроллер (middleware/usb/device/)
-    ↕
-USB PHY (usb_phy.c)        ← физический уровень (middleware/usb/phy/)
-    ↕
-EHCI hardware registers
-```
-
-### Callback-архитектура
-
-NXP USB stack работает через callbacks — ты не вызываешь функции стека для приёма данных, стек сам вызывает твои функции когда что-то происходит.
-
-Два уровня callbacks:
-
-```c
-/* 1. Callback уровня устройства — системные события */
-usb_status_t USB_DeviceCallback(usb_device_handle handle,
-                                uint32_t event,
-                                void *param)
-{
-    switch (event) {
-    case kUSB_DeviceEventBusReset:
-        /* сброс шины — переинициализировать эндпоинты */
-        break;
-    case kUSB_DeviceEventSetConfiguration:
-        /* хост завершил enumeration — можно начинать работать */
-        break;
-    }
-}
-
-/* 2. Callback уровня CDC ACM класса — данные и управление */
-usb_status_t USB_DeviceCdcAcmCallback(class_handle_t handle,
-                                      uint32_t event,
-                                      void *param)
-{
-    switch (event) {
-    case kUSB_DeviceCdcEventSendResponse:
-        /* BULK IN передача завершена — буфер можно переиспользовать */
-        break;
-    case kUSB_DeviceCdcEventRecvResponse:
-        /* BULK OUT данные получены — param указывает на буфер */
-        break;
-    case kUSB_DeviceCdcEventSetControlLineState:
-        /* DTR/RTS изменились — проверяем подключение хоста */
-        break;
-    }
-}
-```
-
-### usb_device_config.h — конфигурационный файл
-
-NXP USB stack требует конфигурационный хедер. Он **не входит в SDK** — его пишешь ты и кладёшь в `bsp/usb_cdc/src/`. Ключевые параметры:
-
-```c
-/* bsp/usb_cdc/src/usb_device_config.h */
-
-/* Тип контроллера: EHCI для IMXRT1052 */
-#define USB_DEVICE_CONFIG_EHCI                    1
-
-/* Включаем CDC ACM класс */
-#define USB_DEVICE_CONFIG_CDC_ACM                 1
-
-/* Количество одновременных CDC инстансов */
-#define USB_DEVICE_CONFIG_CDC_ACM_INSTANCE_COUNT  1
-
-/* Количество эндпоинтов (EP0 + INT + BULK IN + BULK OUT = 4) */
-#define USB_DEVICE_CONFIG_ENDPOINTS               4
-
-/* Размер BULK буферов (степень двойки, FS max = 64 байта на транзакцию,
-   но можно использовать большие буферы для нескольких транзакций) */
-#define USB_DEVICE_CONFIG_CDC_ACM_MAX_DATAPIPE_SIZE  512
-
-/* Bare-metal (без RTOS) */
-#define USB_DEVICE_CONFIG_USE_TASK                0
-```
-
-### IRQ и polling
-
-На IMXRT1052 USB работает через прерывания. Стек нужно "тикать" из ISR:
-
-```c
-/* в startup или IRQ handler регистрации */
-void USB_OTG1_IRQHandler(void) {
-    USB_DeviceEhciIsrFunction(g_usb_device_handle);
-}
-```
-
-В bare-metal также нужен периодический вызов `USB_DeviceTaskFunction()` из main loop — он обрабатывает отложенные события которые нельзя делать прямо в ISR.
-
----
-
-## 5. Практические моменты для firmware_test
-
-### Инициализация — правильный порядок
-
-```c
-/* 1. Clock init — USB PLL должен быть поднят ДО USB init */
-CLOCK_InitUsb1Pll(...);   /* 480 MHz USB PLL */
-CLOCK_InitUsb1Pfd(...);
-
-/* 2. PHY init */
-USB_EhciPhyInit(CONTROLLER_ID, CLK_USRPH_24MHZ, NULL);
-
-/* 3. Device stack init */
-USB_DeviceInit(CONTROLLER_ID, USB_DeviceCallback, &handle);
-
-/* 4. Регистрация CDC ACM класса */
-USB_DeviceCdcAcmInit(...);
-
-/* 5. Старт */
-USB_DeviceRun(handle);
-```
-
-Если clock не инициализирован до USB — enumeration не пройдёт, хост увидит "USB device not recognized".
-
-### Определение факта подключения хоста
-
-Не надо проверять "есть ли питание на VBUS". Правильный способ — смотреть на **DTR флаг** из `SET_CONTROL_LINE_STATE`:
-
-```c
-static volatile bool s_host_connected = false;
-
-/* внутри USB_DeviceCdcAcmCallback */
-case kUSB_DeviceCdcEventSetControlLineState: {
-    usb_device_cdc_acm_request_param_struct_t *p = param;
-    /* бит 0 = DTR, бит 1 = RTS */
-    s_host_connected = (p->setupValue & 0x01) != 0;
-    break;
-}
-
-bool usb_cdc_is_connected(void) {
-    return s_host_connected;
-}
-```
-
-### Буферизация
-
-NXP USB stack не буферизует — это твоя ответственность. Минимальная схема:
-
-```
-TX: кольцевой буфер → usb_cdc_write() кладёт туда данные
-                     → USB task вычитывает и передаёт через USB_DeviceCdcAcmSend()
-                     → по kUSB_DeviceCdcEventSendResponse — можно слать следующий чанк
-
-RX: USB_DeviceCdcAcmRecv() регистрирует буфер для приёма
-  → по kUSB_DeviceCdcEventRecvResponse — данные в буфере
-  → приложение вычитывает до '\n' и парсит JSON
-```
-
-### Важно: двойная буферизация TX
-
-`USB_DeviceCdcAcmSend()` принимает указатель на буфер и **не копирует данные**. Буфер должен жить до получения `kUSB_DeviceCdcEventSendResponse`. Типичная ошибка — передать указатель на локальную переменную.
-
-```c
-/* НЕПРАВИЛЬНО */
-void send_something(void) {
-    char buf[64];
-    snprintf(buf, sizeof(buf), "{\"type\":\"result\"}\n");
-    USB_DeviceCdcAcmSend(handle, EP_BULK_IN, (uint8_t*)buf, strlen(buf));
-    /* buf уходит из стека — UB! */
-}
-
-/* ПРАВИЛЬНО — статический или глобальный буфер */
-static uint8_t s_tx_buf[512];
+bsp/usb_cdc/
+├── CMakeLists.txt
+├── README.md
+├── include/
+│   └── bsp/
+│       └── usb_cdc.h                  # публичный API — без NXP хедеров
+└── src/
+    ├── usb_cdc.c                      # BSP API + USB device callbacks
+    ├── usb_cdc_descriptors.c          # дескрипторы + descriptor callbacks
+    ├── usb_cdc_hw.c                   # clock, PHY init, IRQ handler
+    ├── usb_device_ch9.c              # lite Chapter 9 (копия из NXP примера)
+    ├── usb_device_ch9.h              # lite ch9 API
+    ├── usb_device_cdc_acm.h          # lite: только CDC request codes
+    ├── usb_device_config.h           # конфигурация USB стека
+    ├── usb_device_descriptor.h       # VID/PID, endpoints, packet sizes
+    └── fsl_os_abstraction_config.h   # OSA bare-metal конфиг
 ```
 
 ---
 
-## 6. Схема эндпоинтов для дескрипторов
+## Зависимости
 
+| Зависимость | Тип | Описание |
+|-------------|-----|----------|
+| `bsp_status` | PUBLIC | `bsp_status_t` в публичном API |
+| `bsp_board` | PRIVATE | Транзитивно: `clock_config.h`, `pin_mux.h`, SDK headers |
+| `sdk_usb_device_ehci` | PRIVATE | EHCI контроллер + DCI абстракция |
+| `sdk_usb_phy` | PRIVATE | USB PHY инициализация (480 MHz PLL) |
+| `sdk_osa_bm` | PRIVATE | OS Abstraction Layer (bare-metal, generic list) |
+| `sdk_usb_common` | PRIVATE (транзитивно) | USB common headers (`usb.h`, `usb_misc.h`) |
+| `sdk_usb_config` | PRIVATE (транзитивно) | INTERFACE: проброс конфиг-хедеров в SDK |
+
+### Зависимости на уровне SDK CMake
+
+```bash
+sdk_usb_device_ehci ─┬─ sdk_usb_common ── sdk_osa_bm ── sdk_usb_config
+                     └─ sdk_usb_config          │              │
+                                            components/osa  bsp/usb_cdc/src/
+sdk_usb_phy ── sdk_usb_common                components/lists  (конфиг-хедеры)
 ```
-EP номер  Направление  Тип        Размер пакета  Назначение
-────────  ───────────  ─────────  ─────────────  ──────────
-EP0       IN + OUT     Control    64 байта        enumeration (автоматически)
-EP1       IN           Interrupt  16 байт         CDC нотификации (DTR/RTS events)
-EP2       IN           Bulk       64 байта (FS)   данные device → host
-EP3       OUT          Bulk       64 байта (FS)   данные host → device
-```
 
-Номера EP назначаются в дескрипторах. NXP примеры используют именно эту схему для Full Speed CDC ACM.
-
----
-
-## 7. Отладочные признаки проблем
-
-| Симптом | Вероятная причина |
-|---------|------------------|
-| "USB device not recognized" на хосте | не инициализирован USB PLL / PHY |
-| Устройство определяется, порт не появляется | ошибка в дескрипторах (класс, подкласс, протокол) |
-| Порт появился, данные не идут | DTR не поднят (терминал не открыт) или ошибка TX буферизации |
-| Данные обрываются / мусор | буфер TX освобождается до SendResponse |
-| Работает раз через раз | нет re-submit RX буфера после RecvResponse |
-| Зависает при переподключении | нет обработки kUSB_DeviceEventBusReset → не сбрасываются эндпоинты |
-
----
-
-## 8. Ссылки
-
-- `sdk/middleware/usb/` — исходники NXP USB stack
-- `sdk/boards/evkbimxrt1050/usb_examples/usb_device_cdc_vcom/` — референсный пример
-- `sdk/middleware/usb/device/class/usb_device_cdc_acm.c` — реализация класса
-- `sdk/middleware/usb/include/usb_device_cdc_acm.h` — API класса
-- USB 2.0 Specification — [usb.org](https://www.usb.org/document-library/usb-20-specification)
-- USB CDC Specification (PSTN) — [usb.org](https://www.usb.org/document-library/class-definitions-communication-devices-12)
+`sdk_usb_config` — INTERFACE библиотека без кода. Единственная роль —
+прокинуть include path к `bsp/usb_cdc/src/` для SDK таргетов,
+которым нужны `usb_device_config.h` и `fsl_os_abstraction_config.h`.
