@@ -26,7 +26,8 @@ just host::setup-tools
 ```bash
 HIL_VCOM_PORT=/dev/cu.usbmodemXXX    # MCU-Link VCOM
 HIL_M5_PORT=/dev/cu.usbmodemYYY      # M5StampPLC
-HIL_BUILD_DIR=build/target-debug      # путь к собранным ELF (обычно не менять)
+HIL_USB_CDC_PORT=/dev/cu.usbmodemZZZ # USB CDC порт на плате таргета (если тест использует USB CDC)
+HIL_BUILD_DIR=build/target-debug      # путь к собранным ELF (по умолчанию)
 ```
 
 Как найти нужные порты:
@@ -53,6 +54,12 @@ just host::m5-deploy
 
 ```bash
 just host::m5-cli    # интерактивный CLI для ручной отправки команд агенту
+```
+
+Также можно запустить агент с интерактивным режимом CLI на хосте с помощью команды:
+
+```bash
+just host::m5-start
 ```
 
 ---
@@ -82,8 +89,7 @@ just host::m5-power off
 
 ## Шаг 3 — Сборка HIL-прошивок (в devcontainer)
 
-HIL-прошивки компилируются под ARM и собираются **внутри devcontainer**,
-потому что там есть `arm-none-eabi-gcc` и весь SDK.
+HIL-прошивки компилируются под ARM и собираются **внутри devcontainer**.
 
 ```bash
 # Открыть проект в VSCode → Reopen in Container
@@ -103,9 +109,6 @@ ls build/target-debug/tests/target/
 # ...
 ```
 
-> Пересобирать нужно только при изменении C-кода прошивок (`tests/target/*/main.c`
-> или BSP). Изменения в Python-тестах (`tools/hil/test_*.py`) сборки не требуют.
-
 ---
 
 ## Шаг 4 — Запуск тестов (на хосте, вне контейнера)
@@ -116,7 +119,8 @@ ls build/target-debug/tests/target/
 just host::hil-run
 ```
 
-pytest обходит все `test_*.py` в `tools/hil/`, **исключая** помеченные `@pytest.mark.interactive`.
+pytest обходит все `test_*.py` в `tools/hil/`, **исключая** помеченные `@pytest.mark.interactive` и
+`@pytest.mark.usb_vcom`.
 Каждый файл — своя загрузка ELF, свой UART-сеанс, MCU перезагружается между файлами.
 
 ### Интерактивные HIL-тесты (требуют оператора)

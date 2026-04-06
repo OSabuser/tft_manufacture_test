@@ -167,54 +167,58 @@ ls build/target-debug/tests/target/<name>/test_<name>.elf
 
 ## Шаг 5 — `conftest.py`: добавить фикстуры
 
-Открыть `tools/hil/conftest.py` и добавить в конец раздела с фикстурами загрузки.
+Открыть `tools/hil/conftest.py` и добавить:
+
+1. Фикстуру загрузки `loaded_<n>` в конец раздела загрузок.
+2. Одну строку в `_UART_FIXTURE_MAP` — фабрика `_make_uart_fixture` автоматически
+   создаст фикстуру `uart_<n>` через контекстный менеджер `_uart_context`.
 
 ### Базовый тест (без M5)
 
 ```python
+# 1. Фикстура загрузки — добавить в раздел loaded_*
 @pytest.fixture(scope="module")
-def loaded_<name>(request: pytest.FixtureRequest) -> None:
+def loaded_<n>(request: pytest.FixtureRequest) -> None:
     _load_elf(
         request,
-        Path(cfg.BUILD_DIR) / "tests/target/<name>/test_<name>.elf",
+        Path(cfg.BUILD_DIR) / "tests/target/<n>/test_<n>.elf",
     )
 
-@pytest.fixture(scope="module")
-def uart_<name>(
-    request: pytest.FixtureRequest,
-    loaded_<name>,              # ← гарантирует порядок: ELF раньше UART
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
+# 2. UART-фикстура — добавить одну строку в словарь
+_UART_FIXTURE_MAP = {
+    ...
+    "uart_<n>":  "loaded_<n>",   # ← добавить
+}
 ```
 
 ### Тест с M5 (GPIO, реле, питание)
 
 ```python
+# 1. Фикстура загрузки — зависимость от m5 гарантирует питание
 @pytest.fixture(scope="module")
-def loaded_<name>(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+def loaded_<n>(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     """
     Зависит от m5 — питание таргета уже включено к моменту загрузки ELF.
     """
     _load_elf(
         request,
-        Path(cfg.BUILD_DIR) / "tests/target/<name>/test_<name>.elf",
+        Path(cfg.BUILD_DIR) / "tests/target/<n>/test_<n>.elf",
     )
 
-@pytest.fixture(scope="module")
-def uart_<name>(
-    request: pytest.FixtureRequest,
-    loaded_<name>,
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
+# 2. UART-фикстура — та же одна строка
+_UART_FIXTURE_MAP = {
+    ...
+    "uart_<n>":  "loaded_<n>",   # ← добавить
+}
 ```
 
-**Правило:** если тест управляет железом через M5 — `loaded_<name>` должен явно
+**Правило:** если тест управляет железом через M5 — `loaded_<n>` должен явно
 зависеть от `m5`. Это гарантирует что питание включено до того как pyOCD
 попытается подключиться к MCU.
+
+> Ручное написание `uart_<n>` фикстур больше не требуется — фабрика
+> `_make_uart_fixture` создаёт фикстуру с `_uart_context` (контекстный менеджер,
+> гарантирует `ser.close()` при любом исходе).
 
 ---
 
@@ -429,7 +433,7 @@ uart.close()                 test_something
 [ ] tests/target/<n>/CMakeLists.txt   — сборка с bsp_boot_ram
 [ ] tests/target/CMakeLists.txt          — add_subdirectory(<n>)
 [ ] CMakePresets.json                    — добавить test_<n> в targets
-[ ] tools/hil/conftest.py                — loaded_<n> + uart_<n>
+[ ] tools/hil/conftest.py                — loaded_<n> + строка в _UART_FIXTURE_MAP
 [ ] tools/hil/test_<n>.py             — pytest-тесты
 [ ] just/host.just                       — рецепт hil-<n> (опционально)
 [ ] just build::build-hil                — зелёная сборка

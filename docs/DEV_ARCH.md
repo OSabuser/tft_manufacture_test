@@ -108,14 +108,24 @@ PYOCD_FREQUENCY=4000000
 FCB_PATH=tools/host/dcd/w25q128_fdcb.bin
 
 # HIL — аппаратный стенд
-HIL_VCOM_PORT=/dev/cu.usbmodemXXXX   # MCU-Link VCOM (macOS: cu.usbmodem*, Linux: ttyACM*)
-HIL_M5_PORT=/dev/cu.usbmodemYYYY     # M5StampPLC USB CDC
-HIL_VCOM_BAUD=115200
-HIL_M5_BAUD=115200
-HIL_READY_TIMEOUT=5.0
-HIL_M5_TIMEOUT=3.0
 HIL_PYOCD_FREQUENCY=1000000
 HIL_BUILD_DIR=build/target-debug
+HIL_TARGET_POWER_SETTLE_S=1.5        # задержка после включения питания (POR + стабилизация)
+
+# VCOM на программаторе NXP MCU-Link
+HIL_VCOM_PORT=/dev/cu.usbmodemXXXX   # macOS: cu.usbmodem*, Linux: ttyACM*
+HIL_VCOM_BAUD=115200
+HIL_READY_TIMEOUT=5.0
+
+# M5Stack StamPLC (промежуточная платформа для HIL)
+HIL_M5_PORT=/dev/cu.usbmodemYYYY     # M5StampPLC USB CDC
+HIL_M5_BAUD=115200
+HIL_M5_TIMEOUT=3.0
+
+# VCOM на плате таргета (USB CDC, появляется после загрузки ELF)
+HIL_USB_CDC_PORT=/dev/cu.usbmodemZZZZ
+HIL_USB_CDC_BAUD=115200
+HIL_USB_CDC_TIMEOUT=5.0
 ```
 
 **Как значения попадают в инструменты:**

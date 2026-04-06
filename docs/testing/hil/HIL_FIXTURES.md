@@ -138,14 +138,14 @@ def flush_uart_buffer(uart):
 ```
 
 **Правило:** `autouse` в `conftest.py` действует на **все** тесты в директории
-и поддиректориях. Используй осторожно — можно случайно затронуть тесты,
+и поддиректориях. Используется осторожно — можно случайно затронуть тесты,
 которым эта фикстура не нужна.
 
 ---
 
 ## 5. Зависимости между фикстурами
 
-Зависимость объявляется **в сигнатуре** фикстуры. pytest строит DAG и гарантирует
+Зависимость объявляется **в сигнатуре** фикстуры. pytest строит `DAG` и гарантирует
 порядок создания.
 
 ```python
@@ -200,15 +200,18 @@ tools/hil/
     └── conftest.py      ← (если бы был) виден только в m5/
 ```
 
-### Что живёт в `conftest.py` нашего проекта
+### Что живёт в `conftest.py` проекта
 
 | Фикстура / функция | Scope | Назначение |
 |---------------------|-------|------------|
 | `_load_elf()` | вспомогательная | pyOCD: halt → FLEXRAM → load ELF → run |
-| `_open_uart_and_wait_ready()` | вспомогательная | Открыть VCOM, дождаться `READY\r\n` |
+| `_uart_context()` | контекстный менеджер | Открыть VCOM, дождаться `READY\r\n`, гарантировать `close()` |
+| `_make_uart_fixture()` | фабрика | Генерирует `uart_*` фикстуры из `_UART_FIXTURE_MAP` |
+| `_UART_FIXTURE_MAP` | словарь | Связь `uart_<n>` → `loaded_<n>` для всех тестов |
 | `loaded_host_uart` | module | Загрузить `test_host_uart.elf` |
 | `loaded_hil_opto` | module | Загрузить `test_hil_opto.elf`, зависит от `m5` |
-| `uart` / `uart_hil_opto` | module | Открыть UART CLI, зависит от `loaded_*` |
+| `uart` / `uart_opto` / ... | module | Создаются автоматически через `_UART_FIXTURE_MAP` |
+| `usb_cdc_port` | module | USB CDC порт таргета, использует `cfg.TARGET_VCOM_*` |
 | `m5` | module | Подключиться к M5, включить питание |
 | `uart_cmd()` | обычная функция | Отправить команду, прочитать ответ |
 
@@ -276,17 +279,37 @@ def loaded_<name>(request, m5):     # m5 — только если нужно п
 
 Teardown не нужен — MCU будет перезагружен при следующей загрузке ELF.
 
-### 9.2. UART-сессия (с teardown)
+### 9.2. UART-сессия (через фабрику)
+
+Для создания UART-фикстур используется фабрика
+`_make_uart_fixture` и словарь `_UART_FIXTURE_MAP`. Иначе, пришлось бы
+вручную писать фикстуры`uart` / `uart_opto` / ... для каждого таргета.
 
 ```python
-@pytest.fixture(scope="module")
-def uart_<name>(request, loaded_<name>):
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
+_UART_FIXTURE_MAP = {
+    "uart":             "loaded_host_uart",
+    "uart_opto":        "loaded_hil_opto",
+    "uart_can":         "loaded_hil_can",
+    "uart_button":      "loaded_hil_button",
+    "uart_hil_usb_cdc": "loaded_hil_usb_cdc",
+}
+
+def _make_uart_fixture(loaded_name: str):
+    @pytest.fixture(scope="module")
+    def _fixture(request: pytest.FixtureRequest) -> Generator[serial.Serial, None, None]:
+        request.getfixturevalue(loaded_name)
+        port = request.config.getoption("--vcom")
+        with _uart_context(port, cfg.VCOM_BAUD, cfg.READY_TIMEOUT) as ser:
+            yield ser
+    return _fixture
+
+for _name, _dep in _UART_FIXTURE_MAP.items():
+    globals()[_name] = _make_uart_fixture(_dep)
 ```
 
-`yield` обязателен — порт нужно закрыть, иначе следующий файл не сможет его открыть.
+Для нового теста достаточно одной строки в `_UART_FIXTURE_MAP`.
+Контекстный менеджер `_uart_context` гарантирует `ser.close()` при любом исходе
+(исключение, `pytest.fail`, `KeyboardInterrupt`).
 
 ### 9.3. Управление стендом (M5 — с teardown)
 
@@ -352,20 +375,32 @@ def test_opto_ch1(self):
 
 ### 9.6. Ожидание `READY` от прошивки
 
-Паттерн из проекта — прошивка шлёт `READY\r\n` в цикле, пока хост не откроет порт:
+Паттерн из проекта — прошивка шлёт `READY\r\n` в цикле, пока хост не откроет порт.
+Реализован как контекстный менеджер `_uart_context`, который гарантирует закрытие
+порта при любом исходе:
 
 ```python
-def _open_uart_and_wait_ready(request, timeout_s=5.0):
-    port = request.config.getoption("--vcom")
-    ser = serial.Serial(port=port, baudrate=115200, timeout=2.0)
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        line = ser.readline().decode(errors="replace").strip()
-        if line == "READY":
-            return ser
-    ser.close()
-    raise TimeoutError("Прошивка не отправила READY")
+@contextmanager
+def _uart_context(port: str, baud: int, ready_timeout: float):
+    ser = serial.Serial(port=port, baudrate=baud, timeout=2.0, write_timeout=1.0)
+    try:
+        deadline = time.monotonic() + ready_timeout
+        ready = False
+        while time.monotonic() < deadline:
+            line = ser.readline().decode("ascii", errors="replace").strip()
+            if line == "READY":
+                ready = True
+                break
+        if not ready:
+            pytest.fail(f"Прошивка не отправила READY за {ready_timeout} с")
+        ser.reset_input_buffer()
+        yield ser
+    finally:
+        ser.close()  # выполняется всегда
 ```
+
+Все `uart_*` фикстуры используют `_uart_context` через фабрику `_make_uart_fixture`
+(см. секцию 9.2).
 
 ### 9.7. Параметризация фикстур
 
@@ -402,12 +437,10 @@ def uart(request, loaded_host_uart):
     ser = _open_uart_and_wait_ready(request)
     return ser    # ser.close() никогда не вызовется!
 
-# ✅ yield + close
-@pytest.fixture(scope="module")
-def uart(request, loaded_host_uart):
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
+# ✅ Актуальное решение: _uart_context (контекстный менеджер)
+# ser.close() гарантирован блоком finally внутри _uart_context.
+# Все uart_* фикстуры создаются через _make_uart_fixture,
+# который использует _uart_context — ручной close() не нужен.
 ```
 
 ### Нет зависимости от `loaded_*` — UART открывается раньше ELF
@@ -478,21 +511,22 @@ def uart(fresh_state):    # ScopeMismatch!
 ```python
 # 1. В conftest.py — загрузка ELF
 @pytest.fixture(scope="module")
-def loaded_<name>(request, m5):         # m5 только если нужен
-    _load_elf(request, Path(cfg.BUILD_DIR) / "tests/target/<name>/test_<name>.elf")
+def loaded_<n>(request, m5):         # m5 только если нужен
+    _load_elf(request, Path(cfg.BUILD_DIR) / "tests/target/<n>/test_<n>.elf")
 
-# 2. В conftest.py — UART-сессия
-@pytest.fixture(scope="module")
-def uart_<name>(request, loaded_<name>):
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
+# 2. В conftest.py — одна строка в _UART_FIXTURE_MAP
+_UART_FIXTURE_MAP = {
+    ...
+    "uart_<n>":  "loaded_<n>",       # ← добавить
+}
+# Фабрика _make_uart_fixture создаст фикстуру автоматически
+# с _uart_context (гарантирует ser.close())
 
-# 3. В test_<name>.py — autouse setup
-class Test<Name>:
+# 3. В test_<n>.py — autouse setup
+class Test<n>:
     @pytest.fixture(autouse=True)
-    def _setup(self, uart_<name>, m5):   # m5 только если нужен
-        self.ser = uart_<name>
+    def _setup(self, uart_<n>, m5):   # m5 только если нужен
+        self.ser = uart_<n>
         self.m5 = m5
 
     def test_ping(self):
