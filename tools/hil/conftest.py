@@ -11,17 +11,14 @@ import logging
 import time
 from pathlib import Path
 from typing import Generator
-
+from contextlib import contextmanager
 import pytest
 import serial
 
 import env_config as cfg
 from pyocd_utils import flexram_init, load_elf, open_target, run_from_vectors
-import os
-log = logging.getLogger(__name__)
 
-# Задержка после включения питания таргета (мс стабилизации + POR)
-_POWER_ON_SETTLE_S = 1.5
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -56,37 +53,26 @@ def _load_elf(request: pytest.FixtureRequest, default_elf: Path) -> None:
 # ---------------------------------------------------------------------------
 # Общая логика UART: открыть порт, дождаться READY
 # ---------------------------------------------------------------------------
-def _open_uart_and_wait_ready(request: pytest.FixtureRequest) -> serial.Serial:
-    """Открыть VCOM, дождаться READY от прошивки."""
-    port = request.config.getoption("--vcom")
-    log.info("UART %s @ %d baud", port, cfg.VCOM_BAUD)
+@contextmanager
+def _uart_context(port: str, baud: int, ready_timeout: float):
+    ser = serial.Serial(port=port, baudrate=baud, timeout=2.0, write_timeout=1.0)
+    try:
+        deadline = time.monotonic() + ready_timeout
+        ready = False
+        while time.monotonic() < deadline:
+            line = ser.readline().decode("ascii", errors="replace").strip()
+            if line == "READY":
+                ready = True
+                log.info("Получен READY от прошивки")
+                break
 
-    ser = serial.Serial(
-        port=port,
-        baudrate=cfg.VCOM_BAUD,
-        timeout=2.0,
-        write_timeout=1.0,
-    )
+        if not ready:
+            pytest.fail(f"Прошивка не отправила READY за {ready_timeout} с")
 
-    # Ждём READY
-    deadline = time.monotonic() + cfg.READY_TIMEOUT
-    ready = False
-    while time.monotonic() < deadline:
-        line = ser.readline().decode("ascii", errors="replace").strip()
-        if line == "READY":
-            ready = True
-            log.info("Получен READY от прошивки")
-            break
-
-    if not ready:
-        ser.close()
-        pytest.fail(
-            f"Прошивка не отправила READY за {cfg.READY_TIMEOUT} с — "
-            "проверьте VCOM-порт и bsp_uart_host_init()."
-        )
-
-    ser.reset_input_buffer()
-    return ser
+        ser.reset_input_buffer()
+        yield ser
+    finally:
+        ser.close()  # гарантированно, всегда
 
 
 # ---------------------------------------------------------------------------
@@ -196,8 +182,8 @@ def m5(request: pytest.FixtureRequest) -> Generator[M5Agent, None, None]:
 
     # Включаем питание таргета и ждём стабилизации
     agent.power(True)
-    log.info("Питание таргета включено, ждём %.1f с", _POWER_ON_SETTLE_S)
-    time.sleep(_POWER_ON_SETTLE_S)
+    log.info("Питание таргета включено, ждём %.1f с", cfg.POWER_ON_SETTLE_S)
+    time.sleep(cfg.POWER_ON_SETTLE_S)
 
     agent.opto_all_off()  # безопасное начальное состояние
     yield agent
@@ -221,6 +207,13 @@ def m5(request: pytest.FixtureRequest) -> Generator[M5Agent, None, None]:
 
 @pytest.fixture(scope="module")
 def loaded_host_uart(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+    """
+    Загрузить test_hil_button.elf на таргет по SWD
+ 
+    Явная зависимость от m5 гарантирует порядок:
+      1. m5 создаётся первым → питание таргета включено
+      2. только потом pyOCD подключается и грузит ELF
+    """
     _load_elf(
         request,
         Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
@@ -228,6 +221,13 @@ def loaded_host_uart(request: pytest.FixtureRequest, m5: M5Agent) -> None:
 
 @pytest.fixture(scope="module")
 def loaded_hil_button(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+    """
+    Загрузить test_hil_button.elf на таргет по SWD
+ 
+    Явная зависимость от m5 гарантирует порядок:
+      1. m5 создаётся первым → питание таргета включено
+      2. только потом pyOCD подключается и грузит ELF
+    """
     _load_elf(
         request,
         Path(cfg.BUILD_DIR) / "tests/target/hil_button/test_hil_button.elf",
@@ -236,7 +236,7 @@ def loaded_hil_button(request: pytest.FixtureRequest, m5: M5Agent) -> None:
 @pytest.fixture(scope="module")
 def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     """
-    Загрузить test_hil_opto.elf.
+    Загрузить test_hil_opto.elf на таргет по SWD
 
     Явная зависимость от фикстуры m5 гарантирует порядок:
       1. m5 создаётся первым → питание таргета включено
@@ -252,7 +252,7 @@ def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
 @pytest.fixture(scope="module")
 def loaded_hil_can(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     """
-    Загрузить test_hil_can.elf.
+    Загрузить test_hil_can.elf  на таргет по SWD
  
     Явная зависимость от m5 гарантирует порядок:
       1. m5 создаётся первым → питание таргета включено
@@ -265,60 +265,43 @@ def loaded_hil_can(request: pytest.FixtureRequest, m5: M5Agent) -> None:
 
 @pytest.fixture(scope="module")
 def loaded_hil_usb_cdc(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+    """
+    Загрузить test_hil_usb_cdc.elf  на таргет по SWD
+ 
+    Явная зависимость от m5 гарантирует порядок:
+      1. m5 создаётся первым → питание таргета включено
+      2. только потом pyOCD подключается и грузит ELF
+    """
     _load_elf(
         request,
         Path(cfg.BUILD_DIR) / "tests/target/hil_usb_cdc/test_hil_usb_cdc.elf",
     )
 
 # ---------------------------------------------------------------------------
-# Фикстуры UART
+# Фикстуры UART (установление соединения с VCOM программатора NXP MCU-Link)
+# Выполняется один раз на тест
 # ---------------------------------------------------------------------------
-@pytest.fixture(scope="module")
-def uart(
-    request: pytest.FixtureRequest,
-    loaded_host_uart,
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
+_UART_FIXTURE_MAP = {
+    "uart":             "loaded_host_uart",
+    "uart_opto":        "loaded_hil_opto",
+    "uart_can":         "loaded_hil_can",
+    "uart_button":      "loaded_hil_button",
+    "uart_hil_usb_cdc": "loaded_hil_usb_cdc",
+}
+def _make_uart_fixture(loaded_name: str):
+    @pytest.fixture(scope="module")
+    def _fixture(request: pytest.FixtureRequest) -> Generator[serial.Serial, None, None]:
+        request.getfixturevalue(loaded_name)  # триггерит зависимость явно
+        port = request.config.getoption("--vcom")
+        with _uart_context(port, cfg.VCOM_BAUD, cfg.READY_TIMEOUT) as ser:
+            yield ser
+    return _fixture
 
-@pytest.fixture(scope="module")
-def uart_opto(
-    request: pytest.FixtureRequest,
-    loaded_hil_opto,
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
-
-@pytest.fixture(scope="module")
-def uart_can(
-    request: pytest.FixtureRequest,
-    loaded_hil_can,
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
-
-@pytest.fixture(scope="module")
-def uart_button(
-    request: pytest.FixtureRequest,
-    loaded_hil_button,
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
-
-@pytest.fixture(scope="module")
-def uart_hil_usb_cdc(
-    request: pytest.FixtureRequest,
-    loaded_hil_usb_cdc,
-) -> Generator[serial.Serial, None, None]:
-    ser = _open_uart_and_wait_ready(request)
-    yield ser
-    ser.close()
+# Регистрируем все фикстуры в пространстве имён модуля одной строкой
+for _name, _dep in _UART_FIXTURE_MAP.items():
+    globals()[_name] = _make_uart_fixture(_dep)
 # ---------------------------------------------------------------------------
-# hil_usb_cdc — USB CDC ACM тест (два канала: UART + USB CDC)
+# Фикстуры USB CDC (открытие порта, установка DTR)
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def usb_cdc_port(
@@ -327,35 +310,31 @@ def usb_cdc_port(
     """Открыть USB CDC порт таргета. Ждёт появления порта и DTR ready."""
     import time
 
-    port = os.environ.get("HIL_USB_CDC_PORT", "")
-    if not port:
+    if not cfg.TARGET_VCOM_PORT:
         pytest.skip("HIL_USB_CDC_PORT not set")
 
-    baud = int(os.environ.get("HIL_USB_CDC_BAUD", "115200"))
-    timeout_s = float(os.environ.get("HIL_USB_CDC_TIMEOUT", "5.0"))
-
     # Ждём появления USB CDC порта (enumeration после загрузки ELF).
-    deadline = time.monotonic() + timeout_s
+    deadline = time.monotonic() + cfg.TARGET_VCOM_TIMEOUT
     ser = None
     while time.monotonic() < deadline:
         try:
-            ser = serial.Serial(port, baud, timeout=0.5)
+            ser = serial.Serial(port=cfg.TARGET_VCOM_PORT, baudrate=cfg.TARGET_VCOM_BAUD, timeout=0.5)
             break
         except serial.SerialException:
             time.sleep(0.3)
 
     if ser is None:
-        pytest.fail(f"USB CDC port {port} not available after {timeout_s}s")
+        pytest.fail(f"USB CDC port {cfg.TARGET_VCOM_PORT} not available after {cfg.TARGET_VCOM_TIMEOUT}s")
 
-    # Установить DTR чтобы firmware увидела DTE presence.
-    ser.dtr = True
-    time.sleep(0.3)
-
-    # Сбросить входной буфер — могут быть мусорные байты от enumeration.
-    ser.reset_input_buffer()
-
-    yield ser
-    ser.close()
+    try:
+        # Установить DTR чтобы firmware увидела DTE presence.
+        ser.dtr = True
+        time.sleep(0.3)
+        # Сбросить входной буфер — могут быть мусорные байты от enumeration.
+        ser.reset_input_buffer()
+        yield ser
+    finally:
+        ser.close()  
 
 
 # ---------------------------------------------------------------------------
