@@ -9,7 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-
+#include <string.h>
 int main(void)
 {
     const uint16_t DELAY_MS      = 100;
@@ -36,6 +36,12 @@ int main(void)
         {
             is_connection_established = true;
             LOG_I("BOOT", "USB CDC ACM ready");
+        }
+
+        if (is_connection_established == true)
+        {
+            const char *msg = "Hello from TFT Board\r\n";
+            bsp_usb_cdc_write((const uint8_t *) msg, strlen(msg));
         }
 
         bsp_usb_cdc_poll();

@@ -16,6 +16,7 @@ python_files = ["test_*.py", "*_test.py", "??_test_*.py"]
 markers = [
     "gpio:  тесты GPIO",
     "interactive: тест требует действий оператора",
+    "usb_vcom: основной канал связи USB_CDC",
     "uart:  тесты UART CLI",
     "opto:  тесты оптоизолированных входов",
     "m5:    тесты с участием M5StampPLC",

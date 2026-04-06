@@ -334,7 +334,7 @@ _hil_build := BUILD_DIR / "target-debug"
 [group('hil')]
 hil-run:
     HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest -m "not interactive" -v 
+        uv run --directory {{ HIL_DIR }} pytest -m "not interactive and not usb_vcom" -v 
 
 [doc('Запустить все интерактивные HIL-тесты: кнопки, дисплей')]
 [group('hil')]
@@ -365,6 +365,12 @@ hil-button:
 hil-can:
     HIL_BUILD_DIR={{ _hil_build }} \
         uv run --directory {{ HIL_DIR }} pytest 03_test_can.py -v
+
+[doc('Запустить HIL-тест USB CDC')]
+[group('hil')]
+hil-usb-cdc:
+    HIL_BUILD_DIR={{ _hil_build }} \
+        uv run --directory {{ HIL_DIR }} pytest 05_test_usb_cdc.py -v
 
 # =============================================================================
 # ГРУППА: debug — GDB-сервер для отладки из VSCode (devcontainer)

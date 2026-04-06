@@ -17,7 +17,7 @@ import serial
 
 import env_config as cfg
 from pyocd_utils import flexram_init, load_elf, open_target, run_from_vectors
-
+import os
 log = logging.getLogger(__name__)
 
 # Задержка после включения питания таргета (мс стабилизации + POR)
@@ -263,6 +263,13 @@ def loaded_hil_can(request: pytest.FixtureRequest, m5: M5Agent) -> None:
         Path(cfg.BUILD_DIR) / "tests/target/hil_can/test_hil_can.elf",
     )
 
+@pytest.fixture(scope="module")
+def loaded_hil_usb_cdc(request: pytest.FixtureRequest, m5: M5Agent) -> None:
+    _load_elf(
+        request,
+        Path(cfg.BUILD_DIR) / "tests/target/hil_usb_cdc/test_hil_usb_cdc.elf",
+    )
+
 # ---------------------------------------------------------------------------
 # Фикстуры UART
 # ---------------------------------------------------------------------------
@@ -301,6 +308,56 @@ def uart_button(
     ser = _open_uart_and_wait_ready(request)
     yield ser
     ser.close()
+
+@pytest.fixture(scope="module")
+def uart_hil_usb_cdc(
+    request: pytest.FixtureRequest,
+    loaded_hil_usb_cdc,
+) -> Generator[serial.Serial, None, None]:
+    ser = _open_uart_and_wait_ready(request)
+    yield ser
+    ser.close()
+# ---------------------------------------------------------------------------
+# hil_usb_cdc — USB CDC ACM тест (два канала: UART + USB CDC)
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def usb_cdc_port(
+    uart_hil_usb_cdc,
+) -> Generator[serial.Serial, None, None]:
+    """Открыть USB CDC порт таргета. Ждёт появления порта и DTR ready."""
+    import time
+
+    port = os.environ.get("HIL_USB_CDC_PORT", "")
+    if not port:
+        pytest.skip("HIL_USB_CDC_PORT not set")
+
+    baud = int(os.environ.get("HIL_USB_CDC_BAUD", "115200"))
+    timeout_s = float(os.environ.get("HIL_USB_CDC_TIMEOUT", "5.0"))
+
+    # Ждём появления USB CDC порта (enumeration после загрузки ELF).
+    deadline = time.monotonic() + timeout_s
+    ser = None
+    while time.monotonic() < deadline:
+        try:
+            ser = serial.Serial(port, baud, timeout=0.5)
+            break
+        except serial.SerialException:
+            time.sleep(0.3)
+
+    if ser is None:
+        pytest.fail(f"USB CDC port {port} not available after {timeout_s}s")
+
+    # Установить DTR чтобы firmware увидела DTE presence.
+    ser.dtr = True
+    time.sleep(0.3)
+
+    # Сбросить входной буфер — могут быть мусорные байты от enumeration.
+    ser.reset_input_buffer()
+
+    yield ser
+    ser.close()
+
+
 # ---------------------------------------------------------------------------
 # Утилита для тестов
 # ---------------------------------------------------------------------------
