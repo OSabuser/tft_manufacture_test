@@ -3,8 +3,11 @@
 
 set(TARGET_NAME firmware_test)
 
-add_executable(${TARGET_NAME} main.c ${BSP_GENERATED}/clock_config.c
-                              ${BSP_STARTUP_FILE} ${BSP_SYSCALLS_FILE})
+add_executable(
+  ${TARGET_NAME} src/main.c src/cli.c ${BSP_GENERATED}/clock_config.c
+                 ${BSP_STARTUP_FILE} ${BSP_SYSCALLS_FILE})
+
+target_include_directories(firmware_test PRIVATE src/)
 
 target_compile_definitions(${TARGET_NAME}
                            PRIVATE BSP_UART_HOST_RX_BUFFER_SIZE=512)
@@ -14,16 +17,8 @@ target_compile_definitions(${TARGET_NAME}
 # даёт: sdk_device, sdk_clock, sdk_common, CPU_MIMXRT1052CVJ5B, XIP_* дефайны
 # -----------------------------------------------------------------------------
 target_link_libraries(
-  ${TARGET_NAME}
-  PRIVATE bsp_board
-          bsp_led
-          bsp_tick
-          bsp_uart_host
-          bsp_boot_xip
-          bsp_usb_cdc
-          port_log_uart
-          lib_external # SEGGER RTT если включён через SEGGER_RTT_ENABLED
-)
+  ${TARGET_NAME} PRIVATE bsp_board bsp_led bsp_tick bsp_boot_xip bsp_status
+                         bsp_usb_cdc)
 
 # -----------------------------------------------------------------------------
 # Linker script

@@ -31,7 +31,7 @@
         // HOST-ТЕСТЫ
         // =============================================================
         {
-            "label": "🧪 Host Tests (Debug)",
+            "label": "Host Tests",
             "group": {
                 "kind": "test",
                 "isDefault": true
@@ -45,14 +45,14 @@
                 "cwd": "${workspaceFolder}",
                 "statusbar": {
                     "color": "#c800ff",
-                    "label": "$(test-view-icon) Host Tests",
+                    "label": "$(test-view-icon) Host Tests (Debug)",
                     "detail": "Run host unit tests"
                 }
             },
             "problemMatcher": []
         },
         {
-            "label": "🧪 Host Tests (Release)",
+            "label": "🔨Host Tests (Release)",
             "group": "test",
             "type": "shell",
             "command": "just",
@@ -79,7 +79,7 @@
                 "cwd": "${workspaceFolder}",
                 "statusbar": {
                     "color": "#00e5ff",
-                    "label": "$(circuit-board) HIL Build",
+                    "label": "$(circuit-board) HIL Tests (Debug)",
                     "detail": "Build HIL target firmware"
                 }
             },
@@ -91,7 +91,7 @@
         // HAB-ОБРАЗЫ
         // =============================================================
         {
-            "label": "📦 HAB Image",
+            "label": "HAB Image",
             "group": "build",
             "type": "shell",
             "command": "just",
@@ -102,14 +102,14 @@
                 "cwd": "${workspaceFolder}",
                 "statusbar": {
                     "color": "#03b3ff",
-                    "label": "$(package) HAB",
+                    "label": "$(package) HAB Image Build",
                     "detail": "Build HAB image"
                 }
             },
             "problemMatcher": []
         },
         {
-            "label": "📦 HAB All (Debug)",
+            "label": "📦 HAB Build All (Debug)",
             "group": "build",
             "type": "shell",
             "command": "just",
@@ -122,7 +122,7 @@
             "problemMatcher": []
         },
         {
-            "label": "📦 HAB All (Release)",
+            "label": "📦 HAB Build All (Release)",
             "group": "build",
             "type": "shell",
             "command": "just",

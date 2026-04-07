@@ -158,3 +158,18 @@ add_host_test(
   ${CMAKE_SOURCE_DIR}/bsp/common/include
   MOCKS
   ${BSP_MOCKS_DIR})
+
+# -----------------------------------------------------------------------------
+# Тест логики cli
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_cli
+  SOURCES
+  cli/test_cli.c
+  INCLUDES
+  ${CMAKE_SOURCE_DIR}/firmware/test/src/
+  ${CMAKE_SOURCE_DIR}/bsp/common/include
+  ${CMAKE_SOURCE_DIR}/bsp/usb_cdc/include
+  MOCKS
+  ${BSP_MOCKS_DIR})

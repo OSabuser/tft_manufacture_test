@@ -146,6 +146,7 @@
                 "test_bsp_can",
                 "uart_host_mock_example",
                 "test_ring_buffer",
+                "test_cli",
                 "test_timeout_pattern",
                 "uart_host_mock_example"
             ]
@@ -160,6 +161,7 @@
                 "test_bsp_opto",
                 "test_bsp_button",
                 "test_bsp_can",
+                "test_cli",
                 "uart_host_mock_example",
                 "test_ring_buffer",
                 "test_timeout_pattern",
