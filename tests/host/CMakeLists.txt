@@ -173,3 +173,15 @@ add_host_test(
   ${CMAKE_SOURCE_DIR}/bsp/usb_cdc/include
   MOCKS
   ${BSP_MOCKS_DIR})
+
+# -----------------------------------------------------------------------------
+# utils/prio_queue
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_prio_queue
+  SOURCES
+  prio_queue/test_prio_queue.c
+  ${PROJECT_SOURCE_DIR}/utils/prio_queue/prio_queue.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/utils)

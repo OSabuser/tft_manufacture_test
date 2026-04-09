@@ -7,7 +7,8 @@
 # Не зависит от конкретного железа (нет fsl_*, CMSIS, FreeRTOS). 2. Используется
 # более чем в одном месте проекта.
 
-add_library(utils STATIC ring_buffer/ring_buffer.c log/log.c)
+add_library(utils STATIC ring_buffer/ring_buffer.c log/log.c
+                         prio_queue/prio_queue.c)
 
 # PUBLIC: любой таргет, слинкованный с utils, автоматически получает корень
 # utils/ в include path → #include "ring_buffer/ring_buffer.h" #include "log.h"

@@ -59,7 +59,7 @@ bsp_button_init();
 bsp_button_poll();
 
 /* В основном цикле: */
-if (bsp_button_get_event_pressed(BSP_BUTTON_1)) {
+if (**bsp_button_get_event_pressed(BSP_BUTTON_1)**) {
     /* однократное срабатывание по нажатию */
 }
 

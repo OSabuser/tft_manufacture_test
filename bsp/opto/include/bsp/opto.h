@@ -198,6 +198,7 @@ extern "C"
      * Должна вызываться из main loop на каждой итерации. НЕ вызывать из ISR.
      * Каналы MODE_PROTO пропускаются — для них используется коллбэк из ISR.
      */
+     //FIXME: poll
     void bsp_opto_process(void);
 
     /**
