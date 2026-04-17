@@ -4,8 +4,14 @@
 set(TARGET_NAME firmware_test)
 
 add_executable(
-  ${TARGET_NAME} src/main.c src/cli.c ${BSP_GENERATED}/clock_config.c
-                 ${BSP_STARTUP_FILE} ${BSP_SYSCALLS_FILE})
+  ${TARGET_NAME}
+  src/main.c
+  src/cli.c
+  src/protocol.c
+  src/test_runner.c
+  ${BSP_GENERATED}/clock_config.c
+  ${BSP_STARTUP_FILE}
+  ${BSP_SYSCALLS_FILE})
 
 target_include_directories(firmware_test PRIVATE src/)
 
@@ -29,9 +35,14 @@ target_link_libraries(
 # map-файл для анализа размещения символов -T                   — линкерный
 # скрипт с описанием карты памяти IMXRT1052
 target_link_options(
-  ${TARGET_NAME} PRIVATE -Wl,--gc-sections -Wl,--print-memory-usage
+  ${TARGET_NAME}
+  PRIVATE
+  -Wl,--gc-sections
+  -Wl,--print-memory-usage
   -Wl,-Map=${CMAKE_BINARY_DIR}/firmware_test.map
-  -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor.ld)
+  -Wl,--defsym=__stack_size__=0x1000
+  -Wl,--defsym=__heap_size__=0x1000
+  -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor_sdram.ld)
 
 set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
                                                 ${CMAKE_BINARY_DIR})

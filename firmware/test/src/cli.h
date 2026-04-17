@@ -1,16 +1,22 @@
 /**
  * @file  cli.h
- * @brief Command-line interface для firmware_test.
+ * @brief IO-слой CLI для firmware_test.
  *
- * Единственный транспорт — USB CDC ACM (bsp_usb_cdc).
- * Протокол — JSON-lines: каждая строка завершается '\n'.
- * Запрос: {"cmd":"NAME"}\n
- * Ответ:  {"ok":true,...}\n  или  {"ok":false,"error":"CODE"}\n
+ * Транспорт: USB CDC ACM (bsp_usb_cdc) — единственный канал.
+ * Протокол v2: JSON-lines, каждая строка завершается '\n'.
  *
- * @note Архитектурное ограничение: этот модуль жёстко связан с
- *       bsp_usb_cdc как единственным IO-каналом. Замена транспорта
- *       не предусмотрена — firmware_test работает только через USB CDC.
- *       Для HIL ELF-прошивок используется отдельный канал связи (UART + bsp_uart_host).
+ * Входящие типы:
+ *   {"type":"cmd",     "cmd":"ping"}
+ *   {"type":"cmd",     "cmd":"run",     "id":"sdram"}
+ *   {"type":"cmd",     "cmd":"run_all"}
+ *   {"type":"confirm", "id":"...",      "confirmed":true}
+ *
+ * Исходящие события формируются через protocol.h, а не напрямую через cli_send().
+ * cli_send() остаётся публичным: его использует protocol.c как единственную
+ * точку вывода.
+ *
+ * @note Архитектурное ограничение: единственный транспорт — USB CDC.
+ *       HIL ELF-прошивки используют отдельный канал (UART + bsp_uart_host).
  */
 
 #ifndef CLI_H_
@@ -18,13 +24,12 @@
 
 #include <stddef.h>
 
-/** @brief Максимальная длина входящей JSON-строки включая завершающий '\n'. */
+/** @brief Максимальная длина входящей JSON-строки включая '\n'. */
 #define CLI_LINE_BUF_SIZE 128U
 
 /**
- * @brief Инициализировать CLI.
+ * @brief Инициализировать CLI. Сбрасывает внутренний буфер строки.
  *
- * Сбрасывает внутренний буфер строки.
  * Вызывать после bsp_usb_cdc_init() и до первого cli_process().
  */
 void cli_init(void);
@@ -32,15 +37,14 @@ void cli_init(void);
 /**
  * @brief Отправить готовую JSON-строку через USB CDC.
  *
- * @param[in] resp  NUL-terminated строка, завершённая '\n'.
+ * @param[in] p_resp  NUL-terminated строка, завершённая '\n'.
  *
- * @note Неблокирующий вызов. Если TX занят — запись теряется.
- *       Для firmware_test это приемлемо: хост повторит запрос.
+ * @note Неблокирующий. Если TX занят — запись теряется.
  */
-void cli_send(const char *resp);
+void cli_send(const char *p_resp);
 
 /**
- * @brief Обработать входящие байты и диспатчить команду при получении '\n'.
+ * @brief Обработать входящие байты, диспатчить сообщение при получении '\n'.
  *
  * Вызывать в главном цикле после bsp_usb_cdc_poll().
  * Неблокирующий: если данных нет — возвращается немедленно.

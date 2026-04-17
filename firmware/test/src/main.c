@@ -22,6 +22,8 @@
 #include "bsp/tick.h"
 #include "bsp/usb_cdc.h"
 #include "cli.h"
+#include "protocol.h"
+#include "test_runner.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -52,10 +54,12 @@ int main(void)
     bsp_led_on(LED_APP);
 
     cli_init();
-    cli_send("{\"ok\":true,\"result\":\"READY\"}\n");
+    test_runner_init();
+    protocol_send_session_start();
     while (1)
     {
         bsp_usb_cdc_poll();
         cli_process();
+        test_runner_process();
     }
 }

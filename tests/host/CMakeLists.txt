@@ -167,10 +167,10 @@ add_host_test(
   test_cli
   SOURCES
   cli/test_cli.c
+  ${CMAKE_SOURCE_DIR}/firmware/test/src/cli.c
   INCLUDES
   ${CMAKE_SOURCE_DIR}/firmware/test/src/
   ${CMAKE_SOURCE_DIR}/bsp/common/include
-  ${CMAKE_SOURCE_DIR}/bsp/usb_cdc/include
   MOCKS
   ${BSP_MOCKS_DIR})
 
@@ -185,3 +185,35 @@ add_host_test(
   ${PROJECT_SOURCE_DIR}/utils/prio_queue/prio_queue.c
   INCLUDES
   ${PROJECT_SOURCE_DIR}/utils)
+
+# -----------------------------------------------------------------------------
+# firmware/test/src/protocol.c
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_protocol
+  SOURCES
+  protocol/test_protocol.c
+  ${PROJECT_SOURCE_DIR}/firmware/test/src/protocol.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/test/src
+  MOCKS
+  ${BSP_MOCKS_DIR})
+
+# -----------------------------------------------------------------------------
+# firmware_test: test_runner — реестр тестов и state machine Категория B:
+# protocol_send_* + bsp_tick + bsp_usb_cdc + cli_process мокируются.
+# Компилируется с -DUNIT_TEST для подстановки реестра из теста.
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_firmware_runner
+  SOURCES
+  runner/test_firmware_runner.c
+  ${PROJECT_SOURCE_DIR}/firmware/test/src/test_runner.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/test/src
+  MOCKS
+  ${BSP_MOCKS_DIR})
+
+target_compile_definitions(test_firmware_runner PRIVATE UNIT_TEST)

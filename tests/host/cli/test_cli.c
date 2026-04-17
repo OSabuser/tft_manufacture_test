@@ -1,113 +1,110 @@
 /**
  * @file  test_cli.c
- * @brief Host unit-тест для firmware_test/src/cli.c
+ * @brief Host unit-тесты IO-слоя cli.c.
  *
- * Тестирует: parse_cmd_field (через cli_process), dispatch, обработку
- * граничных случаев буфера. Без железа, без fff — stub-ы для
- * bsp_usb_cdc_read/write определены прямо здесь.
+ * Категория B (fff): мокируются bsp_usb_cdc, protocol_send_*, test_runner_*.
  *
- * Добавление теста для новой команды:
- *   1. stub_rx_feed() — подать строку в RX буфер.
- *   2. cli_process()  — запустить.
- *   3. TEST_ASSERT_EQUAL_STRING() — проверить TX буфер.
+ * Паттерн ввода: inject() наполняет внутренний буфер «как USB», затем
+ * вызывает cli_process() — полностью изолируем I/O.
+ *
+ * Паттерн захвата строковых аргументов: custom_fake копирует id/cmd
+ * пока стек ещё жив (аргументы — указатели на локальные буферы cli.c).
  */
 
-#include "bsp/status.h"
-#include "bsp/usb_cdc.h"
+#include "fff.h"
 #include "unity.h"
 
-#include <stdint.h>
-#include <string.h>
+#include <stdbool.h>
+DEFINE_FFF_GLOBALS;
 
-/* ── Stub: bsp_usb_cdc ─────────────────────────────────────────────────
- *
- * RX: тест кладёт байты через stub_rx_feed().
- *     cli_process() читает их по одному через bsp_usb_cdc_read().
- *
- * TX: cli_send() пишет через bsp_usb_cdc_write() в s_tx_buf.
- *     тест проверяет s_tx_buf через stub_tx_get().
- *
- * ────────────────────────────────────────────────────────────────────── */
+/* ── Фейки зависимостей cli.c ──────────────────────────────────────────── */
 
-static uint8_t s_rx_buf[256];
-static size_t s_rx_len = 0U;
-static size_t s_rx_pos = 0U;
+FAKE_VOID_FUNC(bsp_usb_cdc_write, const uint8_t *, size_t);
+FAKE_VALUE_FUNC(size_t, bsp_usb_cdc_read, uint8_t *, size_t);
 
-static char s_tx_buf[512];
-static size_t s_tx_len = 0U;
+FAKE_VOID_FUNC(protocol_send_pong);
+FAKE_VOID_FUNC(protocol_send_error, const char *);
 
-/** @brief Заполнить RX буфер данными для теста. */
-static void stub_rx_feed(const char *data)
+FAKE_VOID_FUNC(test_runner_run_all);
+FAKE_VOID_FUNC(test_runner_run_single, const char *);
+FAKE_VOID_FUNC(test_runner_on_confirm, const char *, bool);
+
+/* ── Модуль под тестом ─────────────────────────────────────────────────── */
+
+#include "cli.h"
+
+/* ── Инъекция ввода ────────────────────────────────────────────────────── */
+
+#define INJECT_BUF_SIZE (CLI_LINE_BUF_SIZE * 2U)
+
+static uint8_t s_inject_buf[INJECT_BUF_SIZE];
+static size_t s_inject_len = 0U;
+
+static size_t fake_usb_read(uint8_t *p_buf, size_t size)
 {
-    size_t len = strlen(data);
-    memcpy(s_rx_buf, data, len);
-    s_rx_len = len;
-    s_rx_pos = 0U;
-}
-
-/** @brief Получить TX буфер как C-строку. */
-static const char *stub_tx_get(void)
-{
-    s_tx_buf[s_tx_len] = '\0';
-    return s_tx_buf;
-}
-
-/** @brief Сбросить оба буфера. */
-static void stub_reset(void)
-{
-    s_rx_len = 0U;
-    s_rx_pos = 0U;
-    s_tx_len = 0U;
-    memset(s_tx_buf, 0, sizeof(s_tx_buf));
-}
-
-/* bsp_usb_cdc stubs */
-
-size_t bsp_usb_cdc_read(uint8_t *buf, size_t max_len)
-{
-    size_t available = s_rx_len - s_rx_pos;
-    size_t to_copy   = (available < max_len) ? available : max_len;
-    memcpy(buf, s_rx_buf + s_rx_pos, to_copy);
-    s_rx_pos += to_copy;
+    if (s_inject_len == 0U)
+    {
+        return 0U;
+    }
+    size_t to_copy = (s_inject_len < size) ? s_inject_len : size;
+    memcpy(p_buf, s_inject_buf, to_copy);
+    s_inject_len = 0U;
     return to_copy;
 }
 
-bsp_status_t bsp_usb_cdc_write(const uint8_t *data, size_t len)
+static void inject(const char *p_line)
 {
-    if ((s_tx_len + len) < sizeof(s_tx_buf))
-    {
-        memcpy(s_tx_buf + s_tx_len, data, len);
-        s_tx_len += len;
-    }
-    return BSP_OK;
+    size_t len   = strlen(p_line);
+    size_t limit = (len < INJECT_BUF_SIZE) ? len : INJECT_BUF_SIZE - 1U;
+    memcpy(s_inject_buf, p_line, limit);
+    s_inject_len = limit;
+    cli_process();
 }
 
-/* Остальные символы bsp_usb_cdc — заглушки, cli.c не вызывает их */
-bsp_status_t bsp_usb_cdc_init(void)
+/* ── Захват аргументов-строк ───────────────────────────────────────────── */
+/*
+ * test_runner_run_single и test_runner_on_confirm получают указатели
+ * на локальные буферы cli.c. После возврата cli_process() стек мёртв —
+ * нельзя читать fake.arg0_val. Копируем через custom_fake.
+ */
+
+static char s_run_single_id[32U];
+static char s_confirm_id[32U];
+static bool s_confirm_value;
+
+static void capture_run_single(const char *p_id)
 {
-    return BSP_OK;
-}
-bool bsp_usb_cdc_is_ready(void)
-{
-    return true;
-}
-bool bsp_usb_cdc_write_ready(void)
-{
-    return true;
-}
-void bsp_usb_cdc_poll(void)
-{
+    (void) snprintf(s_run_single_id, sizeof(s_run_single_id), "%s", p_id);
 }
 
-/* ── Включаем тестируемый модуль ПОСЛЕ stub-ов ─────────────────────── */
+static void capture_on_confirm(const char *p_id, bool confirmed)
+{
+    (void) snprintf(s_confirm_id, sizeof(s_confirm_id), "%s", p_id);
+    s_confirm_value = confirmed;
+}
 
-#include "cli.c" /* NOLINT(bugprone-suspicious-include) */
-
-/* ── Фикстуры ──────────────────────────────────────────────────────── */
+/* ── setUp / tearDown ──────────────────────────────────────────────────── */
 
 void setUp(void)
 {
-    stub_reset();
+    RESET_FAKE(bsp_usb_cdc_read);
+    RESET_FAKE(bsp_usb_cdc_write);
+    RESET_FAKE(protocol_send_pong);
+    RESET_FAKE(protocol_send_error);
+    RESET_FAKE(test_runner_run_all);
+    RESET_FAKE(test_runner_run_single);
+    RESET_FAKE(test_runner_on_confirm);
+    FFF_RESET_HISTORY();
+
+    bsp_usb_cdc_read_fake.custom_fake       = fake_usb_read;
+    test_runner_run_single_fake.custom_fake = capture_run_single;
+    test_runner_on_confirm_fake.custom_fake = capture_on_confirm;
+
+    s_inject_len       = 0U;
+    s_run_single_id[0] = '\0';
+    s_confirm_id[0]    = '\0';
+    s_confirm_value    = false;
+
     cli_init();
 }
 
@@ -115,87 +112,155 @@ void tearDown(void)
 {
 }
 
-/* ── Тесты ─────────────────────────────────────────────────────────── */
+/* ── Тесты: type = cmd ─────────────────────────────────────────────────── */
 
-void test_ping_returns_pong(void)
+void test_ping_dispatches_to_pong(void)
 {
-    stub_rx_feed("{\"cmd\":\"PING\"}\n");
-    cli_process();
-    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"result\":\"PONG\"}\n", stub_tx_get());
+    inject("{\"type\":\"cmd\",\"cmd\":\"ping\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_pong_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, protocol_send_error_fake.call_count);
 }
 
-void test_unknown_command(void)
+void test_run_all_dispatches_to_runner(void)
 {
-    stub_rx_feed("{\"cmd\":\"FOOBAR\"}\n");
-    cli_process();
-    TEST_ASSERT_EQUAL_STRING("{\"ok\":false,\"error\":\"UNKNOWN_CMD\"}\n", stub_tx_get());
+    inject("{\"type\":\"cmd\",\"cmd\":\"run_all\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, test_runner_run_all_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, protocol_send_error_fake.call_count);
 }
 
-void test_missing_cmd_field(void)
+void test_run_single_dispatches_with_id(void)
 {
-    stub_rx_feed("{\"foo\":\"bar\"}\n");
-    cli_process();
-    TEST_ASSERT_EQUAL_STRING("{\"ok\":false,\"error\":\"PARSE_ERR\"}\n", stub_tx_get());
+    inject("{\"type\":\"cmd\",\"cmd\":\"run\",\"id\":\"sdram\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, test_runner_run_single_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("sdram", s_run_single_id);
 }
 
-void test_empty_line_no_response(void)
+void test_unknown_cmd_sends_unknown_cmd_error(void)
 {
-    /* Пустая строка '\n' — буфер пуст, dispatch не вызывается */
-    stub_rx_feed("\n");
-    cli_process();
-    TEST_ASSERT_EQUAL_STRING("", stub_tx_get());
+    inject("{\"type\":\"cmd\",\"cmd\":\"reboot\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("UNKNOWN_CMD", protocol_send_error_fake.arg0_val);
 }
 
-void test_line_too_long(void)
+void test_run_missing_id_sends_parse_err(void)
 {
-    /* 127 байт + '\n' = ровно граница CLI_LINE_BUF_SIZE */
+    inject("{\"type\":\"cmd\",\"cmd\":\"run\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("PARSE_ERR", protocol_send_error_fake.arg0_val);
+}
+
+/* ── Тесты: type = confirm ─────────────────────────────────────────────── */
+
+void test_confirm_true_dispatches(void)
+{
+    inject("{\"type\":\"confirm\",\"id\":\"display_red\",\"confirmed\":true}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, test_runner_on_confirm_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("display_red", s_confirm_id);
+    TEST_ASSERT_TRUE(s_confirm_value);
+}
+
+void test_confirm_false_dispatches(void)
+{
+    inject("{\"type\":\"confirm\",\"id\":\"usd_insert\",\"confirmed\":false}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, test_runner_on_confirm_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("usd_insert", s_confirm_id);
+    TEST_ASSERT_FALSE(s_confirm_value);
+}
+
+void test_confirm_missing_confirmed_field_sends_parse_err(void)
+{
+    inject("{\"type\":\"confirm\",\"id\":\"display_red\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("PARSE_ERR", protocol_send_error_fake.arg0_val);
+}
+
+/* ── Тесты: ошибки протокола ───────────────────────────────────────────── */
+
+void test_missing_type_field_sends_parse_err(void)
+{
+    inject("{\"cmd\":\"ping\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("PARSE_ERR", protocol_send_error_fake.arg0_val);
+}
+
+void test_unknown_type_sends_unknown_cmd(void)
+{
+    inject("{\"type\":\"status\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("UNKNOWN_CMD", protocol_send_error_fake.arg0_val);
+}
+
+void test_line_too_long_sends_error(void)
+{
+    /* CLI_LINE_BUF_SIZE - 1 символов без '\n' = переполнение буфера */
     char long_line[CLI_LINE_BUF_SIZE + 2U];
-    memset(long_line, 'A', CLI_LINE_BUF_SIZE);
+    memset(long_line, 'x', CLI_LINE_BUF_SIZE);
     long_line[CLI_LINE_BUF_SIZE]      = '\n';
     long_line[CLI_LINE_BUF_SIZE + 1U] = '\0';
 
-    stub_rx_feed(long_line);
-    cli_process();
-    TEST_ASSERT_EQUAL_STRING("{\"ok\":false,\"error\":\"LINE_TOO_LONG\"}\n", stub_tx_get());
+    inject(long_line);
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("LINE_TOO_LONG", protocol_send_error_fake.arg0_val);
 }
 
-void test_two_commands_in_sequence(void)
+void test_empty_line_ignored(void)
 {
-    /* Два PING подряд — оба должны дать PONG */
-    stub_rx_feed("{\"cmd\":\"PING\"}\n{\"cmd\":\"PING\"}\n");
-    cli_process();
-    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"result\":\"PONG\"}\n"
-                             "{\"ok\":true,\"result\":\"PONG\"}\n",
-                             /* Нет: первый вызов — первый PONG. Сбросим и проверим второй. */
-                             stub_tx_get());
+    inject("\n");
+
+    TEST_ASSERT_EQUAL_INT(0, protocol_send_pong_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, test_runner_run_all_fake.call_count);
 }
 
-void test_cmd_field_with_spaces(void)
+void test_crlf_handled_same_as_lf(void)
 {
-    /* Пробелы вокруг ':' — реальные клиенты могут так форматировать */
-    stub_rx_feed("{\"cmd\" : \"PING\"}\n");
-    cli_process();
-    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"result\":\"PONG\"}\n", stub_tx_get());
+    inject("{\"type\":\"cmd\",\"cmd\":\"ping\"}\r\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_pong_fake.call_count);
 }
 
-void test_partial_input_no_response_until_newline(void)
+void test_two_lines_in_one_chunk_both_dispatched(void)
 {
-    /* Подать строку без '\n' — ответа быть не должно */
-    stub_rx_feed("{\"cmd\":\"PING\"}");
-    cli_process();
-    TEST_ASSERT_EQUAL_STRING("", stub_tx_get());
+    inject("{\"type\":\"cmd\",\"cmd\":\"ping\"}\n"
+           "{\"type\":\"cmd\",\"cmd\":\"run_all\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_pong_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(1, test_runner_run_all_fake.call_count);
 }
+
+/* ── main ──────────────────────────────────────────────────────────────── */
 
 int main(void)
 {
     UNITY_BEGIN();
-    RUN_TEST(test_ping_returns_pong);
-    RUN_TEST(test_unknown_command);
-    RUN_TEST(test_missing_cmd_field);
-    RUN_TEST(test_empty_line_no_response);
-    RUN_TEST(test_line_too_long);
-    RUN_TEST(test_two_commands_in_sequence);
-    RUN_TEST(test_cmd_field_with_spaces);
-    RUN_TEST(test_partial_input_no_response_until_newline);
+
+    RUN_TEST(test_ping_dispatches_to_pong);
+    RUN_TEST(test_run_all_dispatches_to_runner);
+    RUN_TEST(test_run_single_dispatches_with_id);
+    RUN_TEST(test_unknown_cmd_sends_unknown_cmd_error);
+    RUN_TEST(test_run_missing_id_sends_parse_err);
+
+    RUN_TEST(test_confirm_true_dispatches);
+    RUN_TEST(test_confirm_false_dispatches);
+    RUN_TEST(test_confirm_missing_confirmed_field_sends_parse_err);
+
+    RUN_TEST(test_missing_type_field_sends_parse_err);
+    RUN_TEST(test_unknown_type_sends_unknown_cmd);
+    RUN_TEST(test_line_too_long_sends_error);
+    RUN_TEST(test_empty_line_ignored);
+    RUN_TEST(test_crlf_handled_same_as_lf);
+    RUN_TEST(test_two_lines_in_one_chunk_both_dispatched);
+
     return UNITY_END();
 }
