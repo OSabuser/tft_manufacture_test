@@ -16,6 +16,7 @@ add_subdirectory(opto)
 add_subdirectory(can)
 add_subdirectory(button)
 add_subdirectory(usb_cdc)
+add_subdirectory(sdram)
 
 # Подавляем предупреждения при компиляции собственных .c файлов библиотеки
 target_compile_options(bsp_board PRIVATE -w)

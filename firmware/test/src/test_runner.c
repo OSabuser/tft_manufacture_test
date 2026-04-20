@@ -41,9 +41,10 @@
 * ─────────────────────────────────────────────────────────────────────────*/
 
 #ifndef UNIT_TEST
-
+extern const test_module_t K_TEST_SDRAM;
 static const test_module_t *const k_registry[] = {
     /* populated starting from Этап 2 */
+    &K_TEST_SDRAM,
 };
 
 #define REGISTRY_SIZE (sizeof(k_registry) / sizeof(k_registry[0]))
