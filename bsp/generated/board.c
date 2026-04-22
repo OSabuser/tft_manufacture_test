@@ -99,6 +99,7 @@ static void board_mpu_init(void)
 
 void board_hw_init(void)
 {
+
     BOARD_InitPins();
     BOARD_BootClockRUN();
     board_mpu_init();

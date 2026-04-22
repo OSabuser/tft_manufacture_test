@@ -10,6 +10,7 @@ add_executable(
   src/protocol.c
   src/test_runner.c
   src/tests/test_sdram.c
+  src/tests/test_qspi.c
   ${BSP_GENERATED}/clock_config.c
   ${BSP_STARTUP_FILE}
   ${BSP_SYSCALLS_FILE})
@@ -17,14 +18,25 @@ add_executable(
 target_include_directories(firmware_test PRIVATE src/)
 
 target_compile_definitions(
-  ${TARGET_NAME} PRIVATE BSP_UART_HOST_RX_BUFFER_SIZE=512 BOARD_MPU_SDRAM=1)
+  ${TARGET_NAME}
+  PRIVATE BSP_UART_HOST_RX_BUFFER_SIZE=512
+          BOARD_MPU_SDRAM=1
+          __STARTUP_INITIALIZE_RAMFUNCTION
+          __STARTUP_CLEAR_BSS)
 #
 # -----------------------------------------------------------------------------
 # Зависимости — только то что нужно для входного контроля bsp_board транзитивно
 # даёт: sdk_device, sdk_clock, sdk_common, CPU_MIMXRT1052CVJ5B, XIP_* дефайны
 # -----------------------------------------------------------------------------
-target_link_libraries(${TARGET_NAME} PRIVATE bsp_board bsp_led bsp_tick
-                                             bsp_boot_xip bsp_usb_cdc bsp_sdram)
+target_link_libraries(
+  ${TARGET_NAME}
+  PRIVATE bsp_board
+          bsp_led
+          bsp_tick
+          bsp_boot_xip
+          bsp_usb_cdc
+          bsp_sdram
+          bsp_qspi_flash)
 
 # -----------------------------------------------------------------------------
 # Linker script

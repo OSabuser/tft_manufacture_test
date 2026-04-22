@@ -19,6 +19,7 @@
  */
 #include "board.h"
 #include "bsp/led.h"
+#include "bsp/qspi_flash.h"
 #include "bsp/tick.h"
 #include "bsp/usb_cdc.h"
 #include "cli.h"
@@ -31,12 +32,19 @@
 int main(void)
 {
     const uint32_t CONNECT_BLINK_MS = 200U;
-    const uint32_t ERROR_BLINK_MS   = 50;
+    const uint32_t ERROR_BLINK_MS   = 250;
     board_hw_init();
 
     bsp_led_init();
+    bsp_status_t status = bsp_qspi_init();
     bsp_tick_init();
 
+    while (1)
+    {
+        bsp_led_toggle(LED_HEARTBEAT);
+        bsp_delay(ERROR_BLINK_MS);
+    }
+#if 0
     if (bsp_usb_cdc_init() != BSP_OK)
     {
         bsp_led_toggle(LED_HEARTBEAT);
@@ -62,4 +70,5 @@ int main(void)
         cli_process();
         test_runner_process();
     }
+#endif
 }
