@@ -103,12 +103,12 @@
 
 /* ── Параметры FIFO ─────────────────────────────────────────────────────── */
 
-/** @brief Байт на watermark-unit (TXWMRK=0 / RXWMRK=0 → 1 unit = 8 bytes). */
-#define FIFO_WM_BYTES 8U
-/** @brief 32-bit слов в одном watermark-unit. */
-#define FIFO_WM_WORDS (FIFO_WM_BYTES / QSPI_RFDR_WORD_BYTES)
 /** @brief Байт в одном слове RFDR/TFDR. */
 #define QSPI_RFDR_WORD_BYTES 4U
+/** @brief Байт в одном watermark-unit (по RM: 1 unit = 8 bytes). */
+#define QSPI_WM_UNIT_BYTES 8U
+/** @brief 32-bit слов в одном watermark-unit. */
+#define QSPI_WM_UNIT_WORDS (QSPI_WM_UNIT_BYTES / QSPI_RFDR_WORD_BYTES)
 
 /* ── Параметры SR-чтения ────────────────────────────────────────────────── */
 
@@ -287,12 +287,13 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_check_error(uint32_t intr))
 /* ── ITCM: RX FIFO ──────────────────────────────────────────────────────── */
 
 /**
- * @brief Читает FIFO_WM_BYTES (8 байт) из RX FIFO в p_dst.
+ * @brief Читает watermark-чанк из RX FIFO в p_dst.
  *
- * Ожидает флага watermark-available, читает 2 слова, делает pop.
+ * @param[in] p_dst     Буфер назначения.
+ * @param[in] wm_words  Количество 32-bit слов в текущем watermark.
  */
 /* NOLINTNEXTLINE(cppcoreguidelines-macro-usage) */
-AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_chunk(uint8_t *p_dst))
+AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_chunk(uint8_t *p_dst, uint32_t wm_words))
 {
     uint32_t intr;
     status_t err;
@@ -308,7 +309,7 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_chunk(uint8_t *p_dst))
     } while ((intr & (uint32_t) kFLEXSPI_IpRxFifoWatermarkAvailableFlag) == 0U);
 
     /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) */
-    for (uint32_t w = 0U; w < FIFO_WM_WORDS; w++)
+    for (uint32_t w = 0U; w < wm_words; w++)
     {
         /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) */
         const uint32_t WORD = QSPI_BASE->RFDR[w];
@@ -323,9 +324,9 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_chunk(uint8_t *p_dst))
 }
 
 /**
- * @brief Читает tail-байты (< FIFO_WM_BYTES) из RX FIFO.
+ * @brief Читает tail-байты (< текущего watermark) из RX FIFO.
  *
- * Ожидает через IPRXFSTS.FILL. Вызывать когда remain < FIFO_WM_BYTES.
+ * Ожидает через IPRXFSTS.FILL.
  */
 /* NOLINTNEXTLINE(cppcoreguidelines-macro-usage) */
 AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_tail(uint8_t *p_dst, uint32_t remain))
@@ -372,17 +373,22 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_tail(uint8_t *p_dst, uint3
 /* NOLINTNEXTLINE(cppcoreguidelines-macro-usage) */
 AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_fifo(uint8_t *p_buf, uint32_t len))
 {
+    const uint32_t wm_units =
+        ((QSPI_BASE->IPRXFCR & FLEXSPI_IPRXFCR_RXWMRK_MASK) >> FLEXSPI_IPRXFCR_RXWMRK_SHIFT) + 1U;
+    const uint32_t wm_words = wm_units * QSPI_WM_UNIT_WORDS;
+    const uint32_t wm_bytes = wm_words * QSPI_RFDR_WORD_BYTES;
+
     uint32_t offset = 0U;
 
-    while ((len - offset) >= FIFO_WM_BYTES)
+    while ((len - offset) >= wm_bytes)
     {
         /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */
-        const status_t ERR = qspi_read_chunk(p_buf + offset);
+        const status_t ERR = qspi_read_chunk(p_buf + offset, wm_words);
         if (ERR != kStatus_Success)
         {
             return ERR;
         }
-        offset += FIFO_WM_BYTES;
+        offset += wm_bytes;
     }
 
     if (offset < len)
@@ -401,6 +407,10 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_write_fifo(const uint8_t *p_buf
 {
     const uint8_t *p = p_buf;
     uint32_t remain  = len;
+    const uint32_t wm_units =
+        ((QSPI_BASE->IPTXFCR & FLEXSPI_IPTXFCR_TXWMRK_MASK) >> FLEXSPI_IPTXFCR_TXWMRK_SHIFT) + 1U;
+    const uint32_t wm_words = wm_units * QSPI_WM_UNIT_WORDS;
+    const uint32_t wm_bytes = wm_words * QSPI_RFDR_WORD_BYTES;
 
     while (remain > 0U)
     {
@@ -416,8 +426,12 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_write_fifo(const uint8_t *p_buf
             }
         } while ((intr & (uint32_t) kFLEXSPI_IpTxFifoWatermarkEmptyFlag) == 0U);
 
-        const uint32_t CHUNK    = (remain > FIFO_WM_BYTES) ? FIFO_WM_BYTES : remain;
+        const uint32_t CHUNK    = (remain > wm_bytes) ? wm_bytes : remain;
         const uint32_t WR_WORDS = (CHUNK + QSPI_RFDR_WORD_BYTES - 1U) / QSPI_RFDR_WORD_BYTES;
+        if (WR_WORDS > wm_words)
+        {
+            return kStatus_FLEXSPI_IpCommandSequenceError;
+        }
 
         for (uint32_t w = 0U; w < WR_WORDS; w++)
         {
