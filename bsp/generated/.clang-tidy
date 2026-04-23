@@ -1,4 +1,1 @@
----
-# Vendored / сгенерированный код — не анализируем вообще
-InheritParentConfig: false
 Checks: "-*"

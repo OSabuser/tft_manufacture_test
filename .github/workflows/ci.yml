@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build in devcontainer
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build devcontainer image with cache
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          tags: tft-devcontainer-ci:latest
+          load: true
+          cache-from: type=gha,scope=tft-devcontainer
+          cache-to: type=gha,mode=max,scope=tft-devcontainer
+
+      - name: Show tool versions in container
+        run: |
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE":/workspace             -w /workspace             tft-devcontainer-ci:latest             bash -lc 'just --version && cmake --version && ninja --version && arm-none-eabi-gcc --version | head -n 1 && uv --version'
+
+      - name: Sync host Python tools inside container
+        run: |
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE":/workspace             -w /workspace             tft-devcontainer-ci:latest             bash -lc 'cd tools/host && uv sync'
+
+      - name: Run CI build inside container
+        run: |
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE":/workspace             -w /workspace             tft-devcontainer-ci:latest             bash -lc 'just ci::build'
+
+      - name: Upload build directory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-tree
+          path: build/
+          if-no-files-found: warn
+          retention-days: 7
+
+  test:
+    name: Host tests in devcontainer
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build devcontainer image with cache
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          tags: tft-devcontainer-ci:latest
+          load: true
+          cache-from: type=gha,scope=tft-devcontainer
+          cache-to: type=gha,mode=max,scope=tft-devcontainer
+
+      - name: Download build directory artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-tree
+          path: build/
+
+      - name: Sync host Python tools inside container
+        run: |
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE":/workspace             -w /workspace             tft-devcontainer-ci:latest             bash -lc 'cd tools/host && uv sync'
+
+      - name: Run host tests inside container
+        run: |
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE":/workspace             -w /workspace             tft-devcontainer-ci:latest             bash -lc 'just ci::test'
+
+      - name: Upload test logs and build directory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: |
+            build/
+          if-no-files-found: warn
+          retention-days: 7

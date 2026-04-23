@@ -186,6 +186,8 @@
                                 kFLEXSPI_Command_READ_SDR, kFLEXSPI_4PAD, 0x04U),                  \
     }
 
+static const uint8_t BYTE_MASK = 0xFFU;
+
 /** @brief LUT для W25Q64/128 — стандартные 3-byte opcodes. */
 static const uint32_t K_LUT_3B[LUT_TOTAL_WORDS] =
     BUILD_LUT(0x20U, 0x52U, 0xD8U, 0x32U, 0x6BU, ADDR_BITS_24);
@@ -204,11 +206,11 @@ static uint32_t g_s_flash_size = 0U;    /**< Размер Flash в байтах.
 /* NOLINTNEXTLINE(cppcoreguidelines-macro-usage) */
 AT_QUICKACCESS_SECTION_CODE(static uint32_t qspi_irq_lock(void))
 {
-    const uint32_t primask = __get_PRIMASK();
+    const uint32_t PRIMASK = __get_PRIMASK();
     __disable_irq();
     __DSB();
     __ISB();
-    return primask;
+    return PRIMASK;
 }
 
 /* NOLINTNEXTLINE(cppcoreguidelines-macro-usage) */
@@ -309,15 +311,15 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_chunk(uint8_t *p_dst, uint
     } while ((intr & (uint32_t) kFLEXSPI_IpRxFifoWatermarkAvailableFlag) == 0U);
 
     /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) */
-    for (uint32_t w = 0U; w < wm_words; w++)
+    for (uint32_t wm_word = 0U; wm_word < wm_words; wm_word++)
     {
         /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) */
-        const uint32_t WORD = QSPI_BASE->RFDR[w];
-        const uint32_t BASE = w * QSPI_RFDR_WORD_BYTES;
-        p_dst[BASE + 0U]    = (uint8_t) (WORD & 0xFFU);
-        p_dst[BASE + 1U]    = (uint8_t) ((WORD >> 8U) & 0xFFU);
-        p_dst[BASE + 2U]    = (uint8_t) ((WORD >> 16U) & 0xFFU);
-        p_dst[BASE + 3U]    = (uint8_t) ((WORD >> 24U) & 0xFFU);
+        const uint32_t WORD = QSPI_BASE->RFDR[wm_word];
+        const uint32_t BASE = wm_word * QSPI_RFDR_WORD_BYTES;
+        p_dst[BASE + 0U]    = (uint8_t) (WORD & BYTE_MASK);
+        p_dst[BASE + 1U]    = (uint8_t) ((WORD >> 8U) & BYTE_MASK);
+        p_dst[BASE + 2U]    = (uint8_t) ((WORD >> 16U) & BYTE_MASK);
+        p_dst[BASE + 3U]    = (uint8_t) ((WORD >> 24U) & BYTE_MASK);
     }
     QSPI_BASE->INTR = (uint32_t) kFLEXSPI_IpRxFifoWatermarkAvailableFlag;
     return kStatus_Success;
@@ -353,16 +355,16 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_tail(uint8_t *p_dst, uint3
     }
 
     uint32_t bytes_left = remain;
-    for (uint32_t w = 0U; w < WORDS_NEEDED; w++)
+    for (uint32_t word = 0U; word < WORDS_NEEDED; word++)
     {
         /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) */
-        const uint32_t WORD = QSPI_BASE->RFDR[w];
+        const uint32_t WORD = QSPI_BASE->RFDR[word];
         const uint32_t BYTES =
             (bytes_left < QSPI_RFDR_WORD_BYTES) ? bytes_left : QSPI_RFDR_WORD_BYTES;
-        const uint32_t BASE = w * QSPI_RFDR_WORD_BYTES;
-        for (uint32_t b = 0U; b < BYTES; b++)
+        const uint32_t BASE = word * QSPI_RFDR_WORD_BYTES;
+        for (uint32_t byte = 0U; byte < BYTES; byte++)
         {
-            p_dst[BASE + b] = (uint8_t) ((WORD >> (8U * b)) & 0xFFU);
+            p_dst[BASE + byte] = (uint8_t) ((WORD >> (8U * byte)) & BYTE_MASK);
         }
         bytes_left -= BYTES;
     }
@@ -373,22 +375,22 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_tail(uint8_t *p_dst, uint3
 /* NOLINTNEXTLINE(cppcoreguidelines-macro-usage) */
 AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_fifo(uint8_t *p_buf, uint32_t len))
 {
-    const uint32_t wm_units =
+    const uint32_t WM_UNITS =
         ((QSPI_BASE->IPRXFCR & FLEXSPI_IPRXFCR_RXWMRK_MASK) >> FLEXSPI_IPRXFCR_RXWMRK_SHIFT) + 1U;
-    const uint32_t wm_words = wm_units * QSPI_WM_UNIT_WORDS;
-    const uint32_t wm_bytes = wm_words * QSPI_RFDR_WORD_BYTES;
+    const uint32_t WM_WORDS = WM_UNITS * QSPI_WM_UNIT_WORDS;
+    const uint32_t WM_BYTES = WM_WORDS * QSPI_RFDR_WORD_BYTES;
 
     uint32_t offset = 0U;
 
-    while ((len - offset) >= wm_bytes)
+    while ((len - offset) >= WM_BYTES)
     {
         /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */
-        const status_t ERR = qspi_read_chunk(p_buf + offset, wm_words);
+        const status_t ERR = qspi_read_chunk(p_buf + offset, WM_WORDS);
         if (ERR != kStatus_Success)
         {
             return ERR;
         }
-        offset += wm_bytes;
+        offset += WM_BYTES;
     }
 
     if (offset < len)
@@ -407,10 +409,10 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_write_fifo(const uint8_t *p_buf
 {
     const uint8_t *p = p_buf;
     uint32_t remain  = len;
-    const uint32_t wm_units =
+    const uint32_t WM_UNITS =
         ((QSPI_BASE->IPTXFCR & FLEXSPI_IPTXFCR_TXWMRK_MASK) >> FLEXSPI_IPTXFCR_TXWMRK_SHIFT) + 1U;
-    const uint32_t wm_words = wm_units * QSPI_WM_UNIT_WORDS;
-    const uint32_t wm_bytes = wm_words * QSPI_RFDR_WORD_BYTES;
+    const uint32_t WM_WORDS = WM_UNITS * QSPI_WM_UNIT_WORDS;
+    const uint32_t WM_BYTES = WM_WORDS * QSPI_RFDR_WORD_BYTES;
 
     while (remain > 0U)
     {
@@ -426,26 +428,26 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_write_fifo(const uint8_t *p_buf
             }
         } while ((intr & (uint32_t) kFLEXSPI_IpTxFifoWatermarkEmptyFlag) == 0U);
 
-        const uint32_t CHUNK    = (remain > wm_bytes) ? wm_bytes : remain;
+        const uint32_t CHUNK    = (remain > WM_BYTES) ? WM_BYTES : remain;
         const uint32_t WR_WORDS = (CHUNK + QSPI_RFDR_WORD_BYTES - 1U) / QSPI_RFDR_WORD_BYTES;
-        if (WR_WORDS > wm_words)
+        if (WR_WORDS > WM_WORDS)
         {
             return kStatus_FLEXSPI_IpCommandSequenceError;
         }
 
-        for (uint32_t w = 0U; w < WR_WORDS; w++)
+        for (uint32_t wr_word = 0U; wr_word < WR_WORDS; wr_word++)
         {
-            const uint32_t OFF = w * QSPI_RFDR_WORD_BYTES;
+            const uint32_t OFF = wr_word * QSPI_RFDR_WORD_BYTES;
             const uint32_t BYTES =
                 ((CHUNK - OFF) < QSPI_RFDR_WORD_BYTES) ? (CHUNK - OFF) : QSPI_RFDR_WORD_BYTES;
             uint32_t word = 0U;
-            for (uint32_t b = 0U; b < BYTES; b++)
+            for (uint32_t byte = 0U; byte < BYTES; byte++)
             {
-                word |= ((uint32_t) *p) << (8U * b);
+                word |= ((uint32_t) *p) << (8U * byte);
                 p++;
             }
             /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) */
-            QSPI_BASE->TFDR[w] = word;
+            QSPI_BASE->TFDR[wr_word] = word;
         }
         remain -= CHUNK;
         QSPI_BASE->INTR = (uint32_t) kFLEXSPI_IpTxFifoWatermarkEmptyFlag;
@@ -662,7 +664,7 @@ AT_QUICKACCESS_SECTION_CODE(static bsp_status_t qspi_do_erase(uint32_t seq_idx, 
     {
         return BSP_ERR_HW;
     }
-    const uint32_t primask = qspi_irq_lock();
+    const uint32_t PRIMASK = qspi_irq_lock();
     qspi_ahb_disable();
 
     status_t result = qspi_write_enable(addr);
@@ -677,7 +679,7 @@ AT_QUICKACCESS_SECTION_CODE(static bsp_status_t qspi_do_erase(uint32_t seq_idx, 
 
     qspi_sw_reset();
     qspi_ahb_enable();
-    qspi_irq_unlock(primask);
+    qspi_irq_unlock(PRIMASK);
     return to_bsp(result);
 }
 
@@ -748,7 +750,7 @@ AT_QUICKACCESS_SECTION_CODE(bsp_status_t bsp_qspi_read_jedec_id(bsp_qspi_jedec_t
     {
         return BSP_ERR_HW;
     }
-    const uint32_t primask = qspi_irq_lock();
+    const uint32_t PRIMASK = qspi_irq_lock();
     qspi_ahb_disable();
 
     uint8_t buf[SR_READ_LEN] = { 0U };
@@ -756,7 +758,7 @@ AT_QUICKACCESS_SECTION_CODE(bsp_status_t bsp_qspi_read_jedec_id(bsp_qspi_jedec_t
 
     qspi_sw_reset();
     qspi_ahb_enable();
-    qspi_irq_unlock(primask);
+    qspi_irq_unlock(PRIMASK);
 
     if (RESULT != kStatus_Success)
     {

@@ -2,22 +2,20 @@
 # ci.just — CI/CD пайплайны
 # Выполняется в CI-окружении (GitHub Actions, GitLab CI, Jenkins)
 #
-# Предполагается что CI работает внутри devcontainer.
+# Stage 1: только reproducible шаги без железа:
+#   - сборка
+#   - host unit-тесты
+# lint/release будут включаться по мере стабилизации пайплайна.
 # =============================================================================
-# === Импорт общих переменных ===
 
 BUILD_DIR := env('BUILD_DIR', justfile_directory() / 'build')
 
 set working-directory := '..'
 
-# =============================================================================
-# ГРУППА: ci — полные пайплайны
-# =============================================================================
-
-[doc('Полный CI pipeline: сборка + тесты + линтеры')]
+[doc('Минимальный CI pipeline: сборка + host-тесты')]
 [group('ci')]
-pipeline: build test lint
-    @echo "  ✅  CI pipeline complete"
+pipeline: build test
+    @echo "  ✅  Minimal CI pipeline complete"
 
 [doc('Собрать все проекты в Release')]
 [group('ci')]
@@ -32,10 +30,7 @@ test:
 [doc('Запустить линтеры и статический анализ')]
 [group('ci')]
 lint:
-    echo "TODO"
-
-#just build::lint
-#just build::check
+    @echo "TODO: enable just build::lint / just build::check after local stabilization"
 
 [doc('Собрать HAB Release-артефакты для выкладки')]
 [group('ci')]

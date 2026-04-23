@@ -17,12 +17,14 @@ add_executable(
 
 target_include_directories(firmware_test PRIVATE src/)
 
+# __STARTUP_INITIALIZE_RAMFUNCTION - очистка секции .ram_function и копирование
+# туда данных из __ram_function_flash_start; __STARTUP_INITIALIZE_NONCACHEDATA -
+# инициализация некешируемое секции нулями
 target_compile_definitions(
   ${TARGET_NAME}
-  PRIVATE BSP_UART_HOST_RX_BUFFER_SIZE=512
-          BOARD_MPU_SDRAM=1
-          __STARTUP_INITIALIZE_RAMFUNCTION
-          __STARTUP_CLEAR_BSS)
+  PRIVATE BSP_UART_HOST_RX_BUFFER_SIZE=512 BOARD_MPU_SDRAM=1
+          __STARTUP_INITIALIZE_RAMFUNCTION __STARTUP_CLEAR_BSS
+          __STARTUP_INITIALIZE_NONCACHEDATA)
 #
 # -----------------------------------------------------------------------------
 # Зависимости — только то что нужно для входного контроля bsp_board транзитивно
