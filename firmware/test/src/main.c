@@ -19,9 +19,11 @@
  */
 #include "board.h"
 #include "bsp/led.h"
+#include "bsp/sd.h"
 #include "bsp/tick.h"
 #include "bsp/usb_cdc.h"
 #include "cli.h"
+#include "ff.h"
 #include "protocol.h"
 #include "test_runner.h"
 
@@ -51,6 +53,7 @@ int main(void)
         bsp_delay(CONNECT_BLINK_MS);
     }
 
+#if 0
     bsp_led_on(LED_APP);
 
     cli_init();
@@ -61,5 +64,56 @@ int main(void)
         bsp_usb_cdc_poll();
         cli_process();
         test_runner_process();
+    }
+#endif
+    static FATFS s_fs;
+    const char *step = "card_detect";
+    bool passed      = false;
+
+    if (!bsp_sd_is_inserted())
+    {
+        /* нет карты — пропускаем, это не ошибка стека */
+        bsp_usb_cdc_write((const uint8_t *) "The card is not inserted.\r\n", 27);
+        goto sd_smoke_done;
+    }
+
+    step = "sd_init";
+    if (bsp_sd_init() != BSP_OK)
+    {
+        goto sd_smoke_fail;
+    }
+
+    step        = "f_mount";
+    FRESULT res = f_mount(&s_fs, "2:/", 1);
+    if (res != FR_OK)
+    {
+        bsp_sd_deinit();
+        goto sd_smoke_fail;
+    }
+
+    /* всё ок */
+    res = f_unmount("2:/");
+    if (res != FR_OK)
+    {
+        bsp_sd_deinit();
+        goto sd_smoke_fail;
+    }
+    bsp_sd_deinit();
+    passed = true;
+
+    bsp_usb_cdc_write((const uint8_t *) "The test passed.\r\n", 18);
+    goto sd_smoke_done;
+
+sd_smoke_fail:
+{
+    /* маленький буфер: step не длиннее 16 символов */
+    bsp_usb_cdc_write((const uint8_t *) "The test failed.\r\n", 18);
+}
+    (void) passed;
+
+sd_smoke_done:
+    while (1)
+    {
+        bsp_usb_cdc_poll();
     }
 }

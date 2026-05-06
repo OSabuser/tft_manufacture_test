@@ -1,8 +1,6 @@
 # firmware_test — Plan of Development
 
-> Документ для нового треда. Содержит все принятые решения, текущий статус и
-> пошаговый план дальнейшей разработки.
-> Версия: 0.2 | Обновлён после реализации скелета + bsp_usb_cdc.
+> Версия: 0.4 | Обновлён после завершения Этапов 1–3 (bsp_sdram + bsp_qspi_flash).
 
 ---
 
@@ -12,548 +10,282 @@
 Запускается через BootROM (USB SDP), без предварительной прошивки загрузчика.
 
 **Стенд:**
-- Хост подключается через USB CDC ACM (J2) — единственный канал
-- Тесты с внешними сигналами управляются через M5StampPLC (реле, оптовходы)
-- Отдельный компьютер-сервер запускает pytest
+- Хост подключается через USB CDC ACM — единственный канал firmware_test
+- Тесты с внешними сигналами управляются через M5StampPLC
+- Сервер запускает `tools/hil/` (разработка) или `tools/production/` (производство)
 
 ---
 
-## Статус на момент создания документа
+## Текущий статус
 
-| Компонент | Статус | Примечание |
-|---|---|---|
-| `bsp_usb_cdc` | ✅ Готов | HIL тест пройден (`05_test_usb_cdc.py`) |
-| `firmware_test` скелет | ✅ Готов | `main.c` + `cli.c` + PING работает |
-| Host-тест CLI | ✅ Готов | `test_cli.c`, 8 тестов, зелёные |
-| `bsp_sdram` | ⬜ Не начат | |
-| `bsp_qspi` | ⬜ Не начат | |
-| `bsp_usd` | ⬜ Не начат | |
-| Протокол v2 | ⬜ Не начат | Эволюция от cmd/ok к event-driven |
-| Test runner | ⬜ Не начат | |
-| Provisioning | ⬜ Не начат | |
+| Компонент                  | Статус | Примечание |
+|----------------------------|--------|------------|
+| `bsp_usb_cdc`              | ✅     | HIL тест пройден |
+| firmware_test скелет       | ✅     | `main.c` + `cli.c` |
+| Протокол v2 + test_runner  | ✅     | JSON-lines event-driven |
+| `bsp_sdram` + `test_sdram` | ✅     | 4 фазы: addr/data/seq/retention |
+| `bsp_qspi_flash`           | ✅     | W25Q64/128/256/512, ITCM, IRQ lock |
+| `test_qspi`                | ✅     | JEDEC + erase + rw + addr range |
+| `bsp_usd`                  | ⬜     | Этап 4 |
+| `test_usd`                 | ⬜     | Этап 4 |
+| Display test               | ⬜     | Этап 5 |
+| Button test                | ⬜     | Этап 5 |
+| CAN test                   | ⬜     | Этап 6 (bsp_can ✅) |
+| UART TTL test              | ⬜     | Этап 6 (bsp_uart_host ✅) |
+| UART ISO test              | ⬜     | Этап 6 |
+| Opto test                  | ⬜     | Этап 6 (bsp_opto ✅) |
+| Provisioning               | ⬜     | Этап 7 |
 
-### Закрытые архитектурные решения
+---
+
+## Закрытые архитектурные решения
 
 > Не пересматривать без явного запроса.
 
-- **[DECISION] Транспорт:** USB CDC ACM — единственный канал. UART не используется в firmware_test.
-- **[DECISION] Парсинг JSON:** без cJSON, строковый `strstr`. Входящее поле всегда `"cmd"` / `"type"`.
-- **[DECISION] SDRAM и DCD:** SEMC инициализируется DCD до `main()`. `bsp_sdram_init()` только верифицирует.
-- **[DECISION] SDRAM тест — не HIL ELF:** тест прогоняется командами через firmware_test, не отдельным ELF.
-- **[DECISION] IR и RTC:** не реализуются.
+- **Транспорт:** USB CDC ACM — единственный канал. UART не используется в firmware_test.
+- **Парсинг JSON:** без cJSON, строковый `strstr`. Входящее поле всегда `"type"` / `"cmd"`.
+- **SDRAM и DCD:** SEMC инициализируется DCD до `main()`. `bsp_sdram_init()` только верифицирует.
+- **SDRAM тест:** прогоняется командами через firmware_test, не отдельным HIL ELF.
+- **QSPI-функции в ITCM:** `AT_QUICKACCESS_SECTION_CODE` + `__STARTUP_INITIALIZE_RAMFUNCTION` в CMakeLists.
+- **QSPI IRQ lock:** `__get_PRIMASK()` + DSB/ISB. Публичные API под полным lock.
+- **W25Q256/512:** dedicated 4-byte opcodes, без Enter 4-Byte Mode (0xB7).
+- **Порядок init в main.c:** `bsp_qspi_init()` до `bsp_tick_init()`.
+- **IR и RTC:** не реализуются.
+- **Производственный runner:** Вариант D — отдельный `tools/production/` без pytest.
 
 ---
 
-## Протокол v2 — решение, требующее принятия в новом треде
+## Этап 4 — `bsp_usd` + `test_usd`
 
-Текущий скелет использует упрощённый протокол:
-```json
-{"cmd":"PING"} → {"ok":true,"result":"PONG"}
+### Аппаратный контекст
+
+| Параметр | Значение |
+|---|---|
+| Интерфейс | USDHC (SDIO) |
+| Карта | microSD, вставляется оператором перед тестом |
+| Файловая система | FatFS (SDK middleware) |
+| Детект карты | GPIO (CD pin) или опрос через USDHC status |
+
+### BSP API (предварительно)
+
+```c
+/* bsp/usd/include/bsp/usd.h */
+
+typedef enum {
+    BSP_USD_OK = 0,
+    BSP_USD_ERR_NO_CARD,      /* карта не вставлена */
+    BSP_USD_ERR_INIT,         /* USDHC или FatFS init failed */
+    BSP_USD_ERR_MOUNT,        /* f_mount() failed */
+    BSP_USD_ERR_RW,           /* read/write/compare failed */
+} bsp_usd_status_t;
+
+bsp_usd_status_t bsp_usd_init(void);
+bsp_usd_status_t bsp_usd_is_card_present(void);
+bsp_usd_status_t bsp_usd_test_rw(void);   /* write + read + compare тестового файла */
+void             bsp_usd_deinit(void);
 ```
 
-TODO.md описывает расширенный протокол с типами событий:
-```json
-{"type":"session_start","fw":"0.1.0","target":"IMXRT1052","uptime_ms":0}
-{"type":"test_begin","id":"sdram","name":"SDRAM 32MB","critical":true}
-{"type":"test_result","id":"sdram","status":"pass","ms":312}
-{"type":"summary","passed":7,"failed":0,"overall":"pass"}
+### test_usd — шаги
+
+| Шаг | Действие | Время |
+|---|---|---|
+| 1: Card detect | `bsp_usd_is_card_present()` | < 1 мс |
+| 2: Mount | `f_mount()` — FAT/exFAT | < 200 мс |
+| 3: Write | Записать 4 KB тестовый файл | < 500 мс |
+| 4: Read + Compare | Прочитать и сравнить побайтово | < 200 мс |
+| 5: Unmount | `f_unmount()` | < 50 мс |
+
+### Интерактивность
+
+Тест помечен `requires_hil = false`, `pre_confirm_prompt = "Вставьте microSD и нажмите OK"`.
+test_runner ждёт `{"type":"confirm","id":"usd_insert","confirmed":true}` до вызова `run()`.
+Отказ или таймаут 30 с → `TEST_STATUS_SKIP`.
+
+### Файлы
+
 ```
-
-**Вопросы для обсуждения в треде:**
-
-1. Переходить ли на v2 сразу или итерационно (сначала SDRAM с cmd/ok, потом рефакторинг)?
-2. Как обрабатывать `confirm_request` (display test) в cli.c — отдельный тип входящего сообщения?
-3. `session_start` — посылать ли при каждом `READY` или только по команде `START_SESSION`?
-
-**Рекомендация:** реализовать v2 до добавления первого теста, иначе рефакторинг CLI затронет уже написанные тест-модули.
-
----
-
-## Структура файлов — целевое состояние
-```
-firmware/test/
+bsp/usd/
 ├── CMakeLists.txt
 ├── README.md
-└── src/
-    ├── main.c                    # ✅ готов
-    ├── cli.h / cli.c             # ✅ готов (v1), требует эволюции до v2
-    ├── protocol.h / protocol.c   # ⬜ новый: сериализация ответов
-    ├── test_runner.h / .c        # ⬜ новый: реестр + sequencer
-    ├── provisioning.h / .c       # ⬜ новый: chip UID + provision_ack
-    └── tests/
-        ├── test_sdram.h / .c     # ⬜
-        ├── test_qspi.h / .c      # ⬜
-        ├── test_usd.h / .c       # ⬜
-        ├── test_display.h / .c   # ⬜ интерактивный (кнопки)
-        ├── test_can.h / .c       # ⬜ HIL (M5StampPLC)
-        ├── test_uart.h / .c      # ⬜ HIL TTL + ISO
-        └── test_opto.h / .c      # ⬜ HIL (M5StampPLC)
+├── include/bsp/usd.h
+└── src/usd.c
 
-bsp/
-├── sdram/                        # ⬜ CMakeLists.txt + sdram.c (структура есть)
-├── qspi/                         # ⬜ новый модуль
-└── usd/                          # ⬜ новый модуль
+firmware/test/src/tests/test_usd.c
 ```
+
+### CMake
+
+```cmake
+# bsp/usd/CMakeLists.txt
+target_link_libraries(bsp_usd
+    PUBLIC  bsp_status
+    PRIVATE bsp_board sdk_usdhc middleware_fatfs
+)
+```
+
+### Открытые вопросы перед реализацией
+
+- [ ] Есть ли `sdk_usdhc` таргет в `sdk/CMakeLists.txt`?
+- [ ] Карта вставлена постоянно или оператор вставляет каждый раз?
+- [ ] Нужен ли Card Detect GPIO или только USDHC status?
+- [ ] Файловая система: FAT32 или exFAT (размер карт)?
 
 ---
 
-## Матрица тестов
+## Этап 5 — Display + Button (интерактивные)
 
-| ID | Название | Тип | Critical | HIL (M5) | HIL ELF | BSP | Статус |
-|---|---|---|---|---|---|---|---|
-| — | PING | cmd | — | — | — | — | ✅ |
-| `sdram` | SDRAM 32MB | self | ✅ | ❌ | ❌ | `bsp_sdram` | ⬜ |
-| `qspi` | QSPI Flash | self | ✅ | ❌ | ❌ | `bsp_qspi` | ⬜ |
-| `usd` | uSD (SDIO) | self | ✅ | ❌ | ❌ | `bsp_usd` | ⬜ |
-| `display` | Display RGB888 | interactive | ❌ | ❌ | ❌ | существующий BSP | ⬜ |
-| `can` | CAN | HIL | ❌ | ✅ | ❌ | `bsp_can` ✅ | ⬜ |
-| `uart_ttl` | UART TTL | HIL | ❌ | ✅ | ❌ | `bsp_uart_host` ✅ | ⬜ |
-| `uart_iso` | UART ISO +24V | HIL | ❌ | ✅ | ❌ | уточнить | ⬜ |
-| `opto` | Opto-in +24V | HIL | ❌ | ✅ | ❌ | `bsp_opto` ✅ | ⬜ |
+### test_display
 
-**Колонка "HIL ELF":** отдельная RAM-прошивка через pyOCD. Для firmware_test тестов — не нужна, тесты идут через USB CDC.
+| Параметр | Значение |
+|---|---|
+| Critical | ❌ |
+| HIL | ❌ |
+| Confirm | Внутри `run()` — 4 отдельных confirm |
 
-**Колонка "HIL (M5)":** нужна ли M5StampPLC для управления внешними сигналами.
+Шаги: заливка Red → confirm → Green → confirm → Blue → confirm → White → confirm.
+Каждый шаг посылает `confirm_request`, ждёт `confirm` с таймаутом 15 с.
+Итог = AND всех четырёх подтверждений.
 
----
+`detail` при FAIL содержит ID первого непрошедшего шага: `"display_blue not confirmed"`.
 
-## Пошаговый план
+### test_buttons
 
-### Этап 0 — Вопросы, требующие ответа до кода
+| Параметр | Значение |
+|---|---|
+| Critical | ❌ |
+| HIL | ❌ |
+| Confirm | prompt only (детект через bsp_button) |
 
-Обсудить в начале треда:
+Шаги: Test_But_1 → Test_But_2. Таргет посылает `confirm_request` как инструкцию
+оператору, детектирует нажатие через `bsp_button` — JSON confirm не нужен.
+Таймаут 10 с на каждую кнопку.
 
-- Протокол v2: переходить сейчас или после SDRAM?
-- `uart_iso`: есть отдельный BSP модуль или это тот же `bsp_uart_host` с другими параметрами?
-- `usd`: карта вставлена постоянно на плате или оператор вставляет перед тестом?
-- QSPI: какой конкретно чип (W25Q128?), есть ли уже sdk_flexspi таргет в CMake?
+### Аппаратный контекст кнопок
 
----
-
-### Этап 1 — Протокол v2 + Test runner скелет
-
-**Цель:** эволюция cli.c → protocol.c + test_runner.c. После этого этапа добавление каждого теста — одна строка в реестре.
-
-**Файлы:**
-```
-firmware/test/src/
-├── cli.c          ← упрощается: только IO (read/write/buffer)
-├── protocol.h/.c  ← новый: сериализация всех типов сообщений
-├── test_module.h  ← новый: интерфейс тест-модуля
-└── test_runner.h/.c ← новый: реестр + sequencer
-```
-
-**Интерфейс тест-модуля (`test_module.h`):**
-```c
-typedef enum { TEST_STATUS_PASS = 0, TEST_STATUS_FAIL, TEST_STATUS_SKIP } test_status_t;
-
-typedef struct {
-    test_status_t status;
-    uint32_t      duration_ms;
-    char          detail[96];
-} test_result_t;
-
-typedef struct {
-    const char   *id;
-    const char   *name;
-    bool          critical;
-    bool          requires_hil;
-    void         (*init)(void);
-    test_result_t (*run)(void);
-    void         (*deinit)(void);
-} test_module_t;
-```
-
-**Сериализация (protocol.h):** функции `protocol_send_session_start()`,
-`protocol_send_test_begin()`, `protocol_send_test_result()`,
-`protocol_send_summary()`, `protocol_send_confirm_request()` — все через `cli_send()`.
-
-**Команды хоста v2:**
-
-| Входящий тип | Поле | Действие |
+| Кнопка | Пин MCU | GPIO |
 |---|---|---|
-| `cmd` | `"run_all"` | Запустить все тесты по реестру |
-| `cmd` | `"run"` + `"id"` | Запустить один тест |
-| `cmd` | `"ping"` | `{"type":"pong"}` |
-| `confirm` | `"id"` + `"confirmed"` | Ответ оператора на display тест |
-
-**Host-тесты:** расширить `test_cli.c` + добавить `test_protocol.c` (Категория A).
+| Test_But_1 | GPIO_B1_14 | GPIO2[30] |
+| Test_But_2 | GPIO_B1_15 | GPIO2[31] |
 
 ---
 
-### Этап 2 — `bsp_sdram`
+## Этап 6 — CAN + UART + Opto (HIL, M5StampPLC)
 
-API уже описан в `firmware_test_plan.md` (закрытое решение):
+Все три теста `requires_hil = true`. Запускаются только при наличии стенда.
+BSP для всех трёх уже готов.
+
+### test_can
+
+M5StampPLC отправляет CAN-фрейм → плата принимает → сравниваем ID и payload.
+
+**Шаги:**
+1. M5 → `{"cmd":"can_send","id":0x100,"data":[0xDE,0xAD,0xBE,0xEF]}` (через `confirm_request`)
+2. Таргет: `uart_cmd("CAN_RECV 500")` → `"100 DEADBEEF"` или `"TIMEOUT"`
+3. Ответный: таргет посылает → M5 `can_recv` → верификация
+
+### test_uart_ttl
+
+M5 loopback через UART TTL → echo-верификация.
+
+### test_uart_iso
+
+M5 RLY2 → RS_RX оптовход (BSP_OPTO_CH_RS) → детект ACTIVE/INACTIVE.
+Использует `bsp_opto` с `rs_as_gpio=true`.
+
+### test_opto
+
+M5 RLY3/RLY4 → EXT_IN1/IN2 → детект ACTIVE/INACTIVE через `bsp_opto`.
+
+**Параметры стенда (из HIL_BENCH.md):**
+```
+RLY2 → RS_RX   (BSP_OPTO_CH_RS)  GPIO1[23]
+RLY3 → EXT_IN1 (BSP_OPTO_CH_IN1) GPIO1[22]
+RLY4 → EXT_IN2 (BSP_OPTO_CH_IN2) GPIO1[21]
+```
+
+### HIL pytest для Этапа 6
+
+Тесты firmware_test через USB CDC — отдельные от существующих HIL ELF тестов:
+
+```
+tools/hil/
+├── conftest.py              ← добавить фикстуру firmware_cdc (USB CDC клиент)
+├── 06_test_firmware_can.py  ← M5 + USB CDC
+├── 06_test_firmware_uart.py
+└── 06_test_firmware_opto.py
+```
+
+Фикстура `firmware_cdc` открывает CDC порт firmware_test (прошит в Flash),
+посылает JSON команды, читает события. Аналог `uart_cmd` для USB CDC.
+
+---
+
+## Этап 7 — Provisioning
+
+### Что нужно
+
+1. Читать `OCOTP_UNIQUE_ID` (или `OCOTP_MAC0/1`) через SDK fsl_ocotp.
+2. Посылать `{"type":"provision_ready","chip_uid":"AABB..."}` после `summary`.
+3. Ждать `{"type":"cmd","cmd":"provision_ack"}` от хоста.
+4. Записывать статус в Flash (первый сектор после прошивки, вне XIP).
+
+### BSP (предварительно)
+
 ```c
-bsp_sdram_status_t bsp_sdram_init(void);
-bsp_sdram_status_t bsp_sdram_test_fast(bsp_sdram_result_t *result);
-bsp_sdram_status_t bsp_sdram_test_full(bsp_sdram_result_t *result);
+/* bsp/provisioning/include/bsp/provisioning.h */
+bsp_status_t bsp_prov_read_uid(uint8_t *p_uid, size_t len);  /* 8 байт из OCOTP */
 ```
 
-**Файлы:**
-```
-bsp/sdram/
-├── CMakeLists.txt              ← создать
-├── include/bsp/sdram.h        ← по spec из firmware_test_plan.md
-└── src/sdram.c
-```
+### Открытые вопросы
 
-**Тест модуль firmware_test:**
-```
-firmware/test/src/tests/test_sdram.c
-```
-
-Команды через реестр: `run` + `id: "sdram"`. Отдельной HIL ELF нет.
-
-**HIL pytest (`tools/hil/test_sdram.py`):** подключается к firmware_test через USB CDC.
-Фикстура `cdc_firmware_test` — firmware_test прошит в Flash, pytest открывает CDC порт.
-
-**Just рецепты:** `hil-sdram` (без `--slow`), `hil-sdram-full` (с `@pytest.mark.slow`).
+- [ ] Что именно записывать как "пройдено": флаг в Flash или только отправить UID?
+- [ ] Нужна ли защита от повторного provisioning (write-once)?
 
 ---
 
-### Этап 3 — `bsp_qspi` + QSPI тест
+## Матрица тестов — итоговая
 
-**Аппаратный контекст:** W25Q64FVSSIG (из схемы, 8MB SPI NOR Flash), интерфейс FlexSPI.
-
-**API:**
-```c
-bsp_qspi_status_t bsp_qspi_init(void);
-bsp_qspi_status_t bsp_qspi_read_jedec_id(uint8_t *manufacturer, uint16_t *device_id);
-bsp_qspi_status_t bsp_qspi_test(bsp_qspi_result_t *result);  /* erase sector + write + verify */
-```
-
-**Что проверяет тест:**
-
-1. JEDEC ID совпадает с ожидаемым для W25Q64 (`0xEF`, `0x4017`)
-2. Erase тестового сектора (последний сектор, чтобы не трогать прошивку)
-3. Write + Read + Compare 256 байт
-
-**Нет HIL ELF, нет M5.** Тест полностью самостоятельный.
-
-**Вопрос перед началом:** проверить есть ли `sdk_flexspi` таргет в `sdk/CMakeLists.txt`.
-
----
-
-### Этап 4 — `bsp_usd` + uSD тест
-
-**Аппаратный контекст:** SDMMC (uSD слот), интерфейс USDHC. SDK таргет `sdk_usdhc` есть в матрице.
-
-**Стратегия:** использовать FatFS из SDK middleware (уже vendored в `middleware/fatfs/`).
-
-**API:**
-```c
-bsp_usd_status_t bsp_usd_init(void);           /* USDHC init + mount FAT */
-bsp_usd_status_t bsp_usd_test(bsp_usd_result_t *result);  /* write + read + verify */
-bsp_usd_status_t bsp_usd_deinit(void);         /* unmount */
-```
-
-**Поведение при отсутствии карты:** `TEST_STATUS_SKIP` (критически важно для
-производственного прогона — карта может быть не вставлена).
-
-**Вопрос:** карта вставлена постоянно или оператор вставляет? Если оператор — нужен `confirm_request` перед тестом.
-
----
-
-### Этап 5 — Display тест (интерактивный)
-
-**Что проверяем:** RGB888 интерфейс + подсветка + реакция оператора через кнопки.
-
-**Последовательность:**
-```
-firmware → LCD: залить R (красный)
-firmware → хост: {"type":"confirm_request","id":"display_red","timeout_ms":15000}
-оператор: нажать кнопку PASS (Test_But_1) или FAIL (Test_But_2)
-firmware → хост: {"type":"confirm_ack","id":"display_red","confirmed":true/false}
-повторить для G, B, W
-итоговый результат = AND всех подтверждений
-```
-
-**Особенности:**
-
-- Одновременно тестируются кнопки (`bsp_button` уже есть с HIL тестами)
-- Таймаут 15 с → `TEST_STATUS_SKIP`
-- Маркер `@pytest.mark.interactive` в pytest — не входит в `hil-run`
-
-**HIL pytest:** `tools/hil/test_display.py` с `_operator_prompt()` через `/dev/tty`.
-
----
-
-### Этап 6 — HIL тесты: CAN, UART, Opto в firmware_test
-
-Эти BSP модули уже реализованы и имеют отдельные HIL ELF тесты.
-Задача этапа — **интегрировать их в firmware_test** как тест-модули,
-запускаемые через протокол v2.
-
-#### 6.1 CAN (`bsp_can` ✅)
-
-- Стенд: M5StampPLC подключён к CAN шине платы через интерфейсную плату
-- Тест: M5 посылает CAN фрейм → плата принимает → сравниваем
-
-#### 6.2 UART TTL (`bsp_uart_host` ✅)
-
-- Стенд: M5 UART ↔ UART TTL платы (loopback или echo)
-- Уточнить: какой UART порт на плате (LPUART1 занят MCU-Link, какой свободен?)
-
-#### 6.3 UART ISO
-
-- Уточнить наличие отдельного BSP модуля или это конфигурация `bsp_uart_host`
-- +24V уровни через интерфейсную плату
-
-#### 6.4 Opto (`bsp_opto` ✅)
-
-- Стенд: M5 реле → оптовходы EXT_IN1, EXT_IN2, RS_RX
-- Логика уже отработана в `02_test_opto.py` (HIL ELF)
-- Переиспользовать: тот же M5 агент, другой транспорт (USB CDC вместо UART)
-
-**Важно для всех HIL тестов этапа 6:** pytest для firmware_test использует
-`cdc_firmware_test` фикстуру (USB CDC), а не `uart_<n>` (UART + pyOCD).
-M5StampPLC управляет сигналами так же, как в существующих HIL ELF тестах.
-
----
-
-### Этап 7 — Provisioning
-
-**Источник UID:** OCOTP регистры через `OCOTP_GetFuseData()` (NXP HAL).
-```c
-void provisioning_run(provision_info_t *out);
-```
-
-**Поток:**
-```
-firmware → хост: {"type":"provision_ready","chip_uid":"A3F2...","fw":"0.1.0"}
-хост → БД: uid ↔ fw_version (логика на хосте)
-хост → firmware: {"type":"cmd","cmd":"provision_ack","fw":"1.0.0","bootloader":"1.0.0"}
-firmware → хост: {"type":"provision_done","recorded":true}
-```
-
-**Запускается только при `overall == pass`.** В pytest отдельная фикстура
-`provision_firmware_test`.
+| ID          | Название       | Тип         | Critical | HIL (M5) | BSP              | Статус |
+|-------------|----------------|-------------|----------|----------|------------------|--------|
+| —           | PING           | cmd         | —        | ❌       | —                | ✅     |
+| `sdram`     | SDRAM 32MB     | self        | ✅       | ❌       | `bsp_sdram` ✅   | ✅     |
+| `qspi`      | QSPI Flash     | self        | ✅       | ❌       | `bsp_qspi_flash` ✅ | ✅  |
+| `usd`       | uSD (SDIO)     | interactive | ✅       | ❌       | `bsp_usd` ⬜     | ⬜     |
+| `display`   | Display RGB888 | interactive | ❌       | ❌       | существующий BSP | ⬜     |
+| `buttons`   | Test_But_1/2   | interactive | ❌       | ❌       | `bsp_button` ✅  | ⬜     |
+| `can`       | CAN loopback   | HIL         | ❌       | ✅       | `bsp_can` ✅     | ⬜     |
+| `uart_ttl`  | UART TTL       | HIL         | ❌       | ✅       | `bsp_uart_host`✅| ⬜     |
+| `uart_iso`  | UART ISO +24V  | HIL         | ❌       | ✅       | `bsp_opto` ✅    | ⬜     |
+| `opto`      | Opto-in EXT    | HIL         | ❌       | ✅       | `bsp_opto` ✅    | ⬜     |
 
 ---
 
 ## Зависимости между этапами
-```
-Этап 1 (протокол v2 + runner)
-    ├── Этап 2 (bsp_sdram)
-    │       └── HIL: test_sdram.py
-    ├── Этап 3 (bsp_qspi)
-    │       └── HIL: test_qspi.py
-    ├── Этап 4 (bsp_usd)
-    │       └── HIL: test_usd.py
-    ├── Этап 5 (display, interactive)
-    │       └── HIL: test_display.py (@pytest.mark.interactive)
-    └── Этап 6 (CAN + UART + Opto)
-            └── HIL: test_can.py, test_uart.py, test_opto.py
 
-Этап 7 (provisioning) → зависит от всех предыдущих
+```
+✅ Этап 1 (протокол v2 + runner)
+✅ Этап 2 (bsp_sdram + test_sdram)
+✅ Этап 3 (bsp_qspi_flash + test_qspi)
+⬜ Этап 4 (bsp_usd + test_usd)          ← ТЕКУЩИЙ
+⬜ Этап 5 (display + buttons)
+⬜ Этап 6 (CAN + UART + Opto, HIL)
+⬜ Этап 7 (provisioning)
+⬜ Этап 8 (tools/production/ TUI runner) ← параллельно с 6-7
 ```
 
 ---
 
-## BSP модули — итог
+## Хостовое ПО производственного прогона (Этап 8)
 
-| BSP | Статус | Нужен HIL ELF | Нужен в firmware_test |
-|---|---|---|---|
-| `bsp_usb_cdc` | ✅ | ✅ (есть) | ✅ (есть) |
-| `bsp_led` | ✅ | ❌ | ✅ |
-| `bsp_tick` | ✅ | ❌ | ✅ |
-| `bsp_button` | ✅ | ✅ (есть) | ✅ (display тест) |
-| `bsp_opto` | ✅ | ✅ (есть) | ✅ этап 6 |
-| `bsp_can` | ✅ | ✅ (есть) | ✅ этап 6 |
-| `bsp_uart_host` | ✅ | ✅ (есть) | ✅ этап 6 |
-| `bsp_sdram` | ⬜ | ❌ | ✅ этап 2 |
-| `bsp_qspi` | ⬜ | ❌ | ✅ этап 3 |
-| `bsp_usd` | ⬜ | ❌ | ✅ этап 4 |
+**Решение принято (Вариант D):** отдельное приложение `tools/production/`,
+без pytest, с TUI (Textual).
 
----
+Подробная архитектура описана в предыдущей версии плана (v0.2, раздел
+"Открытый вопрос: ПО на стороне хоста").
 
-## Контекст для нового треда — что передать
-```
-Системный промпт: тот же (роль + правила).
+### Открытые вопросы (перед Этапом 8)
 
-Приложить файлы:
-  - firmware_test_plan.md (обновлённый)
-  - usb_cdc.md
-  - firmware/test/src/main.c     (текущий)
-  - firmware/test/src/cli.h/.c   (текущий)
-  - firmware/test/CMakeLists.txt (текущий)
-  - tests/host/CMakeLists.txt
-  - tests/host/cli/test_cli.c
-  - этот план (PLAN.md)
-
-Первый вопрос нового треда:
-  "Начинаем Этап 1 — протокол v2 и test_runner.
-   Ответы на открытые вопросы: [...]"
-```
-
----
-
-## Открытый вопрос: ПО на стороне хоста для производственного прогона
-
-### Контекст и разделение ответственности
-
-Принципиально важно разделить два окружения:
-
-| Окружение | Кто запускает | Инструмент | Что тестирует |
-|---|---|---|---|
-| **Разработка** | Разработчик, локальный ПК | pytest (`just host::hil-*`) | Отдельные BSP модули через HIL ELF + UART |
-| **Производство / Сервис** | Оператор, сервер | ??? | Плата целиком через firmware_test + USB CDC |
-
-Это два **принципиально разных** use case с разными требованиями к UX,
-надёжности и изоляции. Смешивать их в одном pytest-прогоне нельзя.
-
----
-
-### Почему "просто pytest" недостаточно для производства
-
-Производственный прогон отличается от HIL тестов разработчика по нескольким осям:
-
-**Оператор — не разработчик.** Он не читает pytest output в терминале.
-Ему нужно видеть: какой тест сейчас идёт, прошёл или нет, что делать дальше
-(вставить карту, посмотреть на дисплей, нажать кнопку).
-
-**Последовательность фиксирована.** Прогон всегда идёт по реестру:
-flash → READY → run_all → summary → provisioning. Никакого выбора тестов.
-
-**Результат — не лог, а запись в БД.** `chip_uid` + результат + версия прошивки
-должны сохраняться. pytest ничего не знает о БД.
-
-**Интерактивные тесты** (display) требуют управляемого диалога с оператором,
-а не `input()` в терминале с флагом `-s`.
-
----
-
-### Варианты хостового ПО — анализ
-
-#### Вариант A: pytest + плагины + HTML отчёт
-
-Обернуть весь прогон в pytest, добавить `pytest-html` для отчётов,
-интерактивные тесты через `@pytest.mark.interactive` с `-s`.
-
-**Плюсы:** минимум нового кода, знакомый инструмент.
-
-**Минусы:** оператор смотрит в терминал; интерактивность через `/dev/tty` хрупкая;
-provisioning (запись в БД) — костыль в фикстуре; нет живого статуса
-"тест N из M идёт X секунд". Для производства неприемлемо.
-
-#### Вариант B: TUI — Python + Textual / Rich
-
-Самостоятельное Python-приложение с текстовым интерфейсом.
-Управляет всем: flash через spsdk, M5StampPLC, USB CDC, provisioning, БД.
-pytest не используется как runner — только как библиотека для assert-логики
-(или вообще не используется).
-
-**Плюсы:** полный контроль над UX; живой прогресс; чёткие диалоги оператора;
-нативная запись в БД; изолировано от HIL тестов разработчика полностью.
-
-**Минусы:** значительный объём разработки хостового ПО;
-нужен отдельный репозиторий или директория `tools/production/`.
-
-#### Вариант C: pytest как backend, TUI/GUI как frontend
-
-pytest запускается программно через `pytest.main()` или subprocess,
-результаты передаются через JSON reporter (`pytest-json-report`) в
-отдельное GUI/TUI приложение которое их отображает.
-
-**Плюсы:** переиспользуем pytest инфраструктуру (фикстуры, параллелизм).
-
-**Минусы:** архитектурно сложно; интерактивные тесты всё равно требуют
-кастомного канала; два процесса вместо одного.
-
-#### Вариант D: pytest только для разработки, отдельный runner для производства
-
-**Разработка:** pytest (`just host::hil-*`) — тесты отдельных BSP модулей
-через HIL ELF. Остаётся как есть.
-
-**Производство:** отдельное Python-приложение (`tools/production/run.py`)
-без pytest. Использует те же низкоуровневые библиотеки
-(`pyserial`, `spsdk`, M5 агент) но со своим runner-ом и TUI.
-
-Тест-логика на стороне прошивки (в `test_runner.c`) — единственная
-точка истины. Хостовое ПО только отправляет команды и интерпретирует события.
-
-**Это рекомендуемый вариант** — наиболее чистое разделение.
-
----
-
-### Рекомендуемая архитектура (Вариант D, детально)
-```
-tools/
-├── hil/                          # СУЩЕСТВУЮЩИЙ — разработчик, локальный ПК
-│   ├── conftest.py               # pytest фикстуры
-│   ├── 01_test_uart.py           # HIL тесты отдельных BSP модулей
-│   ├── 02_test_opto.py
-│   └── ...
-│
-└── production/                   # НОВЫЙ — производство / сервис
-    ├── pyproject.toml            # отдельное окружение uv
-    ├── run.py                    # точка входа: python run.py
-    ├── runner/
-    │   ├── flasher.py            # spsdk: flash firmware_test.elf
-    │   ├── cdc_client.py         # USB CDC: send cmd, recv events
-    │   ├── m5_client.py          # переиспользовать tools/hil/m5/
-    │   ├── test_sequence.py      # порядок: flash→READY→run_all→provision
-    │   └── db.py                 # запись chip_uid + результатов
-    └── ui/
-        ├── tui.py                # Textual TUI: живой прогресс + диалоги
-        └── report.py             # HTML / JSON отчёт после прогона
-```
-
-**Поток производственного прогона:**
-```
-Оператор запускает: python tools/production/run.py
-    │
-    ├── flasher.py: spsdk → flash firmware_test.elf → Reset
-    ├── cdc_client: ждёт {"type":"session_start",...}
-    ├── TUI: показывает "Подключение... ОК"
-    │
-    ├── cdc_client: → {"type":"cmd","cmd":"run_all"}
-    │
-    ├── [цикл событий]
-    │   ├── {"type":"test_begin","id":"sdram"} → TUI: "SDRAM... ⏳"
-    │   ├── {"type":"test_result","id":"sdram","status":"pass"} → TUI: "SDRAM ✅ 47ms"
-    │   ├── {"type":"confirm_request","id":"display_red"} →
-    │   │       TUI: диалог оператора "Экран красный? [PASS/FAIL]"
-    │   │       cdc_client: → {"type":"confirm","id":"display_red","confirmed":true}
-    │   └── ...
-    │
-    ├── {"type":"summary","overall":"pass"} → TUI: финальный результат
-    ├── {"type":"provision_ready","chip_uid":"..."} →
-    │       db.py: записать в БД
-    │       cdc_client: → {"type":"cmd","cmd":"provision_ack",...}
-    └── TUI: "Плата принята ✅ | UID: A3F2..." | печать этикетки?
-```
-
----
-
-### Изоляция от HIL тестов разработчика
-
-| Аспект | HIL тесты (разработка) | Production runner |
-|---|---|---|
-| Инструмент | pytest | Самостоятельный Python runner |
-| Директория | `tools/hil/` | `tools/production/` |
-| Окружение uv | `tools/hil/pyproject.toml` | `tools/production/pyproject.toml` |
-| Just рецепты | `just host::hil-*` | `just host::production-run` |
-| Прошивка | HIL ELF в RAM (pyOCD) | firmware_test в Flash (spsdk) |
-| Транспорт | UART CLI (pyserial) | USB CDC JSON-lines |
-| UX | Терминал / pytest output | TUI (Textual) |
-| БД | Нет | Да |
-| M5StampPLC | Да (реле для сигналов) | Да (те же реле) |
-| CI | Да (автоматический) | Нет |
-
-Общий код (M5 агент, низкоуровневый spsdk wrapper) можно вынести в
-`tools/shared/` и подключать как локальный пакет в обоих `pyproject.toml`.
-
----
-
-### Открытые вопросы для обсуждения
-
-- [ ] **TUI библиотека:** Textual (современный, богатый) или Rich (проще, достаточно)?
-      Или вообще минималистичный вывод без TUI фреймворка на первой итерации?
-- [ ] **БД:** SQLite локально на сервере или REST API на внешний сервис?
-- [ ] **Этикетка:** нужна ли автоматическая печать после provisioning?
-- [ ] **Несколько стендов:** один сервер управляет несколькими платами параллельно
-      или всегда одна плата?
-- [ ] **Первая итерация:** допустимо ли начать с простого `run.py` без TUI
-      (plain print + input) и добавить TUI позже?
+- [ ] TUI: Textual или Rich или plain print на первой итерации?
+- [ ] БД: SQLite локально или REST API?
+- [ ] Несколько стендов параллельно или всегда один?
+- [ ] Этикетка: нужна ли автоматическая печать после provisioning?

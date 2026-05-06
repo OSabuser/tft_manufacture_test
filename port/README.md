@@ -39,8 +39,8 @@ port/
 ├── CMakeLists.txt
 ├── README.md                  ← этот файл
 └── log/                       ← UART-адаптер для utils/log
+├── fatfs/                     ← diskio поверх bsp_sd / bsp_qspi
 # Планируется:
-├── fatfs/                     ← diskio поверх bsp_sdio / bsp_qspi
 └── freertos/                  ← heap_4.c, configASSERT, vApplicationHooks
 ```
 
@@ -49,7 +49,7 @@ port/
 ## Соглашения
 
 **Именование таргетов:** `port_<что>_<транспорт>` — например `port_log_uart`,
-`port_fatfs_sdio`. Позволяет иметь несколько адаптеров для одной библиотеки.
+`port_fatfs_sd`. Позволяет иметь несколько адаптеров для одной библиотеки.
 
 **Include-путь:** `#include "port/<модуль>.h"` — публичные заголовки
 всегда в `port/<модуль>/include/port/`.

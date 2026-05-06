@@ -3,6 +3,8 @@
 
 set(TARGET_NAME firmware_test)
 
+add_subdirectory(fatfs)
+
 add_executable(
   ${TARGET_NAME}
   src/main.c
@@ -38,7 +40,9 @@ target_link_libraries(
           bsp_boot_xip
           bsp_usb_cdc
           bsp_sdram
-          bsp_qspi_flash)
+          bsp_qspi_flash
+          bsp_sd
+          firmware_test_fatfs)
 
 # -----------------------------------------------------------------------------
 # Linker script

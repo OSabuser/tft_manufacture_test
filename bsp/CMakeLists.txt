@@ -18,6 +18,7 @@ add_subdirectory(button)
 add_subdirectory(usb_cdc)
 add_subdirectory(sdram)
 add_subdirectory(qspi_flash)
+add_subdirectory(sd)
 
 # Подавляем предупреждения при компиляции собственных .c файлов библиотеки
 target_compile_options(bsp_board PRIVATE -w)
@@ -31,6 +32,27 @@ target_compile_definitions(bsp_board PUBLIC CPU_MIMXRT1052CVJ5B)
 # sdk_device PUBLIC — транзитивно подтянется во все firmware таргеты
 target_link_libraries(bsp_board PUBLIC sdk_device sdk_clock sdk_common
                                        sdk_lpuart)
+
+# -----------------------------------------------------------------------------
+# bsp_sdmmc_config — board-level конфигурация SDMMC (BOARD_SD_Config и пр.)
+# Отдельный таргет, чтобы sdk_sdmmc_sd не тянулся во все бинарники через
+# bsp_board. Линкуется только теми, кто реально работает с SD: bsp_usd →
+# bsp_sdmmc_config
+# -----------------------------------------------------------------------------
+add_library(bsp_sdmmc_config STATIC generated/sdmmc_config.c)
+
+target_include_directories(bsp_sdmmc_config PUBLIC generated)
+
+target_compile_definitions(bsp_sdmmc_config PUBLIC SD_ENABLED)
+
+target_link_libraries(
+  bsp_sdmmc_config
+  PUBLIC bsp_board # board.h, pin_mux.h, clock_config.h, fsl_gpio.h
+  PUBLIC sdk_sdmmc_sd # fsl_sd.h, fsl_sdmmc_host.h, sdmmchost_t
+)
+
+target_compile_options(bsp_sdmmc_config PRIVATE -w)
+
 # ------------------------------------------------------------------
 # Boot-стратегии — INTERFACE
 # ------------------------------------------------------------------
