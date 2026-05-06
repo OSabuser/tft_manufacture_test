@@ -24,6 +24,15 @@ static sd_io_voltage_t s_io_voltage = {
     .func = NULL, /* управление через регистры USDHC, не через внешний LDO */
 };
 
+/* Debug markers for runtime verification in debugger. */
+volatile uint32_t g_sdmmc_dbg_dma_buf_addr         = 0U;
+volatile uint32_t g_sdmmc_dbg_usdhc1_src_clock_hz  = 0U;
+
+static bool sd_card_detect_gpio(void)
+{
+    return GPIO_PinRead(BOARD_SDMMC_SD_CD_GPIO_BASE, BOARD_SDMMC_SD_CD_GPIO_PIN) == BOARD_SDMMC_SD_CD_INSERT_LEVEL;
+}
+
 /* ---------------------------------------------------------------------------
  * Внутренние функции
  * ------------------------------------------------------------------------- */
@@ -36,7 +45,7 @@ static sd_io_voltage_t s_io_voltage = {
  */
 static uint32_t get_usdhc1_src_clock_hz(void)
 {
-    return BOARD_BOOTCLOCKRUN_USDHC1_CLK_ROOT; /* 198 000 000 Hz */
+    return BOARD_BOOTCLOCKRUN_USDHC1_CLK_ROOT;
 }
 
 /*
@@ -44,7 +53,11 @@ static uint32_t get_usdhc1_src_clock_hz(void)
  */
 static void sd_power_control(bool enable)
 {
+#if BOARD_SDMMC_SD_PWR_ACTIVE_HIGH
     GPIO_PinWrite(BOARD_SDMMC_SD_PWR_GPIO_BASE, BOARD_SDMMC_SD_PWR_GPIO_PIN, enable ? 1U : 0U);
+#else
+    GPIO_PinWrite(BOARD_SDMMC_SD_PWR_GPIO_BASE, BOARD_SDMMC_SD_PWR_GPIO_PIN, enable ? 0U : 1U);
+#endif
 }
 
 /*
@@ -55,7 +68,11 @@ static void sd_power_init(void)
 {
     const gpio_pin_config_t cfg = {
         .direction     = kGPIO_DigitalOutput,
+#if BOARD_SDMMC_SD_PWR_ACTIVE_HIGH
         .outputLogic   = 0U, /* питание выключено при старте */
+#else
+        .outputLogic   = 1U, /* питание выключено при старте */
+#endif
         .interruptMode = kGPIO_NoIntmode,
     };
     GPIO_PinInit(BOARD_SDMMC_SD_PWR_GPIO_BASE, BOARD_SDMMC_SD_PWR_GPIO_PIN, &cfg);
@@ -106,6 +123,10 @@ static void sd_pin_config(uint32_t freq)
     IOMUXC_SetPinConfig(IOMUXC_GPIO_SD_B0_03_USDHC1_DATA1, pad);
     IOMUXC_SetPinConfig(IOMUXC_GPIO_SD_B0_04_USDHC1_DATA2, pad);
     IOMUXC_SetPinConfig(IOMUXC_GPIO_SD_B0_05_USDHC1_DATA3, pad);
+    /* CD_B в GPIO-режиме: подтяжка вверх + hysteresis для стабильного уровня. */
+    IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_12_GPIO2_IO28,
+                        IOMUXC_SW_PAD_CTL_PAD_PKE_MASK | IOMUXC_SW_PAD_CTL_PAD_PUE_MASK |
+                            IOMUXC_SW_PAD_CTL_PAD_HYS_MASK | IOMUXC_SW_PAD_CTL_PAD_PUS(1));
 }
 
 /* ---------------------------------------------------------------------------
@@ -127,11 +148,13 @@ void BOARD_SD_Config(void *card, sd_cd_t cd, uint32_t host_irq_priority, void *u
     sd->host                                = &s_host;
     sd->host->hostController.base           = BOARD_SDMMC_SD_HOST_BASEADDR;
     sd->host->hostController.sourceClock_Hz = get_usdhc1_src_clock_hz();
+    g_sdmmc_dbg_dma_buf_addr                = (uint32_t)(uintptr_t)s_dma_buf;
+    g_sdmmc_dbg_usdhc1_src_clock_hz         = sd->host->hostController.sourceClock_Hz;
 
-    /* --- card detect: HostCD, GPIO-прерывание не нужно --- */
+    /* --- card detect: GPIO CD (active-low) --- */
     s_cd.cdDebounce_ms = BOARD_SDMMC_SD_CD_DEBOUNCE_MS;
-    s_cd.type          = BOARD_SDMMC_SD_CD_TYPE; /* kSD_DetectCardByHostCD */
-    s_cd.cardDetected  = NULL; /* SDK читает PRSSTAT самостоятельно */
+    s_cd.type          = BOARD_SDMMC_SD_CD_TYPE;
+    s_cd.cardDetected  = sd_card_detect_gpio;
     s_cd.callback      = cd;   /* обычно NULL из bsp_sd */
     s_cd.userData      = user_data;
 
@@ -143,6 +166,16 @@ void BOARD_SD_Config(void *card, sd_cd_t cd, uint32_t host_irq_priority, void *u
 
     /* --- GPIO питания --- */
     sd_power_init();
+    /* CD_B: переводим в GPIO2_IO28 и настраиваем вход */
+    IOMUXC_SetPinMux(IOMUXC_GPIO_B1_12_GPIO2_IO28, 0U);
+    const gpio_pin_config_t cd_cfg = {
+        .direction     = kGPIO_DigitalInput,
+        .outputLogic   = 0U,
+        .interruptMode = kGPIO_NoIntmode,
+    };
+    GPIO_PinInit(BOARD_SDMMC_SD_CD_GPIO_BASE, BOARD_SDMMC_SD_CD_GPIO_PIN, &cd_cfg);
+    /* Важно: применяем pad-конфиг сразу для ранних CMD (CMD0/CMD8/CMD55/ACMD41). */
+    sd_pin_config(400000U);
 
     /* --- приоритет прерывания хоста --- */
     NVIC_SetPriority(BOARD_SDMMC_SD_HOST_IRQ, host_irq_priority);

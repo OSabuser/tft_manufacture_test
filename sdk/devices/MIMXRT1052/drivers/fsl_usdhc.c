@@ -202,6 +202,9 @@ static void USDHC_TransferHandleReTuning(USDHC_Type *base, usdhc_handle_t *handl
 /*******************************************************************************
  * Variables
  ******************************************************************************/
+/* Bring-up telemetry: inspect in debugger watch window. */
+volatile uint32_t g_usdhc_dbg_last_data_interrupt_flags = 0U;
+volatile uint32_t g_usdhc_dbg_last_data_transfer_status = 0U;
 /*! @brief USDHC base pointer array */
 static USDHC_Type *const s_usdhcBase[] = USDHC_BASE_PTRS;
 
@@ -2257,6 +2260,8 @@ static void USDHC_TransferHandleData(USDHC_Type *base, usdhc_handle_t *handle, u
         (IS_USDHC_FLAG_SET(interruptFlags, (uint32_t)kUSDHC_DataErrorFlag | (uint32_t)kUSDHC_DmaErrorFlag)))
     {
         transferStatus = kStatus_USDHC_TransferDataFailed;
+        g_usdhc_dbg_last_data_interrupt_flags = interruptFlags;
+        g_usdhc_dbg_last_data_transfer_status = (uint32_t)transferStatus;
     }
     else
     {
@@ -2315,6 +2320,8 @@ static void USDHC_TransferHandleData(USDHC_Type *base, usdhc_handle_t *handle, u
         (IS_USDHC_FLAG_SET(interruptFlags, (uint32_t)kUSDHC_DataErrorFlag | (uint32_t)kUSDHC_DmaErrorFlag)))
     {
         transferStatus = kStatus_USDHC_TransferDataFailed;
+        g_usdhc_dbg_last_data_interrupt_flags = interruptFlags;
+        g_usdhc_dbg_last_data_transfer_status = (uint32_t)transferStatus;
     }
     else
     {

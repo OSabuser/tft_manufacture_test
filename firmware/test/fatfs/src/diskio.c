@@ -1,7 +1,7 @@
 /*
  * diskio.c — FatFS diskio диспетчер для firmware_test.
  *
- * FF_VOLUMES=1: единственный диск "0:/" = SDDISK.
+ * FF_VOLUMES=3: диски 0 и 1 — заглушки, диск 2 = SDDISK (microSD).
  * W25Q и RAM-диск отсутствуют — нет зависимости на bsp_qspi_flash.
  */
 

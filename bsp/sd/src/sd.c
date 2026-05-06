@@ -4,7 +4,6 @@
 
 #include "bsp/sd.h"
 
-#include "fsl_clock.h"
 #include "fsl_sd.h"
 #include "sdmmc_config.h" /* BOARD_SD_Config, BOARD_SDMMC_SD_HOST_BASEADDR */
 
@@ -73,21 +72,13 @@ bsp_status_t bsp_sd_deinit(void)
     SD_HostDeinit(&g_sd);
     SD_SetCardPower(&g_sd, false);
 
-    g_s_initialized = false;
+    g_s_initialized     = false;
+    g_s_host_configured = false;
     return BSP_OK;
 }
 
 bool bsp_sd_is_inserted(void)
 {
-    /*
-     * CD_B подключён как периферийный сигнал USDHC1, поэтому детект —
-     * через регистр PRSSTAT, а не GPIO.
-     *
-     * USDHC1 может быть ещё не тактирован в момент вызова (до init),
-     * поэтому явно включаем clock. После init clock уже включён SDK-стеком,
-     * повторный вызов CLOCK_EnableClock безвреден.
-     */
-    CLOCK_EnableClock(kCLOCK_Usdhc1);
-    uint32_t prsstat = USDHC_GetPresentStatusFlags(BOARD_SDMMC_SD_HOST_BASEADDR);
-    return (prsstat & (uint32_t) kUSDHC_CardInsertedFlag) != 0U;
+    return GPIO_PinRead(BOARD_SDMMC_SD_CD_GPIO_BASE, BOARD_SDMMC_SD_CD_GPIO_PIN) ==
+           BOARD_SDMMC_SD_CD_INSERT_LEVEL;
 }

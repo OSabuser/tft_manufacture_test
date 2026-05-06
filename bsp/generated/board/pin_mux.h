@@ -267,15 +267,15 @@ void BOARD_InitRS_UART(void);
 
 /* GPIO_AD_B1_07 (coord K10), RsRx */
 /* Routed pin properties */
-#define BOARD_INITRS_UART_DEINIT_RsRx_PERIPHERAL                            CMP1   /*!< Peripheral name */
-#define BOARD_INITRS_UART_DEINIT_RsRx_SIGNAL                                  IN   /*!< Signal name */
-#define BOARD_INITRS_UART_DEINIT_RsRx_CHANNEL                                 5U   /*!< Signal channel */
-
-/* GPIO_AD_B1_07 (coord K10) */
-/* Routed pin properties */
 #define BOARD_INITRS_UART_DEINIT_RsRx_PERIPHERAL                            ADC1   /*!< Peripheral name */
 #define BOARD_INITRS_UART_DEINIT_RsRx_SIGNAL                                  IN   /*!< Signal name */
 #define BOARD_INITRS_UART_DEINIT_RsRx_CHANNEL                                12U   /*!< Signal channel */
+
+/* GPIO_AD_B1_07 (coord K10) */
+/* Routed pin properties */
+#define BOARD_INITRS_UART_DEINIT_RsRx_PERIPHERAL                            CMP1   /*!< Peripheral name */
+#define BOARD_INITRS_UART_DEINIT_RsRx_SIGNAL                                  IN   /*!< Signal name */
+#define BOARD_INITRS_UART_DEINIT_RsRx_CHANNEL                                 5U   /*!< Signal channel */
 
 
 /*!
@@ -329,15 +329,15 @@ void BOARD_InitRS_GPIO(void);
 
 /* GPIO_AD_B1_07 (coord K10), RsRx */
 /* Routed pin properties */
-#define BOARD_INITRS_GPIO_DEINIT_RsRx_PERIPHERAL                            CMP1   /*!< Peripheral name */
-#define BOARD_INITRS_GPIO_DEINIT_RsRx_SIGNAL                                  IN   /*!< Signal name */
-#define BOARD_INITRS_GPIO_DEINIT_RsRx_CHANNEL                                 5U   /*!< Signal channel */
-
-/* GPIO_AD_B1_07 (coord K10) */
-/* Routed pin properties */
 #define BOARD_INITRS_GPIO_DEINIT_RsRx_PERIPHERAL                            ADC1   /*!< Peripheral name */
 #define BOARD_INITRS_GPIO_DEINIT_RsRx_SIGNAL                                  IN   /*!< Signal name */
 #define BOARD_INITRS_GPIO_DEINIT_RsRx_CHANNEL                                12U   /*!< Signal channel */
+
+/* GPIO_AD_B1_07 (coord K10) */
+/* Routed pin properties */
+#define BOARD_INITRS_GPIO_DEINIT_RsRx_PERIPHERAL                            CMP1   /*!< Peripheral name */
+#define BOARD_INITRS_GPIO_DEINIT_RsRx_SIGNAL                                  IN   /*!< Signal name */
+#define BOARD_INITRS_GPIO_DEINIT_RsRx_CHANNEL                                 5U   /*!< Signal channel */
 
 
 /*!

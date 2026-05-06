@@ -97,9 +97,18 @@ static void board_mpu_init(void)
     SCB_EnableICache();
 }
 
+static void board_dwt_init(void)
+{
+    /* DWT cycle counter — нужен для точного SDK_DelayAtLeastUs.
+     * Без этого SDK использует software loop с непредсказуемым timing. */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0U;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
 void board_hw_init(void)
 {
-
+    board_dwt_init();
     BOARD_InitPins();
     BOARD_BootClockRUN();
     board_mpu_init();

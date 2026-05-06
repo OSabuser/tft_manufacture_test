@@ -73,6 +73,12 @@ static status_t SDMMCHOST_ExecuteManualTuning(sdmmchost_t *host,
 /*******************************************************************************
  * Variables
  ******************************************************************************/
+/* Debug telemetry for bring-up: inspect in debugger watch window. */
+volatile uint32_t g_sdmmc_dbg_last_event              = 0U;
+volatile uint32_t g_sdmmc_dbg_last_error              = 0U;
+volatile uint32_t g_sdmmc_dbg_last_irqstat            = 0U;
+volatile uint32_t g_sdmmc_dbg_last_prsstat            = 0U;
+volatile uint32_t g_sdmmc_dbg_last_wait_stage         = 0U; /* 1=cmd wait, 2=data wait */
 
 /*******************************************************************************
  * Code
@@ -511,11 +517,16 @@ status_t SDMMCHOST_TransferFunction(sdmmchost_t *host, sdmmchost_transfer_t *con
     if (error == kStatus_Success)
     {
         /* wait command event */
+        g_sdmmc_dbg_last_wait_stage = 1U;
         if ((kStatus_Fail == SDMMC_OSAEventWait(&(host->hostEvent), SDMMCHOST_TRANSFER_CMD_EVENT,
                                                 SDMMCHOST_TRANSFER_COMPLETE_TIMEOUT, &event)) ||
             ((event & SDMMC_OSA_EVENT_TRANSFER_CMD_FAIL) != 0U))
         {
             error = kStatus_Fail;
+            g_sdmmc_dbg_last_event   = event;
+            g_sdmmc_dbg_last_error   = (uint32_t)error;
+            g_sdmmc_dbg_last_irqstat = USDHC_GetInterruptStatusFlags(host->hostController.base);
+            g_sdmmc_dbg_last_prsstat = USDHC_GetPresentStatusFlags(host->hostController.base);
         }
         else
         {
@@ -523,12 +534,17 @@ status_t SDMMCHOST_TransferFunction(sdmmchost_t *host, sdmmchost_transfer_t *con
             {
                 if ((event & SDMMC_OSA_EVENT_TRANSFER_DATA_SUCCESS) == 0U)
                 {
+                    g_sdmmc_dbg_last_wait_stage = 2U;
                     if (((event & SDMMC_OSA_EVENT_TRANSFER_DATA_FAIL) != 0U) ||
                         (kStatus_Fail == SDMMC_OSAEventWait(&(host->hostEvent), SDMMCHOST_TRANSFER_DATA_EVENT,
                                                             SDMMCHOST_TRANSFER_COMPLETE_TIMEOUT, &event) ||
                          ((event & SDMMC_OSA_EVENT_TRANSFER_DATA_FAIL) != 0U)))
                     {
                         error = kStatus_Fail;
+                        g_sdmmc_dbg_last_event   = event;
+                        g_sdmmc_dbg_last_error   = (uint32_t)error;
+                        g_sdmmc_dbg_last_irqstat = USDHC_GetInterruptStatusFlags(host->hostController.base);
+                        g_sdmmc_dbg_last_prsstat = USDHC_GetPresentStatusFlags(host->hostController.base);
                     }
                 }
             }

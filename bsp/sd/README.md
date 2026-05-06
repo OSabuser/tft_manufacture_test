@@ -43,8 +43,8 @@ sdk_usdhc                    ← NXP HAL: fsl_usdhc
 | CLK      | GPIO_SD_B0_01   | USDHC1_CLK, периферийный режим                    |
 | CMD      | GPIO_SD_B0_00   | USDHC1_CMD, периферийный режим                    |
 | D0–D3    | GPIO_SD_B0_02–05| USDHC1_DATA0–3, периферийный режим                |
-| CD_B     | GPIO_B1_12      | USDHC1_CD_B — детект через USDHC PRSSTAT          |
-| SdPwr    | GPIO_AD_B1_03   | GPIO1[19], active-high, управляется SDK через BSP |
+| CD_B     | GPIO_B1_12      | USDHC1_CD_B — детект через GPIO2[28]              |
+| SdPwr    | GPIO_AD_B1_03   | GPIO1[19], active-low, управляется SDK через BSP  |
 
 **CD_B** подключён как периферийный сигнал USDHC1, а не как GPIO. Детект карты
 читается через `USDHC_GetPresentStatusFlags` → `kUSDHC_CardInsertedFlag`.
@@ -92,13 +92,13 @@ host-контроллер (`SD_HostInit`).
 
 ## Разделение ответственности: bsp_sd vs sdmmc_config vs port_fatfs_sd
 
-| Слой                  | Что делает                                              | Где живёт              |
-|-----------------------|---------------------------------------------------------|------------------------|
-| `sdmmc_config`        | Константы платы, `BOARD_SD_Config`, GPIO питания, pads | `bsp/generated/`       |
-| `bsp_sd`              | `SD_HostInit/Deinit`, идемпотентность, card detect     | `bsp/sd/`              |
-| `port_fatfs_sd`       | `microsd_disk_*` → `fsl_sd_disk` (FatFS diskio glue)   | `port/fatfs/sd/`       |
-| `firmware_test_fatfs` | `ff.c` + `fsl_sd_disk` + `diskio.c` (bare-metal ffconf)| `firmware/test/fatfs/` |
-| `tft_app_fatfs`       | `ff.c` + `fsl_sd_disk` + `diskio.c` (FreeRTOS ffconf)  | `firmware/tft_app/fatfs/` (будущее) |
+| Слой                  | Что делает                                              | Где живёт                          |
+|-----------------------|---------------------------------------------------------|------------------------------------|
+| `sdmmc_config`        | Константы платы, `BOARD_SD_Config`, GPIO питания, pads  | `bsp/generated/`                   |
+| `bsp_sd`              | `SD_HostInit/Deinit`, идемпотентность, card detect      | `bsp/sd/`                          |
+| `port_fatfs_sd`       | `microsd_disk_*` → `fsl_sd_disk` (FatFS diskio glue)    | `port/fatfs/sd/`                   |
+| `firmware_test_fatfs` | `ff.c` + `fsl_sd_disk` + `diskio.c` (bare-metal ffconf) | `firmware/test/fatfs/`             |
+| `tft_app_fatfs`       | `ff.c` + `fsl_sd_disk` + `diskio.c` (FreeRTOS ffconf)   | `firmware/tft_app/fatfs/` (будущее)|
 
 **Почему `ff.c` и `fsl_sd_disk.c` не компилируются один раз как общая библиотека:**
 оба включают `ff.h` → `ffconf.h`, который разный для `firmware_test` (bare-metal,

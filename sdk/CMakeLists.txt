@@ -37,7 +37,8 @@ add_library(sdk_common STATIC devices/MIMXRT1052/drivers/fsl_common.c
                               devices/MIMXRT1052/drivers/fsl_common_arm.c)
 target_include_directories(sdk_common PUBLIC devices/MIMXRT1052/drivers)
 target_compile_definitions(
-  sdk_common PUBLIC SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY=600000000U)
+  sdk_common PUBLIC SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY=600000000U
+                    SDK_DELAY_USE_DWT)
 target_link_libraries(sdk_common PUBLIC sdk_device)
 add_sdk_driver(clock fsl_clock.c)
 
