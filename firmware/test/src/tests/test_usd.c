@@ -2,30 +2,21 @@
  * @file  test_usd.c
  * @brief Тест-модуль firmware_test: microSD (USDHC / FatFS).
  *
- * Пять шагов:
+ * Жизненный цикл управляется test_runner:
+ *   init()   — bsp_sd_init(): инициализация USDHC host.
+ *   run()    — card detect → mount → write → read/compare → unmount.
+ *   deinit() — safety-net: закрыть файл, отмонтировать, bsp_sd_deinit().
+ *              Вызывается test_runner даже при FAIL run().
  *
- *   Шаг 1 — Card detect (~1 мс)
- *     bsp_sd_is_inserted(). Карта должна быть вставлена оператором —
- *     pre_confirm_prompt отрабатывает до вызова run() на уровне test_runner.
+ * Паттерн: byte[i] = i & 0xFF, 4096 байт.
+ * Покрывает: stuck-at-0, stuck-at-1, partial write, address aliasing.
  *
- *   Шаг 2 — SD init (~200 мс)
- *     bsp_sd_init(): инициализация USDHC host и подключение к карте.
+ * Буферы g_s_write_buf / g_s_read_buf — статические: стек firmware_test
+ * составляет 4 KB (linker script), 4 KB-буферы на него не влезают.
  *
- *   Шаг 3 — Mount (~200 мс)
- *     f_mount(&g_s_fs, "2:/", 1): монтирование FatFS раздела.
- *
- *   Шаг 4 — Write (~500 мс)
- *     Паттерн byte[i] = i & 0xFF, 4096 байт.
- *     Создаём FWTEST.TMP, записываем, закрываем.
- *
- *   Шаг 5 — Read + Compare (~200 мс)
- *     Открываем FWTEST.TMP на чтение, читаем 4096 байт, сравниваем побайтово.
- *
- * Cleanup (unlink + unmount + deinit) выполняется во всех исходах через
- * usd_cleanup(). Тестовый файл FWTEST.TMP удаляется независимо от результата.
- *
- * @note  Буферы 4 KB + FatFS-объекты — статические. На стек не ложатся:
- *        стек firmware_test = 4 KB (linker script ram.ld).
+ * Состояние монтирования (g_s_mounted) и открытого файла (g_s_file_open)
+ * отслеживается на уровне модуля — deinit() корректно освобождает ресурсы
+ * в любом сценарии провала.
  */
 
 #include "bsp/sd.h"
@@ -35,35 +26,44 @@
 #include "test_module.h"
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 /* ── Константы ─────────────────────────────────────────────────────────── */
 
-/** @brief Размер тестового файла, байт (покрывает stuck-at и partial write). */
+/** @brief Размер тестового файла, байт. */
 #define USD_TEST_SIZE 4096U
 
-/** @brief Точка монтирования FatFS (drive 2, задан в firmware_test_fatfs). */
+/** @brief Точка монтирования FatFS (drive 2). */
 #define USD_MOUNT_POINT "2:/"
 
-/** @brief Путь временного тестового файла. */
+/** @brief Путь тестового файла. Удаляется после теста в любом исходе. */
 #define USD_TEST_FILE "2:/FWTEST.TMP"
 
-/* ── Статические объекты FatFS и буферы ────────────────────────────────── */
+/* ── Статические объекты FatFS ──────────────────────────────────────────── */
 
-/** @brief Рабочая область FatFS. Не на стеке — sizeof(FATFS) ≈ 516 байт. */
+/** @brief Рабочая область FatFS. sizeof(FATFS) ≈ 516 байт — не на стеке. */
 static FATFS g_s_fs;
 
 /** @brief Дескриптор открытого файла. */
 static FIL g_s_file;
 
-/** @brief Буфер тестового паттерна (запись). */
-static uint8_t g_s_write_buf[USD_TEST_SIZE];
+/* ── Буферы ─────────────────────────────────────────────────────────────── */
 
-/** @brief Буфер прочитанных данных (верификация). */
+static uint8_t g_s_write_buf[USD_TEST_SIZE];
 static uint8_t g_s_read_buf[USD_TEST_SIZE];
+
+/* ── Состояние модуля ───────────────────────────────────────────────────── */
+
+/** @brief true если bsp_sd_init() прошёл успешно. */
+static bool g_s_ready;
+
+/** @brief true если FatFS смонтирована (f_mount выполнен). */
+static bool g_s_mounted;
+
+/** @brief true если g_s_file открыт и требует f_close. */
+static bool g_s_file_open;
 
 /* ── Вспомогательные функции ────────────────────────────────────────────── */
 
@@ -74,34 +74,13 @@ static test_result_t make_fail(const char *p_detail)
     return result;
 }
 
-/**
- * @brief Освободить ресурсы: закрыть файл, удалить тестовый файл,
- *        отмонтировать, deинициализировать SD host.
- *
- * Best-effort: коды ошибок FatFS игнорируются.
- * Безопасно вызывать в любом сочетании флагов.
- *
- * @param file_open  true → дескриптор g_s_file открыт и требует f_close.
- * @param mounted    true → FatFS смонтирован, выполнить f_unlink + f_unmount.
- */
-static void usd_cleanup(bool file_open, bool mounted)
-{
-    if (file_open)
-    {
-        (void) f_close(&g_s_file);
-    }
-
-    if (mounted)
-    {
-        (void) f_unlink(USD_TEST_FILE);
-        (void) f_unmount(USD_MOUNT_POINT);
-    }
-
-    (void) bsp_sd_deinit();
-}
-
 /* ── Шаг 1: Card detect ─────────────────────────────────────────────────── */
 
+/**
+ * @brief Проверить наличие карты через аппаратный регистр USDHC.
+ *
+ * Вызывается после bsp_sd_init() — host уже инициализирован.
+ */
 static bool step_card_detect(test_result_t *p_out)
 {
     bsp_usb_cdc_poll();
@@ -117,62 +96,42 @@ static bool step_card_detect(test_result_t *p_out)
     return true;
 }
 
-/* ── Шаг 2: SD host init ────────────────────────────────────────────────── */
+/* ── Шаг 2: Mount ───────────────────────────────────────────────────────── */
 
-static bool step_sd_init(test_result_t *p_out)
-{
-    bsp_usb_cdc_poll();
-
-    if (bsp_sd_init() != BSP_OK)
-    {
-        *p_out = make_fail("sd init failed");
-        return false;
-    }
-
-    cli_send("{\"type\":\"progress\",\"test\":\"usd\","
-             "\"step\":\"init\",\"status\":\"ok\"}\n");
-    return true;
-}
-
-/* ── Шаг 3: Mount ───────────────────────────────────────────────────────── */
-
+/**
+ * @brief Смонтировать FatFS раздел. Устанавливает g_s_mounted = true при успехе.
+ */
 static bool step_mount(test_result_t *p_out)
 {
     bsp_usb_cdc_poll();
 
-    FRESULT result = f_mount(&g_s_fs, USD_MOUNT_POINT, 1);
+    FRESULT fr = f_mount(&g_s_fs, USD_MOUNT_POINT, 1);
 
-    if (result != FR_OK)
+    if (fr != FR_OK)
     {
         char detail[TEST_DETAIL_SIZE];
-        (void) snprintf(detail, sizeof(detail), "mount failed: %d", (int) result);
+        (void) snprintf(detail, sizeof(detail), "mount failed: %d", (int) fr);
         *p_out = make_fail(detail);
         return false;
     }
+
+    g_s_mounted = true;
 
     cli_send("{\"type\":\"progress\",\"test\":\"usd\","
              "\"step\":\"mount\",\"status\":\"ok\"}\n");
     return true;
 }
 
-/* ── Шаг 4: Write ───────────────────────────────────────────────────────── */
+/* ── Шаг 3: Write ───────────────────────────────────────────────────────── */
 
 /**
- * @brief Заполнить паттерн, создать файл FWTEST.TMP, записать USD_TEST_SIZE байт.
+ * @brief Записать тестовый паттерн в FWTEST.TMP.
  *
- * При ошибке записи файл остаётся открытым — вызывающая сторона обязана
- * вызвать usd_cleanup(true, true). Состояние сообщается через p_file_left_open.
- *
- * При успехе файл закрыт до возврата.
- *
- * @param[out] p_file_left_open  true если g_s_file открыт при возврате false.
- * @param[out] p_out             Описание ошибки при возврате false.
- * @return true при успехе.
+ * Отслеживает g_s_file_open: при провале файл может оставаться открытым —
+ * deinit() закроет его через f_close.
  */
-static bool step_write(bool *p_file_left_open, test_result_t *p_out)
+static bool step_write(test_result_t *p_out)
 {
-    *p_file_left_open = false;
-
     for (uint32_t i = 0U; i < USD_TEST_SIZE; i++)
     {
         g_s_write_buf[i] = (uint8_t) (i & 0xFFU);
@@ -180,48 +139,46 @@ static bool step_write(bool *p_file_left_open, test_result_t *p_out)
 
     bsp_usb_cdc_poll();
 
-    FRESULT result = f_open(&g_s_file, USD_TEST_FILE, FA_WRITE | FA_CREATE_ALWAYS);
+    FRESULT fr = f_open(&g_s_file, USD_TEST_FILE, FA_WRITE | FA_CREATE_ALWAYS);
 
-    if (result != FR_OK)
+    if (fr != FR_OK)
     {
         char detail[TEST_DETAIL_SIZE];
-        (void) snprintf(detail, sizeof(detail), "open failed: %d", (int) result);
+        (void) snprintf(detail, sizeof(detail), "open failed: %d", (int) fr);
         *p_out = make_fail(detail);
         return false;
     }
 
-    *p_file_left_open = true;
+    g_s_file_open = true;
 
-    UINT bytes_written = 0U;
-
-    result = f_write(&g_s_file, g_s_write_buf, USD_TEST_SIZE, &bytes_written);
-
+    UINT bw = 0U;
+    fr      = f_write(&g_s_file, g_s_write_buf, USD_TEST_SIZE, &bw);
     bsp_usb_cdc_poll();
 
-    if (result != FR_OK || bytes_written != USD_TEST_SIZE)
+    if (fr != FR_OK || bw != USD_TEST_SIZE)
     {
         char detail[TEST_DETAIL_SIZE];
-        if (result != FR_OK)
+        if (fr != FR_OK)
         {
-            (void) snprintf(detail, sizeof(detail), "write failed: %d", (int) result);
+            (void) snprintf(detail, sizeof(detail), "write failed: %d", (int) fr);
         }
         else
         {
-            (void) snprintf(detail, sizeof(detail), "write incomplete: %u/%u",
-                            (unsigned int) bytes_written, (unsigned int) USD_TEST_SIZE);
+            (void) snprintf(detail, sizeof(detail), "write incomplete: %u/%u", (unsigned int) bw,
+                            (unsigned int) USD_TEST_SIZE);
         }
         *p_out = make_fail(detail);
         return false;
     }
 
-    result            = f_close(&g_s_file);
-    *p_file_left_open = false;
+    fr            = f_close(&g_s_file);
+    g_s_file_open = false; /* сброс независимо от результата f_close */
     bsp_usb_cdc_poll();
 
-    if (result != FR_OK)
+    if (fr != FR_OK)
     {
         char detail[TEST_DETAIL_SIZE];
-        (void) snprintf(detail, sizeof(detail), "close after write failed: %d", (int) result);
+        (void) snprintf(detail, sizeof(detail), "close after write failed: %d", (int) fr);
         *p_out = make_fail(detail);
         return false;
     }
@@ -231,59 +188,51 @@ static bool step_write(bool *p_file_left_open, test_result_t *p_out)
     return true;
 }
 
-/* ── Шаг 5: Read + Compare ──────────────────────────────────────────────── */
+/* ── Шаг 4: Read + Compare ──────────────────────────────────────────────── */
 
 /**
- * @brief Открыть FWTEST.TMP на чтение, прочитать USD_TEST_SIZE байт,
- *        сравнить с g_s_write_buf побайтово.
+ * @brief Прочитать FWTEST.TMP и сравнить с g_s_write_buf побайтово.
  *
- * При ошибке до f_close файл может оставаться открытым — состояние
- * передаётся через p_file_left_open. При успехе файл закрыт до возврата.
- *
- * @param[out] p_file_left_open  true если g_s_file открыт при возврате false.
- * @param[out] p_out             Описание ошибки при возврате false.
- * @return true при успехе.
+ * Отслеживает g_s_file_open аналогично step_write.
  */
-static bool step_read_compare(bool *p_file_left_open, test_result_t *p_out)
+static bool step_read_compare(test_result_t *p_out)
 {
-    *p_file_left_open = false;
-
     bsp_usb_cdc_poll();
 
-    FRESULT result = f_open(&g_s_file, USD_TEST_FILE, FA_READ);
+    FRESULT fr = f_open(&g_s_file, USD_TEST_FILE, FA_READ);
 
-    if (result != FR_OK)
+    if (fr != FR_OK)
     {
         char detail[TEST_DETAIL_SIZE];
-        (void) snprintf(detail, sizeof(detail), "open for read failed: %d", (int) result);
+        (void) snprintf(detail, sizeof(detail), "open for read failed: %d", (int) fr);
         *p_out = make_fail(detail);
         return false;
     }
 
-    *p_file_left_open = true;
+    g_s_file_open = true;
 
-    (void) memset(g_s_read_buf, 0, USD_TEST_SIZE);
+    (void) memset(g_s_read_buf, 0, sizeof(g_s_read_buf));
 
-    UINT bytes_read = 0U;
-    result          = f_read(&g_s_file, g_s_read_buf, USD_TEST_SIZE, &bytes_read);
+    UINT br = 0U;
+    fr      = f_read(&g_s_file, g_s_read_buf, USD_TEST_SIZE, &br);
     bsp_usb_cdc_poll();
 
-    if (result != FR_OK || bytes_read != USD_TEST_SIZE)
+    if (fr != FR_OK || br != USD_TEST_SIZE)
     {
         char detail[TEST_DETAIL_SIZE];
-        (void) snprintf(detail, sizeof(detail), "read failed: %d", (int) result);
+        (void) snprintf(detail, sizeof(detail), "read failed: %d", (int) fr);
         *p_out = make_fail(detail);
         return false;
     }
 
-    result            = f_close(&g_s_file);
-    *p_file_left_open = false;
+    fr            = f_close(&g_s_file);
+    g_s_file_open = false; /* сброс независимо от результата f_close */
     bsp_usb_cdc_poll();
 
-    if (result != FR_OK)
+    if (fr != FR_OK)
     {
         char detail[TEST_DETAIL_SIZE];
-        (void) snprintf(detail, sizeof(detail), "close after read failed: %d", (int) result);
+        (void) snprintf(detail, sizeof(detail), "close after read failed: %d", (int) fr);
         *p_out = make_fail(detail);
         return false;
     }
@@ -307,52 +256,87 @@ static bool step_read_compare(bool *p_file_left_open, test_result_t *p_out)
 
 /* ── Реализация тест-модуля ─────────────────────────────────────────────── */
 
+/**
+ * @brief Инициализация: запустить USDHC host.
+ *
+ * Вызывается test_runner после pre_confirm (карта уже вставлена оператором).
+ * g_s_ready = false при провале → run() вернёт FAIL немедленно.
+ */
+static void usd_init(void)
+{
+    g_s_ready     = false;
+    g_s_mounted   = false;
+    g_s_file_open = false;
+    g_s_ready     = (bsp_sd_init() == BSP_OK);
+}
+
 static test_result_t usd_run(void)
 {
-    test_result_t fail_result = { .status = TEST_STATUS_FAIL, .duration_ms = 0U, .detail = { 0 } };
-    bool file_open            = false;
+    if (!g_s_ready)
+    {
+        return make_fail("sd init failed");
+    }
 
-    /* Шаг 1: проверка карты (bsp_sd_init ещё не вызван → без cleanup) */
+    test_result_t fail_result = { .status = TEST_STATUS_FAIL, .duration_ms = 0U, .detail = { 0 } };
+
     if (!step_card_detect(&fail_result))
     {
         return fail_result;
     }
-
-    /* Шаг 2: init (mount ещё не вызван → только deinit при провале) */
-    if (!step_sd_init(&fail_result))
-    {
-        (void) bsp_sd_deinit();
-        return fail_result;
-    }
-
-    /* Шаг 3: mount */
     if (!step_mount(&fail_result))
     {
-        (void) bsp_sd_deinit();
         return fail_result;
     }
-
-    /* Шаги 4-5: write + read/compare (файловая система смонтирована) */
-    if (!step_write(&file_open, &fail_result))
+    if (!step_write(&fail_result))
     {
-        usd_cleanup(file_open, true);
         return fail_result;
     }
-
-    if (!step_read_compare(&file_open, &fail_result))
+    if (!step_read_compare(&fail_result))
     {
-        usd_cleanup(file_open, true);
         return fail_result;
     }
 
-    /* Успех: файл закрыт внутри step_read_compare, раздел ещё смонтирован */
-    usd_cleanup(false, true);
+    /* Успех: файл закрыт внутри step_read_compare.
+     * Удаляем тестовый файл и отмонтируем до возврата —
+     * deinit() проверит g_s_mounted и пропустит повторное unmount. */
+    (void) f_unlink(USD_TEST_FILE);
+    (void) f_unmount(USD_MOUNT_POINT);
+    g_s_mounted = false;
 
     return (test_result_t){
         .status      = TEST_STATUS_PASS,
         .duration_ms = 0U,
         .detail      = { 0 },
     };
+}
+
+/**
+ * @brief Safety-net cleanup: закрыть файл, отмонтировать, остановить host.
+ *
+ * Вызывается test_runner всегда — после PASS и после FAIL.
+ * При PASS все флаги уже сброшены в run() — функция завершается быстро.
+ * При FAIL освобождает ресурсы в любом состоянии провала.
+ */
+static void usd_deinit(void)
+{
+    if (g_s_file_open)
+    {
+        (void) f_close(&g_s_file);
+        g_s_file_open = false;
+    }
+
+    if (g_s_mounted)
+    {
+        (void) f_unlink(USD_TEST_FILE);
+        (void) f_unmount(USD_MOUNT_POINT);
+        g_s_mounted = false;
+    }
+
+    if (g_s_ready)
+    {
+        (void) bsp_sd_deinit();
+        g_s_ready = false;
+    }
 }
 
 /* ── Дескриптор модуля ──────────────────────────────────────────────────── */
@@ -362,8 +346,8 @@ const test_module_t K_TEST_USD = {
     .name               = "microSD (SDIO)",
     .critical           = false,
     .requires_hil       = false,
-    .pre_confirm_prompt = "Вставьте карту microSD и нажмите OK",
-    .init               = NULL,
+    .pre_confirm_prompt = "Insert microSD card and press OK",
+    .init               = usd_init,
     .run                = usd_run,
-    .deinit             = NULL,
+    .deinit             = usd_deinit,
 };

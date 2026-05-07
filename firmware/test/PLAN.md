@@ -18,23 +18,23 @@
 
 ## Текущий статус
 
-| Компонент                  | Статус | Примечание |
-|----------------------------|--------|------------|
-| `bsp_usb_cdc`              | ✅     | HIL тест пройден |
-| firmware_test скелет       | ✅     | `main.c` + `cli.c` |
-| Протокол v2 + test_runner  | ✅     | JSON-lines event-driven |
-| `bsp_sdram` + `test_sdram` | ✅     | 4 фазы: addr/data/seq/retention |
-| `bsp_qspi_flash`           | ✅     | W25Q64/128/256/512, ITCM, IRQ lock |
-| `test_qspi`                | ✅     | JEDEC + erase + rw + addr range |
-| `bsp_usd`                  | ⬜     | Этап 4 |
-| `test_usd`                 | ⬜     | Этап 4 |
-| Display test               | ⬜     | Этап 5 |
-| Button test                | ⬜     | Этап 5 |
-| CAN test                   | ⬜     | Этап 6 (bsp_can ✅) |
-| UART TTL test              | ⬜     | Этап 6 (bsp_uart_host ✅) |
-| UART ISO test              | ⬜     | Этап 6 |
-| Opto test                  | ⬜     | Этап 6 (bsp_opto ✅) |
-| Provisioning               | ⬜     | Этап 7 |
+| Компонент                  | Статус | Примечание                             |
+| -------------------------- | ------ | -------------------------------------- |
+| `bsp_usb_cdc`              | ✅      | HIL тест пройден                       |
+| firmware_test скелет       | ✅      | `main.c` + `cli.c`                     |
+| Протокол v2 + test_runner  | ✅      | JSON-lines event-driven                |
+| `bsp_sdram` + `test_sdram` | ✅      | 4 фазы: addr/data/seq/retention        |
+| `bsp_qspi_flash`           | ✅      | W25Q64/128/256/512, ITCM, IRQ lock     |
+| `test_qspi`                | ✅      | JEDEC + erase + rw + addr range        |
+| `bsp_usd`                  | ✅      | bsp_sd + FatFS (firmware_test_fatfs)   |
+| `test_usd`                 | ✅      | pre_confirm + 4 шага + progress events |
+| Display test               | ⬜      | Этап 5                                 |
+| Button test                | ⬜      | Этап 5                                 |
+| CAN test                   | ⬜      | Этап 6 (bsp_can ✅)                     |
+| UART TTL test              | ⬜      | Этап 6 (bsp_uart_host ✅)               |
+| UART ISO test              | ⬜      | Этап 6                                 |
+| Opto test                  | ⬜      | Этап 6 (bsp_opto ✅)                    |
+| Provisioning               | ⬜      | Этап 7                                 |
 
 ---
 
@@ -59,12 +59,12 @@
 
 ### Аппаратный контекст
 
-| Параметр | Значение |
-|---|---|
-| Интерфейс | USDHC (SDIO) |
-| Карта | microSD, вставляется оператором перед тестом |
-| Файловая система | FatFS (SDK middleware) |
-| Детект карты | GPIO (CD pin) или опрос через USDHC status |
+| Параметр         | Значение                                     |
+| ---------------- | -------------------------------------------- |
+| Интерфейс        | USDHC (SDIO)                                 |
+| Карта            | microSD, вставляется оператором перед тестом |
+| Файловая система | FatFS (SDK middleware)                       |
+| Детект карты     | GPIO (CD pin) или опрос через USDHC status   |
 
 ### BSP API (предварительно)
 
@@ -87,13 +87,13 @@ void             bsp_usd_deinit(void);
 
 ### test_usd — шаги
 
-| Шаг | Действие | Время |
-|---|---|---|
-| 1: Card detect | `bsp_usd_is_card_present()` | < 1 мс |
-| 2: Mount | `f_mount()` — FAT/exFAT | < 200 мс |
-| 3: Write | Записать 4 KB тестовый файл | < 500 мс |
+| Шаг               | Действие                       | Время    |
+| ----------------- | ------------------------------ | -------- |
+| 1: Card detect    | `bsp_usd_is_card_present()`    | < 1 мс   |
+| 2: Mount          | `f_mount()` — FAT/exFAT        | < 200 мс |
+| 3: Write          | Записать 4 KB тестовый файл    | < 500 мс |
 | 4: Read + Compare | Прочитать и сравнить побайтово | < 200 мс |
-| 5: Unmount | `f_unmount()` | < 50 мс |
+| 5: Unmount        | `f_unmount()`                  | < 50 мс  |
 
 ### Интерактивность
 
@@ -123,12 +123,17 @@ target_link_libraries(bsp_usd
 )
 ```
 
-### Открытые вопросы перед реализацией
+### Закрытые решения (Этап 4)
 
-- [ ] Есть ли `sdk_usdhc` таргет в `sdk/CMakeLists.txt`?
-- [ ] Карта вставлена постоянно или оператор вставляет каждый раз?
-- [ ] Нужен ли Card Detect GPIO или только USDHC status?
-- [ ] Файловая система: FAT32 или exFAT (размер карт)?
+- BSP-слой: `bsp_sd` (host init/deinit/card detect) + `firmware_test_fatfs` (FatFS).
+  `bsp_usd` как отдельный модуль не создавался — тест работает напрямую через `bsp_sd` + `ff.h`.
+- Card detect: `bsp_sd_is_inserted()` через `USDHC_GetPresentStatusFlags`. GPIO-прерывание не используется.
+- Карта вставляется оператором по запросу (pre_confirm). Между тестами может извлекаться.
+- Drive `2:/`. Тестовый файл `2:/FWTEST.TMP`, удаляется в любом исходе (через `deinit()`).
+- Паттерн: `byte[i] = i & 0xFF`, 4096 байт.
+- `critical = false`: тест не блокирует HIL-тесты при отсутствии карты.
+- Confirm timeout: 30 000 мс (`PROTOCOL_CONFIRM_TIMEOUT_MS`).
+- Отдельный `test_usd.h` не создавался — `extern K_TEST_USD` объявлен в `test_runner.c`.
 
 ---
 
@@ -136,11 +141,11 @@ target_link_libraries(bsp_usd
 
 ### test_display
 
-| Параметр | Значение |
-|---|---|
-| Critical | ❌ |
-| HIL | ❌ |
-| Confirm | Внутри `run()` — 4 отдельных confirm |
+| Параметр | Значение                             |
+| -------- | ------------------------------------ |
+| Critical | ❌                                    |
+| HIL      | ❌                                    |
+| Confirm  | Внутри `run()` — 4 отдельных confirm |
 
 Шаги: заливка Red → confirm → Green → confirm → Blue → confirm → White → confirm.
 Каждый шаг посылает `confirm_request`, ждёт `confirm` с таймаутом 15 с.
@@ -150,11 +155,11 @@ target_link_libraries(bsp_usd
 
 ### test_buttons
 
-| Параметр | Значение |
-|---|---|
-| Critical | ❌ |
-| HIL | ❌ |
-| Confirm | prompt only (детект через bsp_button) |
+| Параметр | Значение                              |
+| -------- | ------------------------------------- |
+| Critical | ❌                                     |
+| HIL      | ❌                                     |
+| Confirm  | prompt only (детект через bsp_button) |
 
 Шаги: Test_But_1 → Test_But_2. Таргет посылает `confirm_request` как инструкцию
 оператору, детектирует нажатие через `bsp_button` — JSON confirm не нужен.
@@ -162,8 +167,8 @@ target_link_libraries(bsp_usd
 
 ### Аппаратный контекст кнопок
 
-| Кнопка | Пин MCU | GPIO |
-|---|---|---|
+| Кнопка     | Пин MCU    | GPIO      |
+| ---------- | ---------- | --------- |
 | Test_But_1 | GPIO_B1_14 | GPIO2[30] |
 | Test_But_2 | GPIO_B1_15 | GPIO2[31] |
 
@@ -245,18 +250,18 @@ bsp_status_t bsp_prov_read_uid(uint8_t *p_uid, size_t len);  /* 8 байт из 
 
 ## Матрица тестов — итоговая
 
-| ID          | Название       | Тип         | Critical | HIL (M5) | BSP              | Статус |
-|-------------|----------------|-------------|----------|----------|------------------|--------|
-| —           | PING           | cmd         | —        | ❌       | —                | ✅     |
-| `sdram`     | SDRAM 32MB     | self        | ✅       | ❌       | `bsp_sdram` ✅   | ✅     |
-| `qspi`      | QSPI Flash     | self        | ✅       | ❌       | `bsp_qspi_flash` ✅ | ✅  |
-| `usd`       | uSD (SDIO)     | interactive | ✅       | ❌       | `bsp_usd` ⬜     | ⬜     |
-| `display`   | Display RGB888 | interactive | ❌       | ❌       | существующий BSP | ⬜     |
-| `buttons`   | Test_But_1/2   | interactive | ❌       | ❌       | `bsp_button` ✅  | ⬜     |
-| `can`       | CAN loopback   | HIL         | ❌       | ✅       | `bsp_can` ✅     | ⬜     |
-| `uart_ttl`  | UART TTL       | HIL         | ❌       | ✅       | `bsp_uart_host`✅| ⬜     |
-| `uart_iso`  | UART ISO +24V  | HIL         | ❌       | ✅       | `bsp_opto` ✅    | ⬜     |
-| `opto`      | Opto-in EXT    | HIL         | ❌       | ✅       | `bsp_opto` ✅    | ⬜     |
+| ID         | Название       | Тип         | Critical | HIL (M5) | BSP               | Статус |
+| ---------- | -------------- | ----------- | -------- | -------- | ----------------- | ------ |
+| —          | PING           | cmd         | —        | ❌        | —                 | ✅      |
+| `sdram`    | SDRAM 32MB     | self        | ✅        | ❌        | `bsp_sdram` ✅     | ✅      |
+| `qspi`     | QSPI Flash     | self        | ✅        | ❌        | `bsp_qspi_flash`✅ | ✅      |
+| `usd`      | uSD (SDIO)     | interactive | ❌        | ❌        | `bsp_sd` ✅        | ✅      |
+| `display`  | Display RGB888 | interactive | ❌        | ❌        | существующий BSP  | ⬜      |
+| `buttons`  | Test_But_1/2   | interactive | ❌        | ❌        | `bsp_button` ✅    | ⬜      |
+| `can`      | CAN loopback   | HIL         | ❌        | ✅        | `bsp_can` ✅       | ⬜      |
+| `uart_ttl` | UART TTL       | HIL         | ❌        | ✅        | `bsp_uart_host`✅  | ⬜      |
+| `uart_iso` | UART ISO +24V  | HIL         | ❌        | ✅        | `bsp_opto` ✅      | ⬜      |
+| `opto`     | Opto-in EXT    | HIL         | ❌        | ✅        | `bsp_opto` ✅      | ⬜      |
 
 ---
 
@@ -266,8 +271,8 @@ bsp_status_t bsp_prov_read_uid(uint8_t *p_uid, size_t len);  /* 8 байт из 
 ✅ Этап 1 (протокол v2 + runner)
 ✅ Этап 2 (bsp_sdram + test_sdram)
 ✅ Этап 3 (bsp_qspi_flash + test_qspi)
-⬜ Этап 4 (bsp_usd + test_usd)          ← ТЕКУЩИЙ
-⬜ Этап 5 (display + buttons)
+✅ Этап 4 (bsp_sd + test_usd)
+⬜ Этап 5 (display + buttons)          ← ТЕКУЩИЙ
 ⬜ Этап 6 (CAN + UART + Opto, HIL)
 ⬜ Этап 7 (provisioning)
 ⬜ Этап 8 (tools/production/ TUI runner) ← параллельно с 6-7

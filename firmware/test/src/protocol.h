@@ -27,7 +27,7 @@
 #define FIRMWARE_TEST_VERSION "0.1.0"
 
 /** @brief Таймаут подтверждения по умолчанию, мс. */
-#define PROTOCOL_CONFIRM_TIMEOUT_MS 15000U
+#define PROTOCOL_CONFIRM_TIMEOUT_MS 30000U
 
 /**
  * @brief Отправить событие session_start.

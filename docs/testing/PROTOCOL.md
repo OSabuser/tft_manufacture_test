@@ -43,15 +43,15 @@
 
 ## Транспорт
 
-| Параметр | Значение |
-|---|---|
-| Интерфейс | USB CDC ACM |
-| Разъём | J2 |
-| Кодировка | UTF-8 |
-| Фреймирование | JSON-lines: каждое сообщение — одна строка, завершается `\n` |
-| Максимальная длина строки | 128 байт (включая `\n`) |
-| CR+LF | Принимается (таргет отбрасывает `\r` перед `\n`) |
-| Направление | Двунаправленный, half-duplex по логике |
+| Параметр                  | Значение                                                     |
+| ------------------------- | ------------------------------------------------------------ |
+| Интерфейс                 | USB CDC ACM                                                  |
+| Разъём                    | J2                                                           |
+| Кодировка                 | UTF-8                                                        |
+| Фреймирование             | JSON-lines: каждое сообщение — одна строка, завершается `\n` |
+| Максимальная длина строки | 128 байт (включая `\n`)                                      |
+| CR+LF                     | Принимается (таргет отбрасывает `\r` перед `\n`)             |
+| Направление               | Двунаправленный, half-duplex по логике                       |
 
 Нет хэндшейка, нет sequence number, нет подтверждений доставки. При потере
 строки хост повторяет команду — таргет идемпотентен для `ping` и `run`.
@@ -180,10 +180,10 @@
 }
 ```
 
-| Поле | Тип | Описание |
-|---|---|---|
-| `fw` | string | Версия firmware_test |
-| `target` | string | Идентификатор платформы |
+| Поле        | Тип    | Описание                   |
+| ----------- | ------ | -------------------------- |
+| `fw`        | string | Версия firmware_test       |
+| `target`    | string | Идентификатор платформы    |
 | `uptime_ms` | number | Время с момента старта, мс |
 
 ---
@@ -217,10 +217,10 @@
 }
 ```
 
-| `status` | Смысл |
-|---|---|
-| `"pass"` | Тест пройден |
-| `"fail"` | Тест провален; поле `detail` содержит описание |
+| `status` | Смысл                                                                        |
+| -------- | ---------------------------------------------------------------------------- |
+| `"pass"` | Тест пройден                                                                 |
+| `"fail"` | Тест провален; поле `detail` содержит описание                               |
 | `"skip"` | Тест пропущен (нет оборудования, таймаут оператора, прерван `critical` fail) |
 
 Поле `detail` — произвольная ASCII-строка до 95 символов. При `pass` — пустая.
@@ -294,29 +294,29 @@ display (подтвердить цвет), кнопки (нажать кнопк
 ← {"ok":false,"error":"BUSY"}
 ```
 
-| Код | Причина |
-|---|---|
-| `PARSE_ERR` | Строка не является валидным JSON-lines запросом |
-| `UNKNOWN_CMD` | Поле `"cmd"` содержит неизвестное значение |
-| `UNKNOWN_TEST` | Поле `"id"` в `run` не найдено в реестре |
-| `LINE_TOO_LONG` | Входящая строка превысила 128 байт |
-| `BUSY` | Таргет выполняет тест, новая команда отклонена |
+| Код             | Причина                                         |
+| --------------- | ----------------------------------------------- |
+| `PARSE_ERR`     | Строка не является валидным JSON-lines запросом |
+| `UNKNOWN_CMD`   | Поле `"cmd"` содержит неизвестное значение      |
+| `UNKNOWN_TEST`  | Поле `"id"` в `run` не найдено в реестре        |
+| `LINE_TOO_LONG` | Входящая строка превысила 128 байт              |
+| `BUSY`          | Таргет выполняет тест, новая команда отклонена  |
 
 ---
 
 ## Матрица тестов
 
-| ID | Название | Тип | Critical | HIL (M5) | Интерактивный |
-|---|---|---|---|---|---|
-| `sdram` | SDRAM 32 MB | self | ✅ | ❌ | ❌ |
-| `qspi` | QSPI Flash 8 MB | self | ✅ | ❌ | ❌ |
-| `usd` | uSD (SDIO) | self + interactive | ❌ | ❌ | ✅ (вставить карту) |
-| `display` | Display RGB888 | interactive | ❌ | ❌ | ✅ (цвета R/G/B/W) |
-| `buttons` | Кнопки Test_But_1/2 | interactive | ❌ | ❌ | ✅ (нажать кнопки) |
-| `can` | CAN | HIL | ❌ | ✅ | ❌ |
-| `uart_ttl` | UART TTL | HIL | ❌ | ✅ | ❌ |
-| `uart_iso` | UART ISO / RS_RX Opto | HIL | ❌ | ✅ | ❌ |
-| `opto` | Opto-in EXT_IN1/IN2 | HIL | ❌ | ✅ | ❌ |
+| ID         | Название              | Тип                | Critical | HIL (M5) | Интерактивный      |
+| ---------- | --------------------- | ------------------ | -------- | -------- | ------------------ |
+| `sdram`    | SDRAM 32 MB           | self               | ✅        | ❌        | ❌                  |
+| `qspi`     | QSPI Flash 8 MB       | self               | ✅        | ❌        | ❌                  |
+| `usd`      | uSD (SDIO)            | self + interactive | ❌        | ❌        | ✅ (вставить карту) |
+| `display`  | Display RGB888        | interactive        | ❌        | ❌        | ✅ (цвета R/G/B/W)  |
+| `buttons`  | Кнопки Test_But_1/2   | interactive        | ❌        | ❌        | ✅ (нажать кнопки)  |
+| `can`      | CAN                   | HIL                | ❌        | ✅        | ❌                  |
+| `uart_ttl` | UART TTL              | HIL                | ❌        | ✅        | ❌                  |
+| `uart_iso` | UART ISO / RS_RX Opto | HIL                | ❌        | ✅        | ❌                  |
+| `opto`     | Opto-in EXT_IN1/IN2   | HIL                | ❌        | ✅        | ❌                  |
 
 **Типы тестов:**
 
@@ -332,19 +332,31 @@ display (подтвердить цвет), кнопки (нажать кнопк
 ### uSD
 
 Карта вставляется оператором по запросу. Тест не входит в критический путь.
+Pre-confirm обрабатывается `test_runner` до вызова `run()`.
 
 ```bash
-← {"type":"confirm_request","id":"usd_insert","prompt":"Вставьте карту microSD и нажмите OK","timeout_ms":30000}
-→ {"type":"confirm","id":"usd_insert","confirmed":true}
-← {"type":"test_begin","id":"usd",...}
-  [запись + верификация блока данных]
-← {"type":"test_result","id":"usd","status":"pass","ms":541,"detail":""}
+← {"type":"confirm_request","id":"usd","prompt":"Insert microSD card and press OK","timeout_ms":30000}
+→ {"type":"confirm","id":"usd","confirmed":true}
+← {"type":"test_begin","id":"usd","name":"microSD (SDIO)","critical":false}
+← {"type":"progress","test":"usd","step":"card_detect","status":"ok"}
+← {"type":"progress","test":"usd","step":"mount","status":"ok"}
+← {"type":"progress","test":"usd","step":"write","status":"ok"}
+← {"type":"progress","test":"usd","step":"read_compare","status":"ok"}
+← {"type":"test_result","id":"usd","status":"pass","ms":741,"detail":""}
 ```
 
-Если оператор отказался (`"confirmed":false`) или истёк таймаут:
+Если оператор отказался (`"confirmed":false`):
 
 ```bash
-← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"operator skipped"}
+← {"type":"test_begin","id":"usd","name":"microSD (SDIO)","critical":false}
+← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"operator declined"}
+```
+
+Если истёк таймаут (30 с без ответа):
+
+```bash
+← {"type":"test_begin","id":"usd","name":"microSD (SDIO)","critical":false}
+← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"confirm timeout"}
 ```
 
 ---
