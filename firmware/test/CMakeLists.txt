@@ -13,6 +13,7 @@ add_executable(
   src/test_runner.c
   src/tests/test_sdram.c
   src/tests/test_qspi.c
+  src/tests/test_usd.c
   ${BSP_GENERATED}/clock_config.c
   ${BSP_STARTUP_FILE}
   ${BSP_SYSCALLS_FILE})
