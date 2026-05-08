@@ -190,17 +190,17 @@ main.c
 
 **BSP-зависимости тест-модулей:**
 
-| Тест | BSP модуль |
-|---|---|
-| `test_sdram` | `bsp_sdram` |
-| `test_qspi` | `bsp_qspi` |
-| `test_usd` | `bsp_usd` |
-| `test_display` | существующий display BSP |
-| `test_buttons` | `bsp_button` ✅ |
-| `test_can` | `bsp_can` ✅ |
-| `test_uart_ttl` | `bsp_uart_host` ✅ |
+| Тест            | BSP модуль                     |
+| --------------- | ------------------------------ |
+| `test_sdram`    | `bsp_sdram`                    |
+| `test_qspi`     | `bsp_qspi`                     |
+| `test_usd`      | `bsp_usd`                      |
+| `test_display`  | существующий display BSP       |
+| `test_buttons`  | `bsp_button` ✅                 |
+| `test_can`      | `bsp_can` ✅                    |
+| `test_uart_ttl` | `bsp_uart_host` ✅              |
 | `test_uart_iso` | `bsp_opto` (rs_as_gpio=true) ✅ |
-| `test_opto` | `bsp_opto` ✅ |
+| `test_opto`     | `bsp_opto` ✅                   |
 
 ---
 
@@ -253,13 +253,13 @@ main.c
 
 ### Транспорт
 
-| Параметр | Значение |
-|---|---|
-| Интерфейс | USB CDC ACM, разъём J2 |
-| Кодировка | UTF-8 |
-| Фреймирование | JSON-lines: одна строка = одно сообщение, завершается `\n` |
-| Максимальная длина строки | 128 байт включая `\n` |
-| CR+LF | Принимается (таргет отбрасывает `\r`) |
+| Параметр                  | Значение                                                   |
+| ------------------------- | ---------------------------------------------------------- |
+| Интерфейс                 | USB CDC ACM, разъём J2                                     |
+| Кодировка                 | UTF-8                                                      |
+| Фреймирование             | JSON-lines: одна строка = одно сообщение, завершается `\n` |
+| Максимальная длина строки | 128 байт включая `\n`                                      |
+| CR+LF                     | Принимается (таргет отбрасывает `\r`)                      |
 
 Нет хэндшейка, нет sequence number, нет подтверждений доставки.
 Таргет идемпотентен для `ping` и `run` — при потере строки хост повторяет.
@@ -378,10 +378,10 @@ main.c
 }
 ```
 
-| `status` | Смысл |
-|---|---|
-| `"pass"` | Тест пройден |
-| `"fail"` | Тест провален; `detail` содержит описание (до 95 символов) |
+| `status` | Смысл                                                                    |
+| -------- | ------------------------------------------------------------------------ |
+| `"pass"` | Тест пройден                                                             |
+| `"fail"` | Тест провален; `detail` содержит описание (до 95 символов)               |
 | `"skip"` | Пропущен: нет оборудования, таймаут, отказ оператора, critical fail выше |
 
 Примеры `detail`: `"addr=0x80001000 expected=0xA5 got=0x00"`, `"JEDEC ID mismatch"`.
@@ -482,17 +482,17 @@ main.c
 
 ## Матрица тестов
 
-| ID | Название | Тип | Critical | M5 HIL | Confirm |
-|---|---|---|---|---|---|
-| `sdram` | SDRAM 32 MB | self | ✅ | ❌ | ❌ |
-| `qspi` | QSPI Flash 8 MB | self | ✅ | ❌ | ❌ |
-| `usd` | uSD SDIO | self+interactive | ❌ | ❌ | ✅ pre_confirm |
-| `display` | Display RGB888 | interactive | ❌ | ❌ | ✅ 4×в run() |
-| `buttons` | Test_But_1/2 | interactive | ❌ | ❌ | prompt only |
-| `can` | CAN loopback | HIL | ❌ | ✅ | ❌ |
-| `uart_ttl` | UART TTL | HIL | ❌ | ✅ | ❌ |
-| `uart_iso` | UART ISO / RS_RX | HIL | ❌ | ✅ | ❌ |
-| `opto` | Opto EXT_IN1/IN2 | HIL | ❌ | ✅ | ❌ |
+| ID         | Название         | Тип              | Critical | M5 HIL | Confirm       |
+| ---------- | ---------------- | ---------------- | -------- | ------ | ------------- |
+| `sdram`    | SDRAM 32 MB      | self             | ✅        | ❌      | ❌             |
+| `qspi`     | QSPI Flash 8 MB  | self             | ✅        | ❌      | ❌             |
+| `usd`      | uSD SDIO         | self+interactive | ❌        | ❌      | ✅ pre_confirm |
+| `display`  | Display RGB888   | interactive      | ❌        | ❌      | ✅ 4×в run()   |
+| `buttons`  | Test_But_1/2     | interactive      | ❌        | ❌      | prompt only   |
+| `can`      | CAN loopback     | HIL              | ❌        | ✅      | ❌             |
+| `uart_ttl` | UART TTL         | HIL              | ❌        | ✅      | ❌             |
+| `uart_iso` | UART ISO / RS_RX | HIL              | ❌        | ✅      | ❌             |
+| `opto`     | Opto EXT_IN1/IN2 | HIL              | ❌        | ✅      | ❌             |
 
 **Типы confirm:**
 
@@ -668,10 +668,10 @@ const test_module_t k_test_foo = {
 
 ### Что покрыто
 
-| Таргет | Что тестирует | Тест-файл |
-|---|---|---|
-| `test_protocol` | сериализация JSON (все event types) | `tests/host/protocol/test_protocol.c` |
-| `test_cli` | парсинг входящих строк, диспатч по type | `tests/host/cli/test_cli.c` |
+| Таргет                 | Что тестирует                                    | Тест-файл                                  |
+| ---------------------- | ------------------------------------------------ | ------------------------------------------ |
+| `test_protocol`        | сериализация JSON (все event types)              | `tests/host/protocol/test_protocol.c`      |
+| `test_cli`             | парсинг входящих строк, диспатч по type          | `tests/host/cli/test_cli.c`                |
 | `test_firmware_runner` | state machine (IDLE/PRE_CONFIRM/RUNNING), реестр | `tests/host/runner/test_firmware_runner.c` |
 
 ### Запуск
@@ -719,13 +719,13 @@ void test_run_all_critical_fail_skips_remaining(void)
 
 Стандартный список моков для каждого теста:
 
-| Зависимость | fff fake |
-|---|---|
-| `cli_send()` | `FAKE_VOID_FUNC(cli_send, const char *)` + custom_fake с копией |
-| `bsp_tick_get_ms()` | `FAKE_VALUE_FUNC(uint32_t, bsp_tick_get_ms)` |
-| `bsp_usb_cdc_poll()` | `FAKE_VOID_FUNC(bsp_usb_cdc_poll)` |
-| `cli_process()` | `FAKE_VOID_FUNC(cli_process)` |
-| `protocol_send_test_result()` | custom_fake — копируем `*p_result` по значению |
+| Зависимость                   | fff fake                                                        |
+| ----------------------------- | --------------------------------------------------------------- |
+| `cli_send()`                  | `FAKE_VOID_FUNC(cli_send, const char *)` + custom_fake с копией |
+| `bsp_tick_get_ms()`           | `FAKE_VALUE_FUNC(uint32_t, bsp_tick_get_ms)`                    |
+| `bsp_usb_cdc_poll()`          | `FAKE_VOID_FUNC(bsp_usb_cdc_poll)`                              |
+| `cli_process()`               | `FAKE_VOID_FUNC(cli_process)`                                   |
+| `protocol_send_test_result()` | custom_fake — копируем `*p_result` по значению                  |
 
 > **Ловушка dangling pointer:** `protocol_send_test_result` получает указатель
 > на стековую переменную внутри `execute_test()`. После возврата указатель
@@ -750,11 +750,11 @@ void test_run_all_critical_fail_skips_remaining(void)
 
 > Не пересматривать без явного запроса.
 
-| Решение | Обоснование |
-|---|---|
-| Единственный транспорт — USB CDC ACM | HIL ELF-прошивки используют отдельный канал (UART + bsp_uart_host) |
-| Парсинг JSON — strstr без cJSON | Схема фиксирована, cJSON избыточен |
-| SDRAM тест — через firmware_test, не HIL ELF | Тест идёт командами по USB CDC |
-| IR и RTC — не реализуются | Вне scope рекламационной диагностики |
-| Тесты атомарны | Инженер сам решает что проверять |
-| Тест-логика на таргете | Хост — тонкий клиент, нет дублирования логики |
+| Решение                                      | Обоснование                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------ |
+| Единственный транспорт — USB CDC ACM         | HIL ELF-прошивки используют отдельный канал (UART + bsp_uart_host) |
+| Парсинг JSON — strstr без cJSON              | Схема фиксирована, cJSON избыточен                                 |
+| SDRAM тест — через firmware_test, не HIL ELF | Тест идёт командами по USB CDC                                     |
+| IR и RTC — не реализуются                    | Вне scope рекламационной диагностики                               |
+| Тесты атомарны                               | Инженер сам решает что проверять                                   |
+| Тест-логика на таргете                       | Хост — тонкий клиент, нет дублирования логики                      |

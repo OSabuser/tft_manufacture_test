@@ -8,33 +8,33 @@
 
 ## Три firmware-проекта
 
-| Проект | Путь | Описание |
-|--------|------|----------|
-| Тестовая прошивка | `firmware/test/` | Входной контроль платы: CAN, UART, SDRAM, QSPI, SDIO, RGB, оптовходы, LED, кнопки, MQS |
-| Загрузчик | `firmware/bootloader/` | A/B обновление через uSD. Сам обновляется только через USB ROM + blhost |
-| Боевая прошивка | `firmware/tft_app/` | FreeRTOS + FatFS + бизнес-логика. Обновляется загрузчиком |
+| Проект              | Путь                   | Описание                                                                               |
+| ------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
+| Тестовая прошивка   | `firmware/test/`       | Входной контроль платы: CAN, UART, SDRAM, QSPI, SDIO, RGB, оптовходы, LED, кнопки, MQS |
+| Загрузчик           | `firmware/bootloader/` | A/B обновление через uSD. Сам обновляется только через USB ROM + blhost / SWD          |
+| Production прошивка | `firmware/tft_app/`    | FreeRTOS + FatFS + бизнес-логика. Обновляется загрузчиком                              |
 
 ---
 
 ## BSP
 
-| Модуль | Путь | Описание |
-|--------|------|----------|
-| `bsp_led` | `bsp/led/` | Два UserLed (GPIO3[3], GPIO3[4]) |
-| `bsp_tick` | `bsp/tick/` | SysTick / FreeRTOS-совместимый таймер |
-| `bsp_uart_host` | `bsp/uart_host/` | LPUART1 — MCU-Link VCOM (J2) |
-| `bsp_opto` | `bsp/opto/` | Оптоизолированные входы PS2801-4: EXT_IN1, EXT_IN2, RS_RX |
-| `bsp_usb_cdc` | `bsp/usb_cdc/` | USB CDC ACM |
-| generated | `bsp/generated/` | NXP Config Tools: pin_mux, clock_config, board, startup |
+| Модуль          | Путь             | Описание                                                  |
+| --------------- | ---------------- | --------------------------------------------------------- |
+| `bsp_led`       | `bsp/led/`       | Два UserLed (GPIO3[3], GPIO3[4])                          |
+| `bsp_tick`      | `bsp/tick/`      | SysTick / FreeRTOS-совместимый таймер                     |
+| `bsp_uart_host` | `bsp/uart_host/` | LPUART1 — MCU-Link VCOM (J2)                              |
+| `bsp_opto`      | `bsp/opto/`      | Оптоизолированные входы PS2801-4: EXT_IN1, EXT_IN2, RS_RX |
+| `bsp_usb_cdc`   | `bsp/usb_cdc/`   | USB CDC ACM                                               |
+| generated       | `bsp/generated/` | NXP Config Tools: pin_mux, clock_config, board, startup   |
 
 ---
 
 ## Тестирование
 
-| Уровень | Где | Инструменты | Запуск |
-|---------|-----|-------------|--------|
-| Host unit-тесты | `tests/host/` | Unity + fff, clang | `just build::test-host` (devcontainer) |
-| HIL target-тесты | `tests/target/` + `tools/hil/` | pyOCD + pyserial + pytest + M5StampPLC | `just host::hil-run` (хост) |
+| Уровень          | Где                            | Инструменты                            | Запуск                                 |
+| ---------------- | ------------------------------ | -------------------------------------- | -------------------------------------- |
+| Host unit-тесты  | `tests/host/`                  | Unity + fff, clang                     | `just build::test-host` (devcontainer) |
+| HIL target-тесты | `tests/target/` + `tools/hil/` | pyOCD + pyserial + pytest + M5StampPLC | `just host::hil-run` (хост)            |
 
 **Host-тесты** запускаются в devcontainer без железа. BSP-модули тестируются через fff-фейки и stub-хедеры.
 
@@ -75,12 +75,12 @@ just host::debug-server                 # GDB-сервер для отладки
 
 ## Зависимости
 
-| | Подход |
-|--|--------|
-| NXP MCUXpresso SDK, FreeRTOS, FatFS, LittleFS | vendored |
-| Unity, fff, SEGGER RTT | vendored |
-| pyOCD, pyserial, pytest, mpremote | `tools/hil/uv.lock` |
-| spsdk (nxpimage, blhost, sdphost) | `tools/host/uv.lock` |
+|                                               | Подход               |
+| --------------------------------------------- | -------------------- |
+| NXP MCUXpresso SDK, FreeRTOS, FatFS, LittleFS | vendored             |
+| Unity, fff, SEGGER RTT                        | vendored             |
+| pyOCD, pyserial, pytest, mpremote             | `tools/hil/uv.lock`  |
+| spsdk (nxpimage, blhost, sdphost)             | `tools/host/uv.lock` |
 
 Всё что не меняется — vendored. Сборка работает после `git clone` без интернета (кроме Python-зависимостей).
 

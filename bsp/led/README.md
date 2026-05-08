@@ -7,9 +7,9 @@
 ## Аппаратная часть
 
 | `led_id_t`      | Сигнал     | GPIO  | Pin | Координата | Активный уровень |
-|-----------------|------------|-------|-----|------------|-----------------|
-| `LED_HEARTBEAT` | `UserLed1` | GPIO3 | 3   | M4         | LOW (0 = горит) |
-| `LED_APP`       | `UserLed2` | GPIO3 | 4   | P2         | LOW (0 = горит) |
+| --------------- | ---------- | ----- | --- | ---------- | ---------------- |
+| `LED_HEARTBEAT` | `UserLed1` | GPIO3 | 3   | M4         | LOW (0 = горит)  |
+| `LED_APP`       | `UserLed2` | GPIO3 | 4   | P2         | LOW (0 = горит)  |
 
 Пины сконфигурированы в `generated/pin_mux.h` (MCUXpresso Config Tools).  
 `INIT_GPIO_VALUE = 1U` — оба LED выключены сразу после `led_init()`.

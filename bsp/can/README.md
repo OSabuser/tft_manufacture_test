@@ -34,11 +34,11 @@
 
 ## Распределение Message Buffers
 
-| MB    | Назначение                                          |
-|-------|-----------------------------------------------------|
-| 0     | Зарезервирован (ERR005829 workaround: inactive TX)  |
-| 1     | TX — отправка фреймов                               |
-| 2..17 | RX — до 16 индивидуальных фильтров                  |
+| MB    | Назначение                                         |
+| ----- | -------------------------------------------------- |
+| 0     | Зарезервирован (ERR005829 workaround: inactive TX) |
+| 1     | TX — отправка фреймов                              |
+| 2..17 | RX — до 16 индивидуальных фильтров                 |
 
 ERR005829 — errata FlexCAN на i.MX RT1050/1052: при гонке TX/RX арбитража
 MB 0 может зависнуть. Workaround: MB 0 всегда `kFLEXCAN_TxMbInactive`.
@@ -104,12 +104,12 @@ bsp_can_accept_all();
 затем ждёт флага завершения с polling `FLEXCAN_GetMbStatusFlags()`.
 Возвращается по одному из условий:
 
-| Условие | Возврат |
-|---------|---------|
-| Фрейм успешно отправлен | `BSP_OK` |
-| TX MB занят предыдущей передачей | `BSP_ERR_BUSY` |
-| Истёк `timeout_ms` | `BSP_ERR_TIMEOUT` |
-| Невалидные параметры | `BSP_ERR_PARAM` |
+| Условие                          | Возврат           |
+| -------------------------------- | ----------------- |
+| Фрейм успешно отправлен          | `BSP_OK`          |
+| TX MB занят предыдущей передачей | `BSP_ERR_BUSY`    |
+| Истёк `timeout_ms`               | `BSP_ERR_TIMEOUT` |
+| Невалидные параметры             | `BSP_ERR_PARAM`   |
 
 При 500 kbit/s максимальное время отправки одного фрейма — ~260 мкс.
 Для bare-metal и FreeRTOS-задачи это приемлемо.
@@ -119,11 +119,11 @@ bsp_can_accept_all();
 Polling с таймаутом. Обходит все активные RX MB, читает готовые фреймы
 во внутренний ring buffer, пытается извлечь один фрейм:
 
-| Условие | Возврат |
-|---------|---------|
-| Фрейм найден (из буфера или MB) | `BSP_OK` |
-| Истёк `timeout_ms` | `BSP_ERR_TIMEOUT` |
-| Невалидные параметры | `BSP_ERR_PARAM` |
+| Условие                         | Возврат           |
+| ------------------------------- | ----------------- |
+| Фрейм найден (из буфера или MB) | `BSP_OK`          |
+| Истёк `timeout_ms`              | `BSP_ERR_TIMEOUT` |
+| Невалидные параметры            | `BSP_ERR_PARAM`   |
 
 ```c
 /* Неблокирующий опрос — timeout_ms = 0 */
@@ -161,10 +161,10 @@ bsp_can_register_rx_callback(can_isr_to_queue, NULL);
 
 Модуль не зависит от FreeRTOS и работает в обоих контекстах:
 
-| Контекст | TX | RX |
-|----------|----|----|
-| bare-metal (`firmware/test`, HIL) | `bsp_can_send()` — blocking polling | `bsp_can_receive()` — polling |
-| FreeRTOS (`firmware/tft_app`) | `bsp_can_send()` — из задачи | `bsp_can_receive()` — из задачи с `timeout_ms` |
+| Контекст                          | TX                                  | RX                                             |
+| --------------------------------- | ----------------------------------- | ---------------------------------------------- |
+| bare-metal (`firmware/test`, HIL) | `bsp_can_send()` — blocking polling | `bsp_can_receive()` — polling                  |
+| FreeRTOS (`firmware/tft_app`)     | `bsp_can_send()` — из задачи        | `bsp_can_receive()` — из задачи с `timeout_ms` |
 
 Для FreeRTOS с минимальной латентностью — будущий callback + `xQueueSendFromISR()`.
 Polling с `timeout_ms = 10` из задачи подходит для протоколов с интервалом > 10 мс.
@@ -239,10 +239,10 @@ CAN-адаптер на стороне хоста — M5Stack с CAN-модул�
 
 ## Зависимости
 
-| Зависимость | Тип | Описание |
-|-------------|-----|----------|
-| `bsp_status` | PUBLIC | `bsp_status_t` в публичном API |
-| `bsp_tick` | PRIVATE | `bsp_tick_get_ms()` для таймаутов |
-| `ring_buffer` | PRIVATE | Внутренний RX FIFO |
-| `sdk_flexcan` | PRIVATE | `fsl_flexcan.h` — FlexCAN2 SDK драйвер |
-| `clock_config` | PRIVATE | `BOARD_BOOTCLOCKRUN_CAN_CLK_ROOT` |
+| Зависимость    | Тип     | Описание                               |
+| -------------- | ------- | -------------------------------------- |
+| `bsp_status`   | PUBLIC  | `bsp_status_t` в публичном API         |
+| `bsp_tick`     | PRIVATE | `bsp_tick_get_ms()` для таймаутов      |
+| `ring_buffer`  | PRIVATE | Внутренний RX FIFO                     |
+| `sdk_flexcan`  | PRIVATE | `fsl_flexcan.h` — FlexCAN2 SDK драйвер |
+| `clock_config` | PRIVATE | `BOARD_BOOTCLOCKRUN_CAN_CLK_ROOT`      |

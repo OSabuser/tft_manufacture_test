@@ -59,11 +59,11 @@ target_compile_definitions(firmware_test PRIVATE
 )
 ```
 
-| Define | Дефолт | Описание |
-|--------|--------|----------|
-| `BSP_UART_HOST_RX_BUFFER_SIZE` | `256` | Размер RX ring buffer. **Должен быть степенью двойки.** |
-| `BSP_UART_HOST_SRC_CLOCK_HZ` | `24000000` | Частота источника тактирования LPUART1. |
-| `BSP_UART_HOST_IRQ_PRIORITY` | `5` | Приоритет `LPUART1_IRQn`. Должен быть ≥ `configMAX_SYSCALL_INTERRUPT_PRIORITY` при использовании FreeRTOS. |
+| Define                         | Дефолт     | Описание                                                                                                   |
+| ------------------------------ | ---------- | ---------------------------------------------------------------------------------------------------------- |
+| `BSP_UART_HOST_RX_BUFFER_SIZE` | `256`      | Размер RX ring buffer. **Должен быть степенью двойки.**                                                    |
+| `BSP_UART_HOST_SRC_CLOCK_HZ`   | `24000000` | Частота источника тактирования LPUART1.                                                                    |
+| `BSP_UART_HOST_IRQ_PRIORITY`   | `5`        | Приоритет `LPUART1_IRQn`. Должен быть ≥ `configMAX_SYSCALL_INTERRUPT_PRIORITY` при использовании FreeRTOS. |
 
 ---
 
@@ -156,9 +156,9 @@ void test_something(void) {
 
 ## Зависимости
 
-| Зависимость | Тип | Описание |
-|-------------|-----|----------|
-| `bsp_status` | PUBLIC | `bsp_status_t` в публичном API |
-| `bsp_tick` | PRIVATE | `bsp_tick_get_ms()` для таймаутов |
-| `utils` (ring_buffer) | PRIVATE | RX ring buffer |
-| `sdk_lpuart` | PRIVATE | `fsl_lpuart.h`, `fsl_clock.h` |
+| Зависимость           | Тип     | Описание                          |
+| --------------------- | ------- | --------------------------------- |
+| `bsp_status`          | PUBLIC  | `bsp_status_t` в публичном API    |
+| `bsp_tick`            | PRIVATE | `bsp_tick_get_ms()` для таймаутов |
+| `utils` (ring_buffer) | PRIVATE | RX ring buffer                    |
+| `sdk_lpuart`          | PRIVATE | `fsl_lpuart.h`, `fsl_clock.h`     |

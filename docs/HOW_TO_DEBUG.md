@@ -4,7 +4,7 @@
 
 Отладка построена на проброске GDB-сервера с хоста в devcontainer по TCP. Это позволяет держать весь инструментарий сборки и языковой сервер внутри контейнера, не проводя USB-пробник внутрь Docker.
 
-```
+```bash
 ┌─────────────────────────────────────┐     ┌──────────────────────────────────┐
 │            Хост (macOS/Linux)       │     │         DevContainer             │
 │                                     │     │                                  │
@@ -26,25 +26,25 @@
 
 ### На хосте
 
-| Компонент | Роль | Источник |
-|---|---|---|
-| `pyocd` | GDB-сервер + flash-программатор | `tools/hil/uv.lock` |
-| `MCU-Link` | CMSIS-DAP v2 пробник | USB к плате |
-| `just host::debug-server` | Запуск GDB-сервера | `just/host.just` |
-| `just host::flash-swd-*` | Прошивка через SWD | `just/host.just` |
-| `tools/host/flash_swd.py` | Сборка FCB+HAB образа и запись | `tools/host/` |
-| `tools/host/dcd/w25q128_fdcb.bin` | FCB для W25Q128 (Quad SPI) | NXP SecureProvisioningTool |
+| Компонент                         | Роль                            | Источник                   |
+| --------------------------------- | ------------------------------- | -------------------------- |
+| `pyocd`                           | GDB-сервер + flash-программатор | `tools/hil/uv.lock`        |
+| `MCU-Link`                        | CMSIS-DAP v2 пробник            | USB к плате                |
+| `just host::debug-server`         | Запуск GDB-сервера              | `just/host.just`           |
+| `just host::flash-swd-*`          | Прошивка через SWD              | `just/host.just`           |
+| `tools/host/flash_swd.py`         | Сборка FCB+HAB образа и запись  | `tools/host/`              |
+| `tools/host/dcd/w25q128_fdcb.bin` | FCB для W25Q128 (Quad SPI)      | NXP SecureProvisioningTool |
 
 ### В devcontainer
 
-| Компонент | Роль |
-|---|---|
-| `arm-none-eabi-gdb` | GDB клиент, подключается к серверу на хосте |
-| `cortex-debug` (VSCode extension) | UI для GDB: брейкпоинты, стек, регистры |
-| `.vscode/launch.json` | Конфигурации запуска отладки |
-| `.vscode/tasks.json` | `preLaunchTask` — пересборка ELF перед стартом |
-| `build/Debug/*.elf` | Символы для GDB (DWARF debug info) |
-| `bsp/generated/startup/MIMXRT1052.xml` | SVD — описание регистров периферии |
+| Компонент                              | Роль                                           |
+| -------------------------------------- | ---------------------------------------------- |
+| `arm-none-eabi-gdb`                    | GDB клиент, подключается к серверу на хосте    |
+| `cortex-debug` (VSCode extension)      | UI для GDB: брейкпоинты, стек, регистры        |
+| `.vscode/launch.json`                  | Конфигурации запуска отладки                   |
+| `.vscode/tasks.json`                   | `preLaunchTask` — пересборка ELF перед стартом |
+| `build/Debug/*.elf`                    | Символы для GDB (DWARF debug info)             |
+| `bsp/generated/startup/MIMXRT1052.xml` | SVD — описание регистров периферии             |
 
 ### Конфигурация
 
@@ -62,11 +62,11 @@ FCB_PATH=tools/host/dcd/w25q128_fdcb.bin
 
 ## Прошивки, поддерживаемые отладкой
 
-| Конфигурация VSCode | ELF | Особенности |
-|---|---|---|
-| `🐛 Debug: firmware_test` | `build/Debug/firmware_test.elf` | Bare-metal, входной контроль |
-| `🐛 Debug: bootloader` | `build/Debug/bootloader.elf` | Bare-metal, A/B обновление |
-| `🐛 Debug: tft_app (FreeRTOS)` | `build/Debug/app.elf` | FreeRTOS, task view |
+| Конфигурация VSCode           | ELF                             | Особенности                  |
+| ----------------------------- | ------------------------------- | ---------------------------- |
+| `🐛 Debug: firmware_test`      | `build/Debug/firmware_test.elf` | Bare-metal, входной контроль |
+| `🐛 Debug: bootloader`         | `build/Debug/bootloader.elf`    | Bare-metal, A/B обновление   |
+| `🐛 Debug: tft_app (FreeRTOS)` | `build/Debug/app.elf`           | FreeRTOS, task view          |
 
 Все три — XIP-прошивки, исполняются напрямую из QuadSPI NOR Flash (`0x60000000`).
 

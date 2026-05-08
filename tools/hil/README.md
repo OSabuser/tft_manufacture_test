@@ -38,11 +38,11 @@ tools/hil/
 
 Полное описание стека HIL-тестирования — в `docs/testing/hil/`:
 
-| Документ | Содержимое |
-|----------|-----------|
-| [HIL_HOWTO.md](../../docs/testing/hil/HIL_HOWTO.md) | Как запускать HIL-тесты (пошагово) |
-| [HIL_BENCH.md](../../docs/testing/hil/HIL_BENCH.md) | Стенд: оборудование, подключение, маппинг реле |
-| [HIL_CREATE_TEST.md](../../docs/testing/hil/HIL_CREATE_TEST.md) | Как добавить новый HIL-тест |
+| Документ                                                        | Содержимое                                     |
+| --------------------------------------------------------------- | ---------------------------------------------- |
+| [HIL_HOWTO.md](../../docs/testing/hil/HIL_HOWTO.md)             | Как запускать HIL-тесты (пошагово)             |
+| [HIL_BENCH.md](../../docs/testing/hil/HIL_BENCH.md)             | Стенд: оборудование, подключение, маппинг реле |
+| [HIL_CREATE_TEST.md](../../docs/testing/hil/HIL_CREATE_TEST.md) | Как добавить новый HIL-тест                    |
 
 ---
 

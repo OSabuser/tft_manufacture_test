@@ -11,11 +11,11 @@ CLI команды, обновление конфигурации. Работа�
 
 ## Аппаратура
 
-| Сигнал       | Пин MCU        | Назначение                       |
-|--------------|----------------|----------------------------------|
-| USB_OTG1_DN  | USB_OTG1_DN    | USB1 Data−                       |
-| USB_OTG1_DP  | USB_OTG1_DP    | USB1 Data+                       |
-| USB_OTG1_VBUS| USB_OTG1_VBUS  | VBUS detect (self-powered)       |
+| Сигнал        | Пин MCU       | Назначение                 |
+| ------------- | ------------- | -------------------------- |
+| USB_OTG1_DN   | USB_OTG1_DN   | USB1 Data−                 |
+| USB_OTG1_DP   | USB_OTG1_DP   | USB1 Data+                 |
+| USB_OTG1_VBUS | USB_OTG1_VBUS | VBUS detect (self-powered) |
 
 Встроенный HS PHY (480 MHz PLL). Контроллер: EHCI0 (`kUSB_ControllerEhci0`).
 Скорость: High-Speed (480 Mbit/s) при поддержке хоста, fallback Full-Speed (12 Mbit/s).
@@ -60,14 +60,14 @@ Host → USB1_DP/DN → [EHCI0 DMA]
 Модуль использует **lite** вариант NXP USB стека (не full class framework).
 Это сознательное решение:
 
-| Аспект | Full stack | Lite stack (наш выбор) |
-|--------|-----------|----------------------|
-| Class framework | `usb_device_class.h`, `class_handle_t` | Отсутствует |
-| `usb_device_ch9.c` | SDK middleware, тянет class driver | Приватная копия в `src/` |
-| CDC ACM хедер | Полный: struct + API функции | Только define-ы request codes |
-| Callbacks | Через class driver dispatch | Напрямую в `usb_cdc.c` |
-| Размер кода | ~12 KB | ~6 KB |
-| Гибкость | Multi-class composite | Один CDC ACM |
+| Аспект             | Full stack                             | Lite stack (наш выбор)        |
+| ------------------ | -------------------------------------- | ----------------------------- |
+| Class framework    | `usb_device_class.h`, `class_handle_t` | Отсутствует                   |
+| `usb_device_ch9.c` | SDK middleware, тянет class driver     | Приватная копия в `src/`      |
+| CDC ACM хедер      | Полный: struct + API функции           | Только define-ы request codes |
+| Callbacks          | Через class driver dispatch            | Напрямую в `usb_cdc.c`        |
+| Размер кода        | ~12 KB                                 | ~6 KB                         |
+| Гибкость           | Multi-class composite                  | Один CDC ACM                  |
 
 Lite stack достаточен для одного CDC ACM интерфейса. Переход на full stack
 понадобится только при добавлении composite device (CDC + MSC).
@@ -169,12 +169,12 @@ NVIC enable → USB_DeviceRun. Включает задержку 5 мс для �
 Неблокирующая отправка. Копирует данные в NonCacheable TX буфер и ставит в очередь
 USB IN transfer. Максимум `BSP_USB_CDC_MAX_PACKET_SIZE` (512) байт за вызов.
 
-| Возврат | Условие |
-|---------|---------|
-| `BSP_OK` | Transfer поставлен в очередь |
-| `BSP_ERR_BUSY` | Предыдущий transfer не завершён |
-| `BSP_ERR_NOT_READY` | Хост не подключён |
-| `BSP_ERR_INVALID` | `data == NULL`, `len == 0` или `len > 512` |
+| Возврат             | Условие                                    |
+| ------------------- | ------------------------------------------ |
+| `BSP_OK`            | Transfer поставлен в очередь               |
+| `BSP_ERR_BUSY`      | Предыдущий transfer не завершён            |
+| `BSP_ERR_NOT_READY` | Хост не подключён                          |
+| `BSP_ERR_INVALID`   | `data == NULL`, `len == 0` или `len > 512` |
 
 Проверить готовность TX канала перед отправкой: `bsp_usb_cdc_write_ready()`.
 
@@ -250,10 +250,10 @@ USB_OTG1_IRQHandler  (usb_cdc_hw.c)
 
 Модуль работает без изменений в контексте FreeRTOS-задачи:
 
-| Контекст | TX | RX |
-|----------|----|----|
-| bare-metal | `bsp_usb_cdc_write()` — non-blocking | `bsp_usb_cdc_read()` — polling |
-| FreeRTOS | Из задачи, `write_ready()` + `vTaskDelay()` | Из задачи с yield |
+| Контекст   | TX                                          | RX                             |
+| ---------- | ------------------------------------------- | ------------------------------ |
+| bare-metal | `bsp_usb_cdc_write()` — non-blocking        | `bsp_usb_cdc_read()` — polling |
+| FreeRTOS   | Из задачи, `write_ready()` + `vTaskDelay()` | Из задачи с yield              |
 
 Для минимальной латентности в FreeRTOS — будущий `USB_DEVICE_CONFIG_USE_TASK=1`
 с `bsp_usb_cdc_poll()` из выделенной задачи.
@@ -295,9 +295,9 @@ just host::hil-usb-cdc
 
 Команды CLI прошивки:
 
-| Команда | Ответ | Описание |
-|---------|-------|----------|
-| `PING`  | `PONG` | Проверка канала |
+| Команда       | Ответ    | Описание         |
+| ------------- | -------- | ---------------- |
+| `PING`        | `PONG`   | Проверка канала  |
 | `ECHO <data>` | `<data>` | Echo-back данных |
 
 ### Host unit-тесты
@@ -311,15 +311,15 @@ just host::hil-usb-cdc
 
 Все настройки находятся в приватных хедерах `src/`:
 
-| Файл | Настройка | Значение | Описание |
-|------|-----------|----------|----------|
-| `usb_device_config.h` | `USB_DEVICE_CONFIG_EHCI` | `1` | Контроллер EHCI0 |
-| `usb_device_config.h` | `USB_DEVICE_CONFIG_ENDPOINTS` | `4` | EP0 + interrupt IN + bulk IN/OUT |
-| `usb_device_config.h` | `USB_DEVICE_CONFIG_SELF_POWER` | `1` | Self-powered device |
-| `usb_device_descriptor.h` | `USB_DEVICE_VID` | `0x1234` | Vendor ID (placeholder) |
-| `usb_device_descriptor.h` | `USB_DEVICE_PID` | `0x0001` | Product ID (placeholder) |
-| `usb_cdc_hw.c` | `USB_DEVICE_INTERRUPT_PRIORITY` | `3` | NVIC приоритет |
-| `usb_cdc_hw.c` | `BOARD_USB_PHY_D_CAL` | `0x0C` | PHY калибровка |
+| Файл                      | Настройка                       | Значение | Описание                         |
+| ------------------------- | ------------------------------- | -------- | -------------------------------- |
+| `usb_device_config.h`     | `USB_DEVICE_CONFIG_EHCI`        | `1`      | Контроллер EHCI0                 |
+| `usb_device_config.h`     | `USB_DEVICE_CONFIG_ENDPOINTS`   | `4`      | EP0 + interrupt IN + bulk IN/OUT |
+| `usb_device_config.h`     | `USB_DEVICE_CONFIG_SELF_POWER`  | `1`      | Self-powered device              |
+| `usb_device_descriptor.h` | `USB_DEVICE_VID`                | `0x1234` | Vendor ID (placeholder)          |
+| `usb_device_descriptor.h` | `USB_DEVICE_PID`                | `0x0001` | Product ID (placeholder)         |
+| `usb_cdc_hw.c`            | `USB_DEVICE_INTERRUPT_PRIORITY` | `3`      | NVIC приоритет                   |
+| `usb_cdc_hw.c`            | `BOARD_USB_PHY_D_CAL`           | `0x0C`   | PHY калибровка                   |
 
 ---
 
@@ -348,15 +348,15 @@ bsp/usb_cdc/
 
 ## Зависимости
 
-| Зависимость | Тип | Описание |
-|-------------|-----|----------|
-| `bsp_status` | PUBLIC | `bsp_status_t` в публичном API |
-| `bsp_board` | PRIVATE | Транзитивно: `clock_config.h`, `pin_mux.h`, SDK headers |
-| `sdk_usb_device_ehci` | PRIVATE | EHCI контроллер + DCI абстракция |
-| `sdk_usb_phy` | PRIVATE | USB PHY инициализация (480 MHz PLL) |
-| `sdk_osa_bm` | PRIVATE | OS Abstraction Layer (bare-metal, generic list) |
-| `sdk_usb_common` | PRIVATE (транзитивно) | USB common headers (`usb.h`, `usb_misc.h`) |
-| `sdk_usb_config` | PRIVATE (транзитивно) | INTERFACE: проброс конфиг-хедеров в SDK |
+| Зависимость           | Тип                   | Описание                                                |
+| --------------------- | --------------------- | ------------------------------------------------------- |
+| `bsp_status`          | PUBLIC                | `bsp_status_t` в публичном API                          |
+| `bsp_board`           | PRIVATE               | Транзитивно: `clock_config.h`, `pin_mux.h`, SDK headers |
+| `sdk_usb_device_ehci` | PRIVATE               | EHCI контроллер + DCI абстракция                        |
+| `sdk_usb_phy`         | PRIVATE               | USB PHY инициализация (480 MHz PLL)                     |
+| `sdk_osa_bm`          | PRIVATE               | OS Abstraction Layer (bare-metal, generic list)         |
+| `sdk_usb_common`      | PRIVATE (транзитивно) | USB common headers (`usb.h`, `usb_misc.h`)              |
+| `sdk_usb_config`      | PRIVATE (транзитивно) | INTERFACE: проброс конфиг-хедеров в SDK                 |
 
 ### Зависимости на уровне SDK CMake
 

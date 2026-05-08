@@ -24,7 +24,7 @@
 #include <stdint.h>
 
 /** @brief Строка версии прошивки, вставляемая в session_start. */
-#define FIRMWARE_TEST_VERSION "0.1.0"
+#define FIRMWARE_TEST_VERSION "0.1.4"
 
 /** @brief Таймаут подтверждения по умолчанию, мс. */
 #define PROTOCOL_CONFIRM_TIMEOUT_MS 30000U

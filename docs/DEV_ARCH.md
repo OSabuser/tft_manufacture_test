@@ -65,18 +65,18 @@ HIL-тесты через pyOCD + pytest, GDB-сервер для отладки
 
 ## 3. Что устанавливается и где
 
-| Инструмент | Хост | Devcontainer |
-|------------|------|--------------|
-| `just` | ✅ | ✅ Dockerfile |
-| `docker` | ✅ | — |
-| `uv` | ✅ | ✅ Dockerfile |
+| Инструмент                          | Хост            | Devcontainer    |
+| ----------------------------------- | --------------- | --------------- |
+| `just`                              | ✅               | ✅ Dockerfile    |
+| `docker`                            | ✅               | —               |
+| `uv`                                | ✅               | ✅ Dockerfile    |
 | `spsdk` (sdphost, blhost, nxpimage) | ✅ `tools/host/` | ✅ `tools/host/` |
-| `pyocd` + `pyserial` + `pytest` | ✅ `tools/hil/` | — |
-| `mpremote` | ✅ `tools/hil/` | — |
-| ARM GCC toolchain | — | ✅ |
-| `cmake` / `ninja` | — | ✅ |
-| `clang` / `clangd` / `clang-tidy` | — | ✅ |
-| Unity / fff | — | ✅ vendored |
+| `pyocd` + `pyserial` + `pytest`     | ✅ `tools/hil/`  | —               |
+| `mpremote`                          | ✅ `tools/hil/`  | —               |
+| ARM GCC toolchain                   | —               | ✅               |
+| `cmake` / `ninja`                   | —               | ✅               |
+| `clang` / `clangd` / `clang-tidy`   | —               | ✅               |
+| Unity / fff                         | —               | ✅ vendored      |
 
 `spsdk` и `pyocd` — отдельные uv-проекты с разными ролями:
 
@@ -226,11 +226,11 @@ HIL_USB_CDC_TIMEOUT=5.0
 
 ### 5.1 Предварительные требования
 
-| Платформа | Что нужно до bootstrap |
-|-----------|------------------------|
-| Linux | `docker`, `git`, `curl` |
-| macOS | Docker Desktop, `git` (Xcode CLT) |
-| Windows | Docker Desktop, Git for Windows → **Git Bash** |
+| Платформа | Что нужно до bootstrap                         |
+| --------- | ---------------------------------------------- |
+| Linux     | `docker`, `git`, `curl`                        |
+| macOS     | Docker Desktop, `git` (Xcode CLT)              |
+| Windows   | Docker Desktop, Git for Windows → **Git Bash** |
 
 ### 5.2 Единственная команда
 
@@ -279,11 +279,11 @@ just host::m5-deploy
 
 ### 6.1 Четыре типа сборки
 
-| Пресет | Toolchain | Назначение | Линкер-скрипт |
-|--------|-----------|------------|---------------|
-| `Debug` / `Release` | ARM GCC | firmware_test, bootloader, tft_app | `flexspi_nor.ld` |
-| `host-debug` / `host-release` | clang (хост) | Unity + fff тесты | — |
-| `target-debug` | ARM GCC | HIL target-прошивки | `ram.ld` |
+| Пресет                        | Toolchain    | Назначение                         | Линкер-скрипт    |
+| ----------------------------- | ------------ | ---------------------------------- | ---------------- |
+| `Debug` / `Release`           | ARM GCC      | firmware_test, bootloader, tft_app | `flexspi_nor.ld` |
+| `host-debug` / `host-release` | clang (хост) | Unity + fff тесты                  | —                |
+| `target-debug`                | ARM GCC      | HIL target-прошивки                | `ram.ld`         |
 
 ### 6.2 CMake пресеты
 
@@ -310,12 +310,12 @@ buildPresets (HIL):
 
 ### 6.3 Boot-стратегии
 
-| Прошивка | Стратегия | Инструмент загрузки |
-|----------|-----------|---------------------|
-| `firmware_test` | XIP из Flash (`flexspi_nor.ld`) | SPSDK → Flash |
-| `bootloader` | Копирование в ITCM | SPSDK → Flash |
-| `tft_app` | XIP + буферы в SDRAM | SPSDK → Flash |
-| HIL target (`tests/target/`) | Исполнение из ITCM/DTCM (`ram.ld`) | pyOCD → RAM |
+| Прошивка                     | Стратегия                          | Инструмент загрузки |
+| ---------------------------- | ---------------------------------- | ------------------- |
+| `firmware_test`              | XIP из Flash (`flexspi_nor.ld`)    | SPSDK → Flash       |
+| `bootloader`                 | Копирование в ITCM                 | SPSDK → Flash       |
+| `tft_app`                    | XIP + буферы в SDRAM               | SPSDK → Flash       |
+| HIL target (`tests/target/`) | Исполнение из ITCM/DTCM (`ram.ld`) | pyOCD → RAM         |
 
 **HIL boot-стратегия:** pyOCD настраивает FLEXRAM (128 KB ITCM + 128 KB DTCM + 256 KB OCRAM), записывает PT_LOAD сегменты ELF по физическим адресам, устанавливает SP/PC из таблицы векторов и запускает выполнение. Flash не используется — прошивка исчезает при отключении питания.
 
@@ -325,19 +325,19 @@ buildPresets (HIL):
 
 ### 7.1 Карта задач по контекстам
 
-| Задача | Где |
-|--------|-----|
-| Написание кода, clangd, форматирование | devcontainer |
-| Статический анализ (clang-tidy) | devcontainer |
-| Host unit-тесты (Unity + fff) | devcontainer |
-| Сборка ARM firmware (ELF) | devcontainer |
-| Сборка HIL target-прошивок | devcontainer |
-| Подготовка HAB-образов (nxpimage) | devcontainer |
-| Прошивка платы через USB ROM | хост |
-| Прошивка платы через SWD | хост |
-| HIL-тесты (pyOCD + pytest + M5) | хост |
-| Отладка — GDB-сервер (pyOCD) | хост |
-| Отладка — GDB-клиент (cortex-debug) | devcontainer → хост по TCP |
+| Задача                                 | Где                        |
+| -------------------------------------- | -------------------------- |
+| Написание кода, clangd, форматирование | devcontainer               |
+| Статический анализ (clang-tidy)        | devcontainer               |
+| Host unit-тесты (Unity + fff)          | devcontainer               |
+| Сборка ARM firmware (ELF)              | devcontainer               |
+| Сборка HIL target-прошивок             | devcontainer               |
+| Подготовка HAB-образов (nxpimage)      | devcontainer               |
+| Прошивка платы через USB ROM           | хост                       |
+| Прошивка платы через SWD               | хост                       |
+| HIL-тесты (pyOCD + pytest + M5)        | хост                       |
+| Отладка — GDB-сервер (pyOCD)           | хост                       |
+| Отладка — GDB-клиент (cortex-debug)    | devcontainer → хост по TCP |
 
 ### 7.2 Типичная сессия разработки
 
@@ -369,15 +369,15 @@ just host::debug-server                  # запустить pyOCD GDB-серв
 
 ### 7.3 VSCode Tasks (внутри devcontainer)
 
-| Таск | Команда |
-|------|---------|
-| 🔨 Build | `just build::build-<project>-<type>` |
-| 🧪 Host Tests (Debug) | `just build::test-host` |
-| 🧪 Host Tests (Release) | `just build::test-host-release` |
-| 🎯 Build HIL Target Tests | `just build::build-hil` |
-| 📦 HAB Image | `just build::hab-<project>-<type>` |
-| 📦 HAB All (Debug/Release) | `just build::hab-all-debug/release` |
-| 🗑️ Clean | `just build::clean` |
+| Таск                      | Команда                              |
+| ------------------------- | ------------------------------------ |
+| 🔨 Build                   | `just build::build-<project>-<type>` |
+| 🧪 Host Tests (Debug)      | `just build::test-host`              |
+| 🧪 Host Tests (Release)    | `just build::test-host-release`      |
+| 🎯 Build HIL Target Tests  | `just build::build-hil`              |
+| 📦 HAB Image               | `just build::hab-<project>-<type>`   |
+| 📦 HAB All (Debug/Release) | `just build::hab-all-debug/release`  |
+| 🗑️ Clean                   | `just build::clean`                  |
 
 ---
 

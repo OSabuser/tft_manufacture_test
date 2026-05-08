@@ -32,8 +32,6 @@
 
 #include "bsp/status.h"
 
-#include <stdint.h>
-
 /**
  * @brief Размер расширенного тестового региона, байт (27 MB).
  *

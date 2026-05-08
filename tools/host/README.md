@@ -9,7 +9,7 @@ Python-окружение на базе [uv](https://docs.astral.sh/uv/) для 
 
 ## Структура
 
-```иbash
+```bash
 tools/host/
 ├── flash_usb.py      — прошивка через USB ROM: sdphost → Flashloader → Flash
 ├── flash_swd.py      — прошивка через SWD: FCB + HAB → pyOCD → Flash

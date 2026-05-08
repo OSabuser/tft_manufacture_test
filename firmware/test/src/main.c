@@ -25,7 +25,6 @@
 #include "protocol.h"
 #include "test_runner.h"
 
-#include <stdbool.h>
 #include <stdint.h>
 
 int main(void)

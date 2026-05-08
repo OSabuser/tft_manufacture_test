@@ -29,7 +29,7 @@ ENTRY(Reset_Handler)
 HEAP_SIZE  = DEFINED(__heap_size__)  ? __heap_size__  : 0x0400;
 STACK_SIZE = DEFINED(__stack_size__) ? __stack_size__ : 0x0400;
 VECTOR_RAM_SIZE = DEFINED(__ram_vector_table__) ? 0x00000400 : 0;
-NCACHE_HEAP_START = DEFINED(__heap_noncacheable__) ? 0x82000000 - HEAP_SIZE : 0x81E00000 - HEAP_SIZE;
+NCACHE_HEAP_START = DEFINED(__heap_noncacheable__) ? 0x82000000 - HEAP_SIZE : 0x82000000 - HEAP_SIZE;
 NCACHE_HEAP_SIZE  = DEFINED(__heap_noncacheable__) ? HEAP_SIZE : 0x0000;
 
 /* Specify the memory areas */
@@ -40,8 +40,8 @@ MEMORY
   m_interrupts          (RX)  : ORIGIN = 0x60002000, LENGTH = 0x00000400
   m_text                (RX)  : ORIGIN = 0x60002400, LENGTH = 0x03FFDC00
   m_qacode              (RX)  : ORIGIN = 0x00000000, LENGTH = 0x00020000
-  m_data                (RW)  : ORIGIN = 0x80000000, LENGTH = DEFINED(__heap_noncacheable__) ? 0x01E00000 : 0x01E00000 - HEAP_SIZE
-  m_ncache              (RW)  : ORIGIN = 0x81E00000, LENGTH = DEFINED(__heap_noncacheable__) ? 0x00200000 - HEAP_SIZE : 0x00200000
+  m_data                (RW)  : ORIGIN = 0x80000000, LENGTH = 0x01600000  /* 22 MB — хватает для всего */
+  m_ncache              (RW)  : ORIGIN = 0x81600000, LENGTH = DEFINED(__heap_noncacheable__) ? 0x00A00000 - HEAP_SIZE : 0x00A00000 /* 10 MB — хватает на tft_app */
   m_data2               (RW)  : ORIGIN = 0x20000000, LENGTH = 0x00020000
   m_data3               (RW)  : ORIGIN = 0x20200000, LENGTH = 0x00040000
   m_heap                (RW)  : ORIGIN = NCACHE_HEAP_START, LENGTH = HEAP_SIZE

@@ -23,33 +23,19 @@
 #include <stdio.h>
 #include <string.h>
 
-/* ── Реестр тестов ─────────────────────────────────────────────────────────
- *
- * Добавление нового теста (Этап 2+):
- *   1. Раскомментировать extern-объявление нужного модуля.
- *   2. Добавить &k_test_<name> в k_registry[].
- *
- * extern const test_module_t k_test_sdram;   
-*extern const test_module_t k_test_qspi;     
-*extern const test_module_t k_test_usd;      
-*extern const test_module_t k_test_display; 
-*extern const test_module_t k_test_buttons;  
-*extern const test_module_t k_test_can;      
-*extern const test_module_t k_test_uart_ttl; 
-*extern const test_module_t k_test_uart_iso; 
-*extern const test_module_t k_test_opto;     
-* ─────────────────────────────────────────────────────────────────────────*/
-
+/* ── Реестр тестов ─────────────────────────────────────────────────────────*/
 #ifndef UNIT_TEST
 extern const test_module_t K_TEST_SDRAM;
 extern const test_module_t K_TEST_QSPI;
 extern const test_module_t K_TEST_USD;
+extern const test_module_t K_TEST_DISPLAY;
 
 static const test_module_t *const k_registry[] = {
     /* populated starting from Этап 2 */
     &K_TEST_SDRAM,
     &K_TEST_QSPI,
     &K_TEST_USD,
+    &K_TEST_DISPLAY,
 };
 
 #define REGISTRY_SIZE (sizeof(k_registry) / sizeof(k_registry[0]))

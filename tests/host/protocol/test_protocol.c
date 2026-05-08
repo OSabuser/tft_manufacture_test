@@ -220,7 +220,7 @@ void test_confirm_request_default_timeout_on_zero(void)
     protocol_send_confirm_request(&params);
 
     /* timeout_ms == 0 → подставляется PROTOCOL_CONFIRM_TIMEOUT_MS */
-    TEST_ASSERT_NOT_NULL(strstr(s_captured, "\"timeout_ms\":15000"));
+    TEST_ASSERT_NOT_NULL(strstr(s_captured, "\"timeout_ms\":30000"));
 }
 
 /* ── Тесты: pong ───────────────────────────────────────────────────────── */
