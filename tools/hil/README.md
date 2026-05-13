@@ -15,8 +15,8 @@ tools/hil/
 ├── env_config.py     — конфигурация из os.environ / .env
 ├── pyocd_utils.py    — FLEXRAM init, ELF loader, run_from_vectors
 ├── load_and_run.py   — CLI-утилита: загрузить ELF в RAM вручную
-├── test_uart.py      — HIL тест bsp_uart_host (без стенда)
-├── test_opto.py      — HIL тест bsp_opto (через M5StampPLC)
+├── 01_test_uart.py   — HIL тест bsp_uart_host (без стенда)
+├── 02_test_opto.py   — HIL тест bsp_opto (через M5StampPLC)
 ├── m5/
 │   ├── agent.py      — MicroPython агент на M5StampPLC (реле, входы, CAN)
 │   ├── cli.py        — интерактивный CLI для ручного тестирования стенда и таргета
@@ -40,7 +40,7 @@ tools/hil/
 
 | Документ                                                        | Содержимое                                     |
 | --------------------------------------------------------------- | ---------------------------------------------- |
-| [HIL_HOWTO.md](../../docs/testing/hil/HIL_HOWTO.md)             | Как запускать HIL-тесты (пошагово)             |
+| [HIL_HOW_TO.md](../../docs/testing/hil/HIL_HOW_TO.md)           | Как запускать HIL-тесты (пошагово)             |
 | [HIL_BENCH.md](../../docs/testing/hil/HIL_BENCH.md)             | Стенд: оборудование, подключение, маппинг реле |
 | [HIL_CREATE_TEST.md](../../docs/testing/hil/HIL_CREATE_TEST.md) | Как добавить новый HIL-тест                    |
 

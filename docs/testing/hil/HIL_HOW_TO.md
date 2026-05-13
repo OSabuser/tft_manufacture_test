@@ -136,21 +136,21 @@ just host::hil-button            # конкретный интерактивны
 ### Конкретный автоматический тест
 
 ```bash
-just host::hil-uart    # только test_uart.py
-just host::hil-opto    # только test_opto.py
-just host::hil-can     # только test_can.py
+just host::hil-uart    # только 01_test_uart.py
+just host::hil-opto    # только 02_test_opto.py
+just host::hil-can     # только 03_test_can.py
 ```
 
 ### Один тест-кейс (для отладки)
 
 ```bash
-uv run --directory tools/hil pytest test_opto.py::TestOptoConnectivity::test_target_ping -v
+uv run --directory tools/hil pytest 02_test_opto.py::TestOptoConnectivity::test_target_ping -v
 ```
 
 ### Без перезагрузки ELF (если прошивка уже запущена)
 
 ```bash
-uv run --directory tools/hil pytest test_opto.py -v --no-load
+uv run --directory tools/hil pytest 02_test_opto.py -v --no-load
 ```
 
 Удобно при отладке тестов когда прошивка уже в RAM и не нужно каждый раз

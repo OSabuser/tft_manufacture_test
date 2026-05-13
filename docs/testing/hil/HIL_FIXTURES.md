@@ -65,7 +65,7 @@ Scope определяет **как долго живёт** экземпляр �
 
 ### Почему для HIL основной scope — `module`
 
-Каждый тест-файл (`test_uart.py`, `test_opto.py`) работает со **своей прошивкой**.
+Каждый тест-файл (`01_test_uart.py`, `02_test_opto.py`) работает со **своей прошивкой**.
 Загружать ELF перед каждой `test_*()` — слишком дорого (~2 с на загрузку через pyOCD).
 `scope="module"` означает: загрузил один раз, прогнал все тесты файла, закрыл.
 
@@ -194,8 +194,8 @@ test_opto_ch1()
 ```bash
 tools/hil/
 ├── conftest.py          ← фикстуры: _load_elf, uart, m5, loaded_*
-├── test_uart.py         ← видит всё из conftest.py
-├── test_opto.py         ← видит всё из conftest.py
+├── 01_test_uart.py      ← видит всё из conftest.py
+├── 02_test_opto.py      ← видит всё из conftest.py
 └── m5/
     └── conftest.py      ← (если бы был) виден только в m5/
 ```
@@ -244,11 +244,11 @@ Teardown выполняется в **обратном** порядке созд�
 При запуске нескольких файлов каждый получает **свой** набор module-фикстур:
 
 ```bash
-pytest test_uart.py test_opto.py
+pytest 01_test_uart.py 02_test_opto.py
 ```
 
 ```bash
-test_uart.py                      test_opto.py
+01_test_uart.py                   02_test_opto.py
 ─────────────────────────         ─────────────────────────
 loaded_host_uart  ← создаётся    m5             ← создаётся
 uart              ← создаётся    loaded_hil_opto
@@ -538,7 +538,7 @@ class Test<n>:
 ## 12. Визуальная схема жизненного цикла
 
 ```bash
-pytest test_opto.py
+pytest 02_test_opto.py
 
 ────────────── module scope (один раз на файл) ──────────────
 

@@ -183,8 +183,11 @@ HIL_USB_CDC_TIMEOUT=5.0
 │       ├── pyocd_utils.py        ← FLEXRAM init, ELF loader, run_from_vectors
 │       ├── env_config.py         ← конфигурация из os.environ / .env
 │       ├── load_and_run.py       ← CLI-утилита загрузки ELF в RAM вручную
-│       ├── test_uart.py          ← HIL тест bsp_uart_host (без M5)
-│       ├── test_opto.py          ← HIL тест bsp_opto (через M5StampPLC)
+│       ├── 01_test_uart.py       ← HIL тест bsp_uart_host (без M5)
+│       ├── 02_test_opto.py       ← HIL тест bsp_opto (через M5StampPLC)
+│       ├── 03_test_can.py        ← HIL тест bsp_can
+│       ├── 04_test_button.py     ← HIL тест bsp_button
+│       ├── 05_test_usb_cdc.py    ← HIL тест USB CDC
 │       ├── m5/
 │       │   ├── agent.py          ← MicroPython агент на M5StampPLC
 │       │   ├── cli.py            ← интерактивный CLI для ручного тестирования стенда
@@ -196,14 +199,24 @@ HIL_USB_CDC_TIMEOUT=5.0
 ├── tests/
 │   ├── host/                     ← host unit-тесты (Unity + fff)
 │   │   ├── mocks/                ← stub-хедеры NXP SDK для компиляции на хосте
+│   │   ├── button/
+│   │   ├── can/
+│   │   ├── cli/
 │   │   ├── led/
+│   │   ├── log/
 │   │   ├── opto/
+│   │   ├── prio_queue/
+│   │   ├── protocol/
 │   │   ├── ring_buffer/
+│   │   ├── runner/
 │   │   ├── timeout/
 │   │   └── uart_host/
 │   └── target/                   ← HIL target-прошивки (RAM, pyOCD)
 │       ├── host_uart/            ← CLI для тестирования bsp_uart_host
-│       └── hil_opto/             ← CLI для тестирования bsp_opto
+│       ├── hil_button/           ← CLI для тестирования bsp_button
+│       ├── hil_can/              ← CLI для тестирования bsp_can
+│       ├── hil_opto/             ← CLI для тестирования bsp_opto
+│       └── hil_usb_cdc/          ← CLI для тестирования USB CDC
 │
 └── docs/
     ├── DEV_ARCH.md               ← этот документ
@@ -213,7 +226,7 @@ HIL_USB_CDC_TIMEOUT=5.0
     ├── mimxrt1052/               ← MCU: BOOT_FLAGS, reference manual
     └── testing/
         ├── hil/
-        │   ├── HIL_HOWTO.md     ← как проводить HIL-тесты
+        │   ├── HIL_HOW_TO.md     ← как проводить HIL-тесты
         │   ├── HIL_BENCH.md     ← стенд: оборудование, подключение
         │   └── HIL_CREATE_TEST.md ← как добавить новый HIL-тест
         └── host/
@@ -300,12 +313,17 @@ buildPresets (ARM firmware):
   all-debug / all-release
 
 buildPresets (host-тесты):
-  host-debug-build:   test_bsp_led, test_log, test_bsp_opto,
-                      test_ring_buffer, test_timeout_pattern, uart_host_mock_example
+  host-debug-build:   test_bsp_led, test_log, test_bsp_opto, test_bsp_button,
+                      test_bsp_can, test_cli, test_protocol, test_firmware_runner,
+                      test_prio_queue, uart_host_mock_example, test_ring_buffer,
+                      test_timeout_pattern
   host-release-build: то же
 
 buildPresets (HIL):
-  target-debug-build: test_host_uart, test_hil_opto
+  target-debug-build: test_host_uart, test_hil_button, test_hil_can,
+                      test_hil_usb_cdc, test_hil_opto
+
+Источник истины по списку целей — [CMakePresets.json](../CMakePresets.json).
 ```
 
 ### 6.3 Boot-стратегии
@@ -409,7 +427,7 @@ just host::flash-swd-test-release
 
 HIL-тесты проверяют периферию на реальном железе. Два типа:
 
-### Базовые (без стенда) — `test_uart.py`
+### Базовые (без стенда) — `01_test_uart.py`
 
 Только MCU-Link: SWD загружает ELF в RAM, VCOM обеспечивает UART CLI.
 
@@ -421,7 +439,7 @@ MCU-Link
 RT1052 → "PONG"
 ```
 
-### С M5StampPLC — `test_opto.py` и другие
+### С M5StampPLC — `02_test_opto.py` и другие
 
 `M5StampPLC` управляет входными сигналами таргета через реле. pytest оркестрирует оба канала одновременно.
 
@@ -438,11 +456,11 @@ pytest
 ```bash
 just build::build-hil        # (devcontainer) собрать HIL ELF
 just host::hil-run           # прогнать все HIL тесты
-just host::hil-uart          # только test_uart.py
-just host::hil-opto          # только test_opto.py
+just host::hil-uart          # только 01_test_uart.py
+just host::hil-opto          # только 02_test_opto.py
 ```
 
-Подробно — [docs/testing/hil/HIL_HOWTO.md](testing/hil/HIL_HOWTO.md).
+Подробно — [docs/testing/hil/HIL_HOW_TO.md](testing/hil/HIL_HOW_TO.md).
 Добавление нового теста — [docs/testing/hil/HIL_CREATE_TEST.md](testing/hil/HIL_CREATE_TEST.md).
 Стенд и подключение — [docs/testing/hil/HIL_BENCH.md](testing/hil/HIL_BENCH.md).
 
@@ -462,8 +480,10 @@ just host::hil-opto          # только test_opto.py
 BSP-модули тестируются через fff-фейки и stub-хедеры в `tests/host/mocks/`.
 `BUILD_TESTS_HOST=ON` отключает ARM-специфику и SDK-заголовки.
 
-Покрытие: `bsp_led`, `bsp_opto`, `bsp_uart_host`, `ring_buffer`, timeout-паттерн.
-Гайд — [tests/HOST_CREATE_TEST.md](../tests/HOST_CREATE_TEST.md).
+Покрытие: `bsp_led`, `bsp_opto`, `bsp_button`, `bsp_can`, `bsp_uart_host`,
+`cli`, `protocol`, `firmware_runner`, `prio_queue`, `ring_buffer`, `log`,
+timeout-паттерн.
+Гайд — [testing/host/HOST_CREATE_TEST.md](testing/host/HOST_CREATE_TEST.md).
 
 ### 10.2 HIL target-тесты
 
@@ -473,7 +493,9 @@ BSP-модули тестируются через fff-фейки и stub-хед
 Запуск:      just host::hil-run   (на хосте)
 ```
 
-Текущие тесты: `test_uart.py` (PING/ECHO/BUF_SIZE), `test_opto.py` (оптовходы IN1/IN2/RS через M5).
+Текущие тесты: `01_test_uart.py` (PING/ECHO/BUF_SIZE), `02_test_opto.py`
+(оптовходы IN1/IN2/RS через M5), `03_test_can.py` (CAN-шина), `04_test_button.py`
+(кнопочные входы), `05_test_usb_cdc.py` (USB CDC).
 
 ---
 
@@ -500,7 +522,8 @@ Devcontainer
 - `🐛 Debug: bootloader` — bare-metal, A/B обновление
 - `🐛 Debug: tft_app (FreeRTOS)` — FreeRTOS task view
 
-RTT-логи (`SEGGER_RTT_ENABLED=ON`) пока что не используются вместо этого можно использовать `port/log`.
+RTT-логи доступны в Debug-сборках (`SEGGER_RTT_ENABLED=ON`); подробности — в
+[docs/HOW_TO_DEBUG.md](HOW_TO_DEBUG.md).
 
 ---
 

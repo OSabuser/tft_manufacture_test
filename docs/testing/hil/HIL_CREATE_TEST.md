@@ -407,9 +407,9 @@ test_foo()
 ### Порядок при запуске нескольких файлов
 
 ```bash
-pytest test_uart.py test_<name>.py
+pytest 01_test_uart.py test_<name>.py
 
-test_uart.py               test_<name>.py
+01_test_uart.py            test_<name>.py
 ─────────────────────      ─────────────────────
 loaded_host_uart           m5 ← создаётся
 uart ← создаётся           loaded_<name>

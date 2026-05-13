@@ -7,7 +7,7 @@
 
 ## Что такое Config Tools
 
-NXP Config Tools — набор утилит для визуальной настройки микроконтроллера. Включает несколько инструментов: Pins Tool, Clocks Tool, Peripherals Tool. Генерирует инициализационный код на основе конфигурации сохранённой в файле `TFT_BOARD.mex`.
+NXP Config Tools — набор утилит для визуальной настройки микроконтроллера. Включает несколько инструментов: Pins Tool, Clocks Tool, Peripherals Tool. Генерирует инициализационный код на основе конфигурации сохранённой в файле `TFT_Board.mex`.
 
 ---
 
@@ -27,15 +27,15 @@ NXP Config Tools — набор утилит для визуальной нас�
 
 ```bash
 bsp/
-└── board/
-    ├── TFT_BOARD.mex           # Исходник конфигурации — главный файл Config Tools
-    ├── pin_mux.c           # Сгенерировано из board.mex (Pins Tool)
+└── generated/
+    ├── TFT_Board.mex           # Исходник конфигурации — главный файл Config Tools
+    ├── pin_mux.c           # Сгенерировано из TFT_Board.mex (Pins Tool)
     ├── pin_mux.h
-    ├── clock_config.c      # Сгенерировано из board.mex (Clocks Tool)
+    ├── clock_config.c      # Сгенерировано из TFT_Board.mex (Clocks Tool)
     └── clock_config.h
 ```
 
-`board.mex` — источник истины. Все изменения вносятся только через него.
+`TFT_Board.mex` — источник истины. Все изменения вносятся только через него.
 
 ---
 
@@ -133,12 +133,12 @@ Config Tools открывается **только при изменении а�
 
 **Порядок внесения изменений:**
 
-1. Открыть `bsp/board/TFT_BOARD.mex` в Config Tools
+1. Открыть `bsp/generated/TFT_Board.mex` в Config Tools
 2. Внести изменения
 3. Сгенерировать код (Update Code)
-4. Закоммитить `TFT_BOARD.mex` и сгенерированные файлы **в одном коммите**
+4. Закоммитить `TFT_Board.mex` и сгенерированные файлы **в одном коммите**
 
-**Главное правило:** `pin_mux.c`, `pin_mux.h`, `clock_config.c`, `clock_config.h` — **не редактировать вручную**. Только через Config Tools. Ручная правка приведёт к рассинхронизации с `board.mex` и потере воспроизводимости конфигурации.
+**Главное правило:** `pin_mux.c`, `pin_mux.h`, `clock_config.c`, `clock_config.h` — **не редактировать вручную**. Только через Config Tools. Ручная правка приведёт к рассинхронизации с `TFT_Board.mex` и потере воспроизводимости конфигурации.
 
 ---
 

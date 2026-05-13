@@ -38,16 +38,26 @@
 
 **Host-тесты** запускаются в devcontainer без железа. BSP-модули тестируются через fff-фейки и stub-хедеры.
 
-**HIL-тесты** — каждый тест это пара: C-прошивка с UART CLI (`tests/target/<n>/`) и pytest-файл (`tools/hil/test_<n>.py`). pyOCD загружает ELF в RAM через MCU-Link. Тесты с внешними сигналами управляются через M5StampPLC (реле → оптовходы таргета).
+**HIL-тесты** — каждый тест это пара: C-прошивка с UART CLI (`tests/target/<n>/`) и pytest-файл (`tools/hil/NN_test_<n>.py`). pyOCD загружает ELF в RAM через MCU-Link. Тесты с внешними сигналами управляются через M5StampPLC (реле → оптовходы таргета).
+
+Фактический набор HIL-тестов (`tools/hil/`):
+
+| Файл                 | Назначение                                |
+| -------------------- | ----------------------------------------- |
+| `01_test_uart.py`    | UART CLI / MCU-Link VCOM                  |
+| `02_test_opto.py`    | Оптовходы EXT_IN1, EXT_IN2, RS_RX         |
+| `03_test_can.py`     | CAN-интерфейс                             |
+| `04_test_button.py`  | Пользовательские кнопки                   |
+| `05_test_usb_cdc.py` | USB CDC ACM                               |
 
 ```bash
 pytest → uart_cmd() → MCU-Link VCOM → RT1052
 pytest → m5.opto_set() → M5StampPLC RLY → EXT_IN1/IN2/RS_RX → RT1052
 ```
 
-- Как добавить host-тест — [tests/HOST_CREATE_TEST.md](tests/HOST_CREATE_TEST.md)
+- Как добавить host-тест — [docs/testing/host/HOST_CREATE_TEST.md](docs/testing/host/HOST_CREATE_TEST.md)
 - Как добавить HIL-тест — [docs/testing/hil/HIL_CREATE_TEST.md](docs/testing/hil/HIL_CREATE_TEST.md)
-- Как запустить HIL-тесты — [docs/testing/hil/HIL_HOWTO.md](docs/testing/hil/HIL_HOWTO.md)
+- Как запустить HIL-тесты — [docs/testing/hil/HIL_HOW_TO.md](docs/testing/hil/HIL_HOW_TO.md)
 - HIL стенд и подключение — [docs/testing/hil/HIL_BENCH.md](docs/testing/hil/HIL_BENCH.md)
 
 ---

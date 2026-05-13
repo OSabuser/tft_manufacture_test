@@ -20,7 +20,7 @@ tools/host/
 │   ├── w25q128_fdcb.bin      — FCB для W25Q128 Quad SPI ← используется
 │   ├── w25q64_fdcb.bin       — FCB для W25Q64  Quad SPI
 │   └── w25q512_fdcb.bin      — FCB для W25Q512 Quad SPI
-├── HAB_GUIDE.md      — подробно про HAB-образы и процесс подписи
+├── ../../docs/mimxrt1052/HAB_GUIDE.md      — подробно про HAB-образы и процесс подписи
 ├── pyproject.toml
 └── uv.lock
 ```
