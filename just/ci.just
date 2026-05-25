@@ -32,7 +32,7 @@ test:
 lint:
     @echo "TODO: enable just build::lint / just build::check after local stabilization"
 
-[doc('Собрать HAB Release-артефакты для выкладки')]
+[doc('Собрать HAB Release-артефакты для деплоя')]
 [group('ci')]
 release: build
     just build::hab-all-release

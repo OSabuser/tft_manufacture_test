@@ -377,15 +377,15 @@ bsp_status_t bsp_display_set_rotation(bsp_display_rotation_t rotation)
         lr_value = 1U;
         ud_value = 0U;
         break;
-    case BSP_DISPLAY_ROTATE_90:
+    case BSP_DISPLAY_FLIP_VERTICAL:
         lr_value = 1U;
         ud_value = 1U;
         break;
-    case BSP_DISPLAY_ROTATE_180:
+    case BSP_DISPLAY_FLIP_BOTH:
         lr_value = 0U;
         ud_value = 1U;
         break;
-    case BSP_DISPLAY_ROTATE_270:
+    case BSP_DISPLAY_FLIP_HORIZONTAL:
         lr_value = 0U;
         ud_value = 0U;
         break;

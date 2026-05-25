@@ -37,10 +37,10 @@ typedef enum bsp_display_type_e
 
 typedef enum bsp_display_rotation_e
 {
-    BSP_DISPLAY_ROTATE_0 = 0U, /**< Горизонтальная (нормальная). LR=1 UD=0. */
-    BSP_DISPLAY_ROTATE_90,     /**< Вертикальная CW 90°. LR=1 UD=1. */
-    BSP_DISPLAY_ROTATE_180, /**< Горизонтальная перевёрнутая. LR=0 UD=1. */
-    BSP_DISPLAY_ROTATE_270, /**< Вертикальная CCW 90°. LR=0 UD=0. */
+    BSP_DISPLAY_ROTATE_0 = 0U, /**< LR=1 UD=0. Нормальная ориентация. */
+    BSP_DISPLAY_FLIP_VERTICAL, /**< LR=1 UD=1. Вертикальный флип (UPDN). */
+    BSP_DISPLAY_FLIP_BOTH, /**< LR=0 UD=1. Горизонтальный + вертикальный. */
+    BSP_DISPLAY_FLIP_HORIZONTAL, /**< LR=0 UD=0. Горизонтальный флип (SHLR). */
 } bsp_display_rotation_t;
 
 /* ── Размер дисплея ──────────────────────────────────────────────────── */

@@ -224,7 +224,7 @@ setup-m5-udev:
 
 # =============================================================================
 # ГРУППА: flash-sdp — USB Serial Downloader (SDP через ROM-загрузчик)
-# Требует: плата в режиме Serial Downloader (BOOT_MODE = 01)
+# Требование: плата в режиме Serial Downloader (BOOT_MODE = 01)
 # =============================================================================
 
 [doc('Прошить образ через USB SDP: flash <firmware_test|bootloader|app> <debug|release>')]
@@ -272,8 +272,6 @@ flash-production:
 
 # =============================================================================
 # ГРУППА: flash-swd — прошивка через SWD (MCU-Link, без смены BOOT_MODE)
-# Требует: GDB-сервер НЕ запущен (pyOCD занимает пробник монопольно)
-# После записи — обязательный power cycle платы
 # =============================================================================
 
 _flash_swd := TOOLS_DIR / "flash_swd.py"
@@ -379,7 +377,7 @@ hil-usb-cdc:
 #   just host::debug-server  →  VSCode: 🐛 Debug: <project>  →  F5
 #
 # Рабочий цикл Б — прошить и отладить без USB SDP:
-#   just host::flash-swd-test-debug  →  power cycle  →
+#   just host::flash-swd-test-debug
 #   just host::debug-server          →  VSCode: 🐛 Debug: firmware_test  →  F5
 #
 # Важно: debug-server и flash-swd используют MCU-Link монопольно.
@@ -505,12 +503,6 @@ sdp-status:
 [group('util')]
 flashloader-status:
     cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run blhost -u 0x15A2,0x0073 -- get-property 1 0
-
-[doc('Обновить spsdk до указанной версии: upgrade-tools <version>')]
-[group('util')]
-upgrade-tools version:
-    cd "{{ TOOLS_DIR }}" && uv add "spsdk=={{ version }}" && uv sync
-    @echo "  ✅  spsdk upgraded to {{ version }}"
 
 [doc('Открыть UART монитор на MCU-Link VCOM (кроссплатформенный)')]
 [group('util')]

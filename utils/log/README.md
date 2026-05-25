@@ -6,24 +6,24 @@
 USB CDC, Flash и т.д. Транспорт подключается через `log_init()` в виде
 callback-функции. Адаптеры живут в `port/log/`.
 
-| Параметр | Значение |
-|---|---|
-| Формат | `[  timestamp][L][TAG] сообщение\r\n` |
-| Буфер строки | 256 байт (переопределяется через `LOG_BUF_SIZE`) |
-| Управление уровнем | `LOG_LEVEL` через CMake `-DLOG_LEVEL=N` |
-| Thread-safety | мьютекс через weak-хуки (`log_mutex_lock/unlock`) |
-| Зависимости | `<stdarg.h>`, `<stdio.h>`, `<stddef.h>` |
+| Параметр           | Значение                                          |
+| ------------------ | ------------------------------------------------- |
+| Формат             | `[  timestamp][L][TAG] сообщение\r\n`             |
+| Буфер строки       | 256 байт (переопределяется через `LOG_BUF_SIZE`)  |
+| Управление уровнем | `LOG_LEVEL` через CMake `-DLOG_LEVEL=N`           |
+| Thread-safety      | мьютекс через weak-хуки (`log_mutex_lock/unlock`) |
+| Зависимости        | `<stdarg.h>`, `<stdio.h>`, `<stddef.h>`           |
 
 ## Уровни
 
-| N | Макрос | Имя |
-|---|--------|-----|
-| 0 | — | off — все `LOG_*` → `((void)0)`, нулевой ROM |
-| 1 | `LOG_E` | error |
-| 2 | `LOG_W` | warn |
-| 3 | `LOG_I` | info |
-| 4 | `LOG_D` | debug |
-| 5 | `LOG_V` | verbose |
+| N   | Макрос  | Имя                                          |
+| --- | ------- | -------------------------------------------- |
+| 0   | —       | off — все `LOG_*` → `((void)0)`, нулевой ROM |
+| 1   | `LOG_E` | error                                        |
+| 2   | `LOG_W` | warn                                         |
+| 3   | `LOG_I` | info                                         |
+| 4   | `LOG_D` | debug                                        |
+| 5   | `LOG_V` | verbose                                      |
 
 По умолчанию: `VERBOSE` в Debug-сборке, `OFF` в Release (`NDEBUG`).
 
@@ -63,8 +63,8 @@ typedef void (*log_write_cb_t)(const char *p_buf, size_t len, void *p_ctx);
 
 Готовые адаптеры в `port/log/`:
 
-| Адаптер | Транспорт |
-|---------|-----------|
+| Адаптер    | Транспорт                                |
+| ---------- | ---------------------------------------- |
 | `log_uart` | `bsp_uart_host` (LPUART1, MCU-Link VCOM) |
 
 ## Мьютекс и временна́я метка (FreeRTOS)

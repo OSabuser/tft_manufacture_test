@@ -13,28 +13,28 @@
 
 ## Аппаратный контекст
 
-| Сигнал / параметр | Аппаратное назначение                                            |
-| ----------------- | ---------------------------------------------------------------- |
+| Сигнал / параметр | Аппаратное назначение                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
 | ELCDIF            | NXP ELCDIF, RGB-режим, формат пикселя `kELCDIF_PixelFormatXRGB8888`, шина `kELCDIF_DataBus24Bit` |
-| Подсветка         | `GPIO1[20]` — active-high                                        |
-| LR (горизонт.)    | `GPIO1[28]` (`Lcdlr_value`)                                      |
-| MODE              | `GPIO1[29]` — HIGH = DE mode (обязательно для ELCDIF)            |
-| UD (вертикаль)    | `GPIO1[30]`                                                      |
-| DITHB             | `GPIO1[31]` — HIGH = dithering disable (IC default)              |
-| Пиксельный клок   | PLL2 (`mux=0`) для TFT7/TFT8; Video PLL (`mux=2`) для TFT4       |
-| IRQ               | `LCDIF_IRQHandler` в ITCM, приоритет `DISPLAY_IRQ_PRIORITY = 2`  |
+| Подсветка         | `GPIO1[20]` — active-high                                                                        |
+| LR (горизонт.)    | `GPIO1[28]` (`Lcdlr_value`)                                                                      |
+| MODE              | `GPIO1[29]` — HIGH = DE mode (обязательно для ELCDIF)                                            |
+| UD (вертикаль)    | `GPIO1[30]`                                                                                      |
+| DITHB             | `GPIO1[31]` — HIGH = dithering disable (IC default)                                              |
+| Пиксельный клок   | PLL2 (`mux=0`) для TFT7/TFT8; Video PLL (`mux=2`) для TFT4                                       |
+| IRQ               | `LCDIF_IRQHandler` в ITCM, приоритет `DISPLAY_IRQ_PRIORITY = 2`                                  |
 
 `IOMUXC` конфигурируется в `BOARD_InitPins()` за пределами модуля — здесь
 выполняется только `GPIO_PinWrite`.
 
 Делители пиксельного клока (исходный код, PLL2 = 528 МГц):
 
-| Дисплей | clk_mux       | pre_div | div | Эффективная частота |
-| ------- | ------------- | ------- | --- | ------------------- |
-| TFT7    | PLL2          | 2       | 4   | `528/3/5 = 35.2 МГц`|
-| TFT8    | PLL2          | 2       | 3   | `528/3/4 = 44.0 МГц`|
-| TFT4    | Video PLL     | — (TODO)| —   | требует `CLOCK_InitVideoPll` |
-| TFT10   | —             | —       | —   | таблица не заполнена (`{ 0 }`) |
+| Дисплей | clk_mux   | pre_div  | div | Эффективная частота            |
+| ------- | --------- | -------- | --- | ------------------------------ |
+| TFT7    | PLL2      | 2        | 4   | `528/3/5 = 35.2 МГц`           |
+| TFT8    | PLL2      | 2        | 3   | `528/3/4 = 44.0 МГц`           |
+| TFT4    | Video PLL | — (TODO) | —   | требует `CLOCK_InitVideoPll`   |
+| TFT10   | —         | —        | —   | таблица не заполнена (`{ 0 }`) |
 
 Тайминги HSW/HFP/HBP/VSW/VFP/VBP заданы константами в `display.c`
 (`DISPLAY_TFT7_*`, `DISPLAY_TFT8_*`, `DISPLAY_TFT4_*`).
@@ -43,7 +43,7 @@
 
 ## Состав модуля
 
-```
+```bash
 bsp/display/
 ├── include/bsp/display.h    # публичный заголовок
 ├── src/display.c            # реализация API + LCDIF_IRQHandler
@@ -129,11 +129,11 @@ bsp_display_type_t bsp_display_get_type(void);
 
 Коды возврата:
 
-| Код                    | Когда                                                       |
-| ---------------------- | ----------------------------------------------------------- |
-| `BSP_OK`               | Дисплей инициализирован (или уже был инициализирован).      |
-| `BSP_ERR_PARAM`        | `type >= BSP_DISPLAY_COUNT`.                                |
-| `BSP_ERR_NOT_SUPPORTED`| `type` требует Video PLL (TFT4) — `init_pixelclock` возвращает ошибку до реализации `CLOCK_InitVideoPll`. |
+| Код                     | Когда                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| `BSP_OK`                | Дисплей инициализирован (или уже был инициализирован).                                                    |
+| `BSP_ERR_PARAM`         | `type >= BSP_DISPLAY_COUNT`.                                                                              |
+| `BSP_ERR_NOT_SUPPORTED` | `type` требует Video PLL (TFT4) — `init_pixelclock` возвращает ошибку до реализации `CLOCK_InitVideoPll`. |
 
 > Поведение для `BSP_DISPLAY_TFT10` целостно не описано в коде: запись в
 > `K_HW_CFG[BSP_DISPLAY_TFT10]` сделана как `{ 0 }`. Использовать TFT10 как
@@ -156,12 +156,12 @@ bsp_display_type_t bsp_display_get_type(void);
 
 Соответствие rotation → LR/UD (из `display.c`):
 
-| Rotation               | LR | UD |
-| ---------------------- | -- | -- |
-| `BSP_DISPLAY_ROTATE_0` |  1 |  0 |
-| `BSP_DISPLAY_ROTATE_90`|  1 |  1 |
-| `BSP_DISPLAY_ROTATE_180`|  0 |  1 |
-| `BSP_DISPLAY_ROTATE_270`|  0 |  0 |
+| Rotation                      | LR  | UD  |
+| ----------------------------- | --- | --- |
+| `BSP_DISPLAY_ROTATE_0`        | 1   | 0   |
+| `BSP_DISPLAY_FLIP_VERTICAL`   | 1   | 1   |
+| `BSP_DISPLAY_FLIP_BOTH`       | 0   | 1   |
+| `BSP_DISPLAY_FLIP_HORIZONTAL` | 0   | 0   |
 
 ### `bsp_display_set_next_buffer`
 

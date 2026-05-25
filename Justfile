@@ -32,7 +32,7 @@ CACHE_DIR  := justfile_directory() / '.cache'
 mod host 'just/host.just'
 # build.just — сборка в DevContainer   
 mod build 'just/build.just'
-# ci.just — CI/CD сценарии (опционально)  
+# ci.just — CI/CD сценарии  
 mod ci 'just/ci.just'   
 
 # === Default рецепт ===
@@ -42,16 +42,10 @@ mod ci 'just/ci.just'
 default:
     @just --list --list-submodules
 
-# === Популярные алиасы (для удобства команды) ===
-# Сокращают длинные вызовы модулей
-
+# === Популярные алиасы ===
 [doc('Первичная настройка окружения после git clone (на хосте)')]
 init:
     @just host::bootstrap
-
-[doc('Прошить firmware_test Debug во Flash через USB ROM')]
-flash:
-    @just host::flash-test-debug
 
 [doc('Собрать все HAB-образы в Release')]
 build-all:

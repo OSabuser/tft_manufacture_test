@@ -48,6 +48,15 @@
 #define DISPLAY_TEST_TYPE BSP_DISPLAY_TFT8
 #endif
 
+/* ── Вспомогательные функции ────────────────────────────────────────────── */
+
+static test_result_t make_fail(const char *p_detail)
+{
+    test_result_t result = { .status = TEST_STATUS_FAIL, .duration_ms = 0U };
+    (void) snprintf(result.detail, TEST_DETAIL_SIZE, "%s", p_detail);
+    return result;
+}
+
 /* ── Константы ───────────────────────────────────────────────────────── */
 
 /** @brief XRGB8888 цвета для тестовых заливок. */
@@ -216,8 +225,8 @@ static bool step_rotation(test_result_t *p_out)
                                          "Screen: left RED, right BLUE?", p_out);
     if (ok)
     {
-        ok = step_rot_apply_and_confirm(BSP_DISPLAY_ROTATE_90, "display_rot90",
-                                        "Color zones changed orientation?", p_out);
+        ok = step_rot_apply_and_confirm(BSP_DISPLAY_FLIP_HORIZONTAL, "display_rot_base",
+                                        "Left RED and right BLUE swapped sides?", p_out);
     }
 
     /* Восстановить ROTATE_0 в любом исходе */
@@ -246,12 +255,10 @@ static void display_test_init(void)
 
 static test_result_t display_test_run(void)
 {
+
     if (!g_s_ready)
     {
-        test_result_t result = { .status = TEST_STATUS_FAIL, .duration_ms = 0U };
-        (void) snprintf(result.detail, TEST_DETAIL_SIZE, "%s",
-                        "display init failed — check DISPLAY_TEST_TYPE");
-        return result;
+        return make_fail("display init failed");
     }
 
     test_result_t fail_result = { .status = TEST_STATUS_FAIL, .duration_ms = 0U, .detail = { 0 } };

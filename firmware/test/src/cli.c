@@ -37,6 +37,11 @@ static const char K_FIELD_CMD[]       = "\"cmd\"";
 static const char K_FIELD_ID[]        = "\"id\"";
 static const char K_FIELD_CONFIRMED[] = "\"confirmed\"";
 
+/** @brief Буфер непрочитанного остатка chunk после вызова process_line(). */
+static uint8_t g_s_chunk_buf[CLI_LINE_BUF_SIZE];
+static size_t g_s_chunk_len = 0U;
+static size_t g_s_chunk_pos = 0U;
+
 /* ── RX line buffer ────────────────────────────────────────────────────── */
 
 static uint8_t g_s_line_buf[CLI_LINE_BUF_SIZE];
@@ -282,7 +287,9 @@ static void process_line(const char *p_line)
 
 void cli_init(void)
 {
-    g_s_line_len = 0U;
+    g_s_line_len  = 0U;
+    g_s_chunk_len = 0U;
+    g_s_chunk_pos = 0U;
 }
 
 void cli_send(const char *p_resp)
@@ -292,41 +299,49 @@ void cli_send(const char *p_resp)
 
 void cli_process(void)
 {
-    uint8_t chunk[CLI_LINE_BUF_SIZE];
-    size_t nbytes = bsp_usb_cdc_read(chunk, sizeof(chunk));
-
-    for (size_t byte_idx = 0U; byte_idx < nbytes; byte_idx++)
+    /* Если в g_s_chunk_buf есть остаток от предыдущего вызова —
+     * продолжаем его обработку. Иначе читаем новый chunk.
+     *
+     * Это решает проблему потери confirm при блокирующем dispatch_test:
+     * confirm приходит в chunk вместе с командой run, но process_line()
+     * уходит в блокировку не дочитав chunk до конца. При следующем вызове
+     * cli_process() (из inner polling loop в test_runner_wait_confirm)
+     * мы продолжаем обработку остатка chunk, уже после arm_confirm().
+     */
+    if (g_s_chunk_pos >= g_s_chunk_len)
     {
-        uint8_t byte = chunk[byte_idx];
+        g_s_chunk_len = bsp_usb_cdc_read(g_s_chunk_buf, sizeof(g_s_chunk_buf));
+        g_s_chunk_pos = 0U;
+    }
+
+    while (g_s_chunk_pos < g_s_chunk_len)
+    {
+        uint8_t byte = g_s_chunk_buf[g_s_chunk_pos];
+        g_s_chunk_pos++;
 
         if (g_s_line_len >= (CLI_LINE_BUF_SIZE - 1U))
         {
             g_s_line_len = 0U;
             protocol_send_error("LINE_TOO_LONG");
-            continue;
+            return;
         }
 
         if (byte == (uint8_t) '\n')
         {
-            /* Отбросить '\r' если терминал шлёт CR+LF */
             if (g_s_line_len > 0U && g_s_line_buf[g_s_line_len - 1U] == (uint8_t) '\r')
             {
                 g_s_line_len--;
             }
-
             g_s_line_buf[g_s_line_len] = '\0';
-
-            if (g_s_line_len > 0U)
+            size_t completed_len       = g_s_line_len;
+            g_s_line_len               = 0U; /* ← сбросить ДО process_line */
+            if (completed_len > 0U)
             {
                 process_line((const char *) g_s_line_buf);
             }
+        }
 
-            g_s_line_len = 0U;
-        }
-        else
-        {
-            g_s_line_buf[g_s_line_len] = byte;
-            g_s_line_len++;
-        }
+        g_s_line_buf[g_s_line_len] = byte;
+        g_s_line_len++;
     }
 }
