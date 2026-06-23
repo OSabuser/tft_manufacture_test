@@ -7,20 +7,17 @@
 
 ## Концепция
 
-BSP — единственное место в монорепо где есть знание о конкретном железе. Все три прошивки работают с периферией только через BSP. Прямых вызовов NXP SDK (`fsl_*.h`) за пределами `bsp/` быть не должно.
+BSP — единственное место в монорепо где есть знание о конкретном железе. Все три
+прошивки работают с периферией только через BSP. Прямых вызовов NXP SDK (`fsl_*.h`)
+за пределами `bsp/` быть не должно.
 
-```bash
-firmware/test        firmware/bootloader        firmware/tft_app
-      ↓                      ↓                         ↓
-  ┌─────────────────────────────────────────────────────┐
-  │                        BSP                          │
-  │   bsp_led  bsp_opto  bsp_tick  bsp_uart_host  ...  │
-  └─────────────────────────────────────────────────────┘
-      ↓                      ↓                         ↓
-  ┌─────────────────────────────────────────────────────┐
-  │                  NXP SDK / middleware                │
-  │       fsl_lpuart   fsl_gpio   fsl_iomuxc   ...      │
-  └─────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    FW["firmware/test · firmware/bootloader · firmware/tft_app"]
+    BSP["BSP"]
+    SDK["NXP SDK / middleware\nfsl_lpuart · fsl_gpio · fsl_iomuxc · …"]
+
+    FW --> BSP --> SDK
 ```
 
 ---
@@ -42,18 +39,18 @@ bsp/
 │       └── startup_MIMXRT1052.S
 │
 ├── common/                 # bsp_status_t и общие типы
-├── led/                    # bsp_led     — два UserLed (GPIO3[3], GPIO3[4])
-├── tick/                   # bsp_tick    — SysTick / FreeRTOS-совместимый таймер
-├── uart_host/              # bsp_uart_host — LPUART1 (MCU-Link VCOM, J2)
+├── led/                    # bsp_led          — два UserLed (GPIO3[3], GPIO3[4])
+├── tick/                   # bsp_tick         — SysTick / FreeRTOS-совместимый таймер
+├── uart_host/              # bsp_uart_host    — LPUART1 (MCU-Link VCOM, J2)
 │   └── mocks/              # fff-заглушки для host-тестов
-├── opto/                   # bsp_opto    — оптоизолированные входы PS2801-4
-├── can/                    # bsp_can     — FlexCAN2 (трансивер SN65HVD230D)
-├── button/                 # bsp_button  — тактовые кнопки SWT6x6 с debounce
-├── display/                # bsp_display — TFT-дисплей
-├── usb_cdc/                # bsp_usb_cdc — USB CDC ACM
-├── sdram/                  # bsp_sdram   — внешний SDRAM через SEMC
-├── qspi_flash/             # bsp_qspi_flash — QSPI Flash W25Q64/128/256/512
-└── sd/                     # bsp_sd      — SD host-контроллер (USDHC1)
+├── opto/                   # bsp_opto         — оптоизолированные входы PS2801-4
+├── can/                    # bsp_can          — FlexCAN2 (трансивер SN65HVD230D)
+├── button/                 # bsp_button       — тактовые кнопки SWT6x6 с debounce
+├── display/                # bsp_display      — TFT-дисплей
+├── usb_cdc/                # bsp_usb_cdc      — USB CDC ACM
+├── sdram/                  # bsp_sdram        — внешний SDRAM через SEMC
+├── qspi_flash/             # bsp_qspi_flash   — QSPI Flash W25Q64/128/256/512
+└── sd/                     # bsp_sd           — SD host-контроллер (USDHC1)
 ```
 
 ---
@@ -73,10 +70,10 @@ target_link_libraries(bsp_<любой_компонент> PUBLIC bsp_board)
 
 ### Boot-стратегии — INTERFACE-библиотеки
 
-| Таргет CMake | Сценарий | Кто использует |
-|---|---|---|
-| `bsp_boot_xip` | XIP — исполнение из Flash | `firmware/test`, `firmware/tft_app` |
-| `bsp_boot_ram` | исполнение из ITCM/DTCM | HIL target-прошивки (`tests/target/`) |
+| Таргет CMake   | Сценарий                  | Кто использует                        |
+| -------------- | ------------------------- | ------------------------------------- |
+| `bsp_boot_xip` | XIP — исполнение из Flash | `firmware/test`, `firmware/tft_app`   |
+| `bsp_boot_ram` | Исполнение из ITCM/DTCM   | HIL target-прошивки (`tests/target/`) |
 
 Подключается явно в каждом проекте:
 
@@ -87,19 +84,19 @@ target_link_libraries(test_hil_opto PRIVATE bsp_board bsp_boot_ram ...)
 
 ### Компоненты периферии
 
-| Библиотека | Модуль | README |
-|---|---|---|
-| `bsp_led` | `led/` | [led/README.md](led/README.md) |
-| `bsp_tick` | `tick/` | [tick/README.md](tick/README.md) |
-| `bsp_uart_host` | `uart_host/` | [uart_host/README.md](uart_host/README.md) |
-| `bsp_opto` | `opto/` | [opto/README.md](opto/README.md) |
-| `bsp_can` | `can/` | [can/README.md](can/README.md) |
-| `bsp_button` | `button/` | [button/README.md](button/README.md) |
-| `bsp_display` | `display/` | [display/README.md](display/README.md) |
-| `bsp_usb_cdc` | `usb_cdc/` | [usb_cdc/README.md](usb_cdc/README.md) |
-| `bsp_sdram` | `sdram/` | [sdram/README.md](sdram/README.md) |
+| Библиотека       | Модуль        | README                                       |
+| ---------------- | ------------- | -------------------------------------------- |
+| `bsp_led`        | `led/`        | [led/README.md](led/README.md)               |
+| `bsp_tick`       | `tick/`       | [tick/README.md](tick/README.md)             |
+| `bsp_uart_host`  | `uart_host/`  | [uart_host/README.md](uart_host/README.md)   |
+| `bsp_opto`       | `opto/`       | [opto/README.md](opto/README.md)             |
+| `bsp_can`        | `can/`        | [can/README.md](can/README.md)               |
+| `bsp_button`     | `button/`     | [button/README.md](button/README.md)         |
+| `bsp_display`    | `display/`    | [display/README.md](display/README.md)       |
+| `bsp_usb_cdc`    | `usb_cdc/`    | [usb_cdc/README.md](usb_cdc/README.md)       |
+| `bsp_sdram`      | `sdram/`      | [sdram/README.md](sdram/README.md)           |
 | `bsp_qspi_flash` | `qspi_flash/` | [qspi_flash/README.md](qspi_flash/README.md) |
-| `bsp_sd` | `sd/` | [sd/README.md](sd/README.md) |
+| `bsp_sd`         | `sd/`         | [sd/README.md](sd/README.md)                 |
 
 ---
 
@@ -107,7 +104,8 @@ target_link_libraries(test_hil_opto PRIVATE bsp_board bsp_boot_ram ...)
 
 ### Граница изоляции
 
-Публичные заголовки (`include/bsp/*.h`) не должны содержать ни одного `#include` из NXP SDK. Снаружи BSP — только стандартные типы C и собственные типы проекта.
+Публичные заголовки (`include/bsp/*.h`) не должны содержать ни одного `#include`
+из NXP SDK. Снаружи BSP — только стандартные типы C и собственные типы проекта.
 
 ```c
 /* ПРАВИЛЬНО — bsp/opto/include/bsp/opto.h */

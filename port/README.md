@@ -1,34 +1,39 @@
 # port/ — porting layer
 
-Glue-код между сторонними библиотеками (`lib/`) и платформой (`bsp/`).
+Glue-код между сторонними библиотеками (`lib/`, `utils/`) и платформой (`bsp/`).
 
 ---
 
-## Зачем нужен отдельный каталог
+## Концепция
 
-В проекте три слоя кода с чёткими границами:
+В проекте четыре слоя с чёткими границами:
 
-```bash
-lib/        сторонний код — ничего не знает о проекте
-bsp/        железо — драйверы периферии MIMXRT1052
-utils/      платформонезависимые алгоритмы (ring_buffer, log и др.)
-port/       ← glue: адаптирует lib/ и utils/ к конкретной платформе
-firmware/   бизнес-логика — использует всё вышеперечисленное
+```mermaid
+graph TB
+    FW["firmware/*\nбизнес-логика"]
+    PORT["port/\nglue: адаптирует utils/ и lib/ к платформе"]
+    BSP["bsp/\nдрайверы периферии MIMXRT1052"]
+    UTILS["utils/\nплатформонезависимые алгоритмы"]
+    LIB["lib/ + sdk/\nсторонний код"]
+
+    FW --> PORT
+    FW --> BSP
+    FW --> UTILS
+    PORT --> BSP
+    PORT --> UTILS
+    PORT --> LIB
 ```
 
 Код попадает в `port/` если выполняются оба условия:
 
-1. Связывает платформонезависимую библиотеку/утилиту с конкретным BSP.
+1. Связывает платформонезависимую библиотеку / утилиту с конкретным BSP.
 2. Сам по себе не является ни библиотекой, ни драйвером.
 
-Примеры: адаптер логгера к UART, diskio-реализация FatFS поверх bsp_sdio,
-FreeRTOS heap и assert-хуки.
-
-Код НЕ попадает в `port/` если:
+**Не попадает в `port/`:**
 
 - Не зависит от `bsp/` → идёт в `utils/`
-- Является самостоятельным драйвером периферии → идёт в `bsp/`
-- Это сторонняя библиотека без изменений → идёт в `lib/`
+- Самостоятельный драйвер периферии → идёт в `bsp/`
+- Сторонняя библиотека без изменений → идёт в `lib/`
 
 ---
 
@@ -38,11 +43,34 @@ FreeRTOS heap и assert-хуки.
 port/
 ├── CMakeLists.txt
 ├── README.md                  ← этот файл
-└── log/                       ← UART-адаптер для utils/log
-├── fatfs/                     ← diskio поверх bsp_sd / bsp_qspi
-# Планируется:
-└── freertos/                  ← heap_4.c, configASSERT, vApplicationHooks
+├── log/                       ← UART-адаптер для utils/log
+│   ├── CMakeLists.txt         # таргет port_log_uart
+│   ├── README.md
+│   ├── include/port/
+│   │   └── log_uart.h
+│   └── src/
+│       └── log_uart.c
+└── fatfs/                     ← diskio поверх bsp_sd (FatFS)
+    ├── CMakeLists.txt         # таргет port_fatfs_sd (INTERFACE)
+    └── sd/
+        ├── CMakeLists.txt
+        ├── include/port/fatfs/
+        │   └── diskio_sd.h
+        └── src/
+            └── diskio_sd.c
 ```
+
+**Планируется:** `port/freertos/` — `heap_4.c`, `configASSERT`,
+`vApplicationHooks`.
+
+---
+
+## Таблица адаптеров
+
+| Таргет CMake    | Что адаптирует | Куда            | Тип       |
+| --------------- | -------------- | --------------- | --------- |
+| `port_log_uart` | `utils/log`    | `bsp_uart_host` | STATIC    |
+| `port_fatfs_sd` | FatFS diskio   | `bsp_sd`        | INTERFACE |
 
 ---
 
@@ -51,8 +79,8 @@ port/
 **Именование таргетов:** `port_<что>_<транспорт>` — например `port_log_uart`,
 `port_fatfs_sd`. Позволяет иметь несколько адаптеров для одной библиотеки.
 
-**Include-путь:** `#include "port/<модуль>.h"` — публичные заголовки
-всегда в `port/<модуль>/include/port/`.
+**Include-путь:** публичные заголовки в `port/<модуль>/include/port/`,
+подключение через `#include "port/<модуль>.h"`.
 
-**Не компилируется для host-тестов:** `bsp/` недоступен на хосте, поэтому
-`port/CMakeLists.txt` возвращает управление при `BUILD_TESTS_HOST=ON`.
+**Host-сборка:** `port/CMakeLists.txt` содержит ранний `return()` при
+`BUILD_TESTS_HOST=ON` — `bsp/` недоступен на хосте.

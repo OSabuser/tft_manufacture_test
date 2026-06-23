@@ -11,7 +11,9 @@
 
 ## Способ 1 — USB SDP (Serial Download Protocol)
 
-Стандартный производственный способ. ROM-загрузчик принимает образ по USB и записывает его во Flash через Flashloader. Требует физического переключения пина `BOOT_MOD_1`.
+Стандартный производственный способ. ROM-загрузчик принимает образ по USB и
+записывает его во Flash через Flashloader. Требует физического переключения
+пина `BOOT_MOD_1`.
 
 ### 1.1 Перевести плату в SDP-режим
 
@@ -58,17 +60,15 @@ just host::flash-production      # bootloader release + app release (с подт
 
 ### 1.4 Что происходит при прошивке через USB SDP
 
-```bash
-Плата в SDP-режиме (1FC9:0130)
-  │
-  ├── sdphost: загрузить ivt_flashloader.bin в RAM (0x20001C00)
-  └── sdphost: jump-address → Flashloader поднимается как 15A2:0073
-        │
-        ├── configure-memory (0xC0000007) — инициализация FlexSPI NOR
-        ├── flash-erase-region 0x60000000
-        ├── configure-memory (0xF000000F) — запись FCB в 0x60000000
-        ├── write-memory 0x60001000 ← HAB-образ
-        └── reset
+```mermaid
+flowchart TD
+    A["Плата в SDP-режиме\n1FC9:0130"] --> B["sdphost\nзагрузить ivt_flashloader.bin\nв RAM 0x20001C00"]
+    B --> C["sdphost jump-address\nFlashloader поднимается\nкак 15A2:0073"]
+    C --> D["configure-memory 0xC0000007\nинициализация FlexSPI NOR"]
+    D --> E["flash-erase-region 0x60000000"]
+    E --> F["configure-memory 0xF000000F\nзапись FCB в 0x60000000"]
+    F --> G["write-memory 0x60001000\nHAB-образ"]
+    G --> H["reset"]
 ```
 
 ROM-загрузчик сам конфигурирует FlexSPI через DCD из HAB-образа, поэтому FCB
@@ -80,13 +80,14 @@ ROM-загрузчик сам конфигурирует FlexSPI через DCD 
 
 Прошивка через отладочный пробник (MCU-Link, CMSIS-DAP). Плата остаётся
 в нормальном режиме загрузки — переключать `BOOT_MOD_1` не нужно. Удобно
-при итеративной разработке когда плата закреплена в стенде, а также как
-часть отладочного цикла.
+при итеративной разработке когда плата закреплена в стенде.
 
 **Ограничения:**
 
-- После записи обязателен **power cycle** (не reset) — VECTRESET не реинициализирует FlexSPI, Boot ROM не стартует
-- MCU-Link используется монопольно: нельзя запускать одновременно с `debug-server` или HIL-тестами
+- После записи обязателен **power cycle** (не reset) — VECTRESET не
+  реинициализирует FlexSPI, Boot ROM не стартует
+- MCU-Link используется монопольно: нельзя запускать одновременно с
+  `debug-server` или HIL-тестами
 
 ### 2.1 Подготовить HAB-образ (внутри devcontainer)
 
@@ -99,8 +100,8 @@ just build::hab-app-debug
 ### 2.2 Прошить (хостовый терминал)
 
 ```bash
-just host::flash-swd-test-debug        # firmware_test Debug
-just host::flash-swd-test-release      # firmware_test Release
+just host::flash-swd-test-debug
+just host::flash-swd-test-release
 just host::flash-swd-bootloader-debug
 just host::flash-swd-bootloader-release
 just host::flash-swd-app-debug
@@ -134,7 +135,7 @@ just host::flash-swd-app-release
 | `tools/hil/` (uv-проект)          | pyocd, вызывается через `uv run`    |
 
 FCB-бинарник (`w25q128_fdcb.bin`) генерируется в NXP SecureProvisioningTool
-для W25Q128 в режиме Quad SPI и хранится в репозитории — пересоздавать не нужно.
+и хранится в репозитории — пересоздавать не нужно.
 
 ---
 

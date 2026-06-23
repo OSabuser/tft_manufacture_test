@@ -1,59 +1,34 @@
 # tft_manufacture_test
 
-Монорепозиторий для **MIMXRT1052CVJ5B**. Содержит три независимых firmware-проекта с общей инфраструктурой сборки, тестирования и инструментарием.
+Монорепозиторий для **MIMXRT1052CVJ5B**. Содержит три независимых firmware-проекта
+с общей инфраструктурой сборки, тестирования и инструментарием.
 
 > Архитектура рабочего окружения — [docs/DEV_ARCH.md](docs/DEV_ARCH.md)
 
 ---
 
-## Три firmware-проекта
+## Firmware-проекты
 
 | Проект              | Путь                   | Описание                                                                               |
 | ------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
 | Тестовая прошивка   | `firmware/test/`       | Входной контроль платы: CAN, UART, SDRAM, QSPI, SDIO, RGB, оптовходы, LED, кнопки, MQS |
-| Загрузчик           | `firmware/bootloader/` | A/B обновление через uSD. Сам обновляется только через USB ROM + blhost / SWD          |
-| Production прошивка | `firmware/tft_app/`    | FreeRTOS + FatFS + бизнес-логика. Обновляется загрузчиком                              |
+| Загрузчик           | `firmware/bootloader/` | A/B обновление через uSD. Обновляется только через USB ROM + blhost / SWD              |
+| Production прошивка | `firmware/tft_app/`    | Приложение с реализацией логики лифтового индикатора. Обновляется загрузчиком          |
 
 ---
 
 ## BSP
 
-| Модуль          | Путь             | Описание                                                  |
-| --------------- | ---------------- | --------------------------------------------------------- |
-| `bsp_led`       | `bsp/led/`       | Два UserLed (GPIO3[3], GPIO3[4])                          |
-| `bsp_tick`      | `bsp/tick/`      | SysTick / FreeRTOS-совместимый таймер                     |
-| `bsp_uart_host` | `bsp/uart_host/` | LPUART1 — MCU-Link VCOM (J2)                              |
-| `bsp_opto`      | `bsp/opto/`      | Оптоизолированные входы PS2801-4: EXT_IN1, EXT_IN2, RS_RX |
-| `bsp_usb_cdc`   | `bsp/usb_cdc/`   | USB CDC ACM                                               |
-| generated       | `bsp/generated/` | NXP Config Tools: pin_mux, clock_config, board, startup   |
+Описание модулей, правила написания компонентов и CMake-шаблоны — [bsp/README.md](bsp/README.md).
 
 ---
 
 ## Тестирование
 
-| Уровень          | Где                            | Инструменты                            | Запуск                                 |
-| ---------------- | ------------------------------ | -------------------------------------- | -------------------------------------- |
-| Host unit-тесты  | `tests/host/`                  | Unity + fff, clang                     | `just build::test-host` (devcontainer) |
-| HIL target-тесты | `tests/target/` + `tools/hil/` | pyOCD + pyserial + pytest + M5StampPLC | `just host::hil-run` (хост)            |
-
-**Host-тесты** запускаются в devcontainer без железа. BSP-модули тестируются через fff-фейки и stub-хедеры.
-
-**HIL-тесты** — каждый тест это пара: C-прошивка с UART CLI (`tests/target/<n>/`) и pytest-файл (`tools/hil/NN_test_<n>.py`). pyOCD загружает ELF в RAM через MCU-Link. Тесты с внешними сигналами управляются через M5StampPLC (реле → оптовходы таргета).
-
-Фактический набор HIL-тестов (`tools/hil/`):
-
-| Файл                 | Назначение                                |
-| -------------------- | ----------------------------------------- |
-| `01_test_uart.py`    | UART CLI / MCU-Link VCOM                  |
-| `02_test_opto.py`    | Оптовходы EXT_IN1, EXT_IN2, RS_RX         |
-| `03_test_can.py`     | CAN-интерфейс                             |
-| `04_test_button.py`  | Пользовательские кнопки                   |
-| `05_test_usb_cdc.py` | USB CDC ACM                               |
-
-```bash
-pytest → uart_cmd() → MCU-Link VCOM → RT1052
-pytest → m5.opto_set() → M5StampPLC RLY → EXT_IN1/IN2/RS_RX → RT1052
-```
+| Уровень          | Инструменты                            | Запуск                                 |
+| ---------------- | -------------------------------------- | -------------------------------------- |
+| Host unit-тесты  | Unity + fff, clang                     | `just build::test-host` (devcontainer) |
+| HIL target-тесты | pyOCD + pyserial + pytest + M5StampPLC | `just host::hil-run` (хост)            |
 
 - Как добавить host-тест — [docs/testing/host/HOST_CREATE_TEST.md](docs/testing/host/HOST_CREATE_TEST.md)
 - Как добавить HIL-тест — [docs/testing/hil/HIL_CREATE_TEST.md](docs/testing/hil/HIL_CREATE_TEST.md)
@@ -78,7 +53,7 @@ just host::hil-run                      # HIL-тесты
 just host::debug-server                 # GDB-сервер для отладки
 ```
 
-Прошивка подробно — [docs/HOW_TO_FLASH.md](docs/HOW_TO_FLASH.md)  
+Прошивка подробно — [docs/HOW_TO_FLASH.md](docs/HOW_TO_FLASH.md)
 Отладка подробно — [docs/HOW_TO_DEBUG.md](docs/HOW_TO_DEBUG.md)
 
 ---
@@ -92,7 +67,8 @@ just host::debug-server                 # GDB-сервер для отладки
 | pyOCD, pyserial, pytest, mpremote             | `tools/hil/uv.lock`  |
 | spsdk (nxpimage, blhost, sdphost)             | `tools/host/uv.lock` |
 
-Всё что не меняется — vendored. Сборка работает после `git clone` без интернета (кроме Python-зависимостей).
+Всё что не меняется — vendored. Сборка работает после `git clone` без интернета
+(кроме Python-зависимостей).
 
 ---
 

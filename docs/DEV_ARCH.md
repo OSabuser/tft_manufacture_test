@@ -22,43 +22,50 @@ HIL-тесты через pyOCD + pytest, GDB-сервер для отладки
 
 ## 2. Компоненты окружения
 
-```bash
-ПК разработчика
-│
-├── Хост (Linux / macOS / Windows + Git Bash)
-│   ├── just          ← запуск задач хостового уровня (just host::*)
-│   ├── docker        ← управление devcontainer
-│   ├── uv + spsdk    ← прошивка через USB ROM (flash_usb.py, sdphost, blhost)
-│   │                    venv: tools/host/
-│   ├── uv + pyocd    ← GDB-сервер отладки + HIL-тесты
-│   │     + pyserial     venv: tools/hil/
-│   │     + pytest
-│   │     + mpremote   ← деплой агента на M5StampPLC
-│   └── VSCode        ← IDE (Dev Containers extension)
-│
-├── Devcontainer (Docker)
-│   ├── arm-none-eabi-gcc  ← кросс-компилятор (firmware + HIL target-прошивки)
-│   ├── cmake + ninja      ← система сборки
-│   ├── clang-17           ← компилятор для host-тестов
-│   ├── clangd-17          ← LSP (автодополнение, диагностика)
-│   ├── clang-tidy-17      ← статический анализ
-│   ├── clang-format-17    ← форматирование кода
-│   ├── just               ← запуск задач внутри контейнера (just build::*)
-│   ├── uv + spsdk         ← сборка HAB-образов (только nxpimage)
-│   └── Unity + fff        ← фреймворки host-тестов
-│
-├── Плата TFT (MIMXRT1052)
-│   ├── USB ──────────────────────▶ хост (SDP-режим, прошивка через ROM)
-│   └── MCU-Link (USB) ───────────▶ хост (CMSIS-DAP)
-│         ├── SWD  ← pyOCD: GDB-сервер отладки + прошивка Flash + загрузка HIL ELF в RAM
-│         └── VCOM ← pytest общается с HIL прошивкой через UART CLI
-│
-└── HIL стенд (M5Stack StamPLC)
-    ├── USB ──────────────────────▶ хост (M5 агент, JSON-lines CLI)
-    ├── RLY1 ─────────────────────▶ VIN таргета (управление питанием)
-    ├── RLY2 ─────────────────────▶ RS_RX  таргета (BSP_OPTO_CH_RS)
-    ├── RLY3 ─────────────────────▶ EXT_IN1 таргета (BSP_OPTO_CH_IN1)
-    └── RLY4 ─────────────────────▶ EXT_IN2 таргета (BSP_OPTO_CH_IN2)
+### Физические связи
+
+```mermaid
+graph LR
+    Host["Хост"]
+
+    subgraph Board["Плата TFT (MIMXRT1052)"]
+        USB_SDP["USB"]
+        MCULink["MCU-Link"]
+    end
+
+    subgraph M5["HIL стенд (M5StampPLC)"]
+        M5_USB["USB"]
+        RLY["RLY1–4"]
+    end
+
+    USB_SDP -->|"SDP — прошивка через ROM"| Host
+    MCULink -->|"SWD — GDB-сервер, прошивка Flash, загрузка HIL ELF"| Host
+    MCULink -->|"VCOM — UART CLI (pytest ↔ HIL firmware)"| Host
+    M5_USB -->|"JSON-lines CLI"| Host
+    RLY -->|"VIN · RS_RX · EXT_IN1 · EXT_IN2"| Board
+```
+
+### Состав инструментов
+
+```mermaid
+graph TB
+    subgraph Host["Хост (Linux / macOS / Windows + Git Bash)"]
+        H1["just host::*\nзапуск задач хостового уровня"]
+        H2["docker\nуправление devcontainer"]
+        H3["uv + spsdk  —  tools/host/\nsdphost · blhost · nxpimage"]
+        H4["uv + pyocd + pyserial + pytest  —  tools/hil/\nGDB-сервер · HIL-тесты"]
+        H5["mpremote\nдеплой агента на M5StampPLC"]
+        H6["VSCode  (Dev Containers extension)"]
+    end
+
+    subgraph DC["Devcontainer (Docker)"]
+        D1["arm-none-eabi-gcc\nкросс-компилятор firmware + HIL"]
+        D2["cmake + ninja\nсистема сборки"]
+        D3["clang-17 · clangd-17\nclang-tidy · clang-format"]
+        D4["uv + spsdk  —  tools/host/\nтолько nxpimage (HAB-образы)"]
+        D5["Unity + fff\nфреймворки host-тестов"]
+        D6["just build::*\nзапуск задач внутри контейнера"]
+    end
 ```
 
 ---
@@ -130,17 +137,29 @@ HIL_USB_CDC_TIMEOUT=5.0
 
 **Как значения попадают в инструменты:**
 
-```bash
-.env
- │
- ├─▶ just (set dotenv-load + set export)
- │     ├─▶ just-рецепты: {{BOOTROM_VID}}, {{HIL_VCOM_PORT}}, {{GDB_PORT}}
- │     └─▶ uv run python ← наследует os.environ автоматически
- │           ├─▶ flash_usb.py:   os.environ["BOOTROM_VID"]
- │           ├─▶ flash_swd.py:   os.environ["PYOCD_TARGET"]
- │           └─▶ env_config.py:  os.environ["HIL_VCOM_PORT"]
- │
- └─▶ .vscode/launch.json ← через ${env:GDB_PORT}
+```mermaid
+flowchart LR
+    ENV[".env"]
+
+    subgraph Just["just (dotenv-load + export)"]
+        JR["just-рецепты\n{{BOOTROM_VID}}\n{{HIL_VCOM_PORT}}\n{{GDB_PORT}}"]
+        UV["uv run python\n(наследует os.environ)"]
+    end
+
+    subgraph Python["Python-скрипты"]
+        FU["flash_usb.py\nos.environ[BOOTROM_VID]"]
+        FS["flash_swd.py\nos.environ[PYOCD_TARGET]"]
+        EC["env_config.py\nos.environ[HIL_VCOM_PORT]"]
+    end
+
+    VS[".vscode/launch.json\n${env:GDB_PORT}"]
+
+    ENV --> Just
+    JR --> Python
+    UV --> FU
+    UV --> FS
+    UV --> EC
+    ENV --> VS
 ```
 
 ---
@@ -227,7 +246,7 @@ HIL_USB_CDC_TIMEOUT=5.0
     └── testing/
         ├── hil/
         │   ├── HIL_HOW_TO.md     ← как проводить HIL-тесты
-        │   ├── HIL_BENCH.md     ← стенд: оборудование, подключение
+        │   ├── HIL_BENCH.md      ← стенд: оборудование, подключение
         │   └── HIL_CREATE_TEST.md ← как добавить новый HIL-тест
         └── host/
             └── HOST_CREATE_TEST.md ← как добавить host unit-тест
@@ -254,21 +273,23 @@ git clone <repo-url> && cd <repo>
 
 ### 5.3 Что делает bootstrap
 
-```bash
-bootstrap.sh  (уровень 0)
-│
-├── определить платформу (Linux / macOS / Windows Git Bash)
-├── проверить/установить uv >= 0.4.0
-├── проверить/установить just >= 1.36.0 (через uv tool)
-│
-└── exec just host::bootstrap
-      ├── [1/3] check-deps    — just · uv · docker
-      ├── [2/3] setup-udev    — udev-правила NXP USB (только Linux)
-      │           1FC9:0130 ← BootROM SDP
-      │           15A2:0073 ← Flashloader
-      │           dialout   ← группа для /dev/ttyACM* (M5StampPLC)
-      └── [3/3] setup-tools   — uv sync в tools/host/
-                  SHA-256 uv.lock кешируется → повторный вызов мгновенный
+```mermaid
+flowchart TD
+    A["bootstrap.sh\n(уровень 0)"]
+    A --> B["определить платформу\nLinux / macOS / Windows Git Bash"]
+    B --> C["проверить/установить\nuv >= 0.4.0"]
+    C --> D["проверить/установить\njust >= 1.36.0\n(через uv tool)"]
+    D --> E["exec just host::bootstrap"]
+
+    E --> F["[1/3] check-deps\njust · uv · docker"]
+    E --> G["[2/3] setup-udev\n(только Linux)"]
+    E --> H["[3/3] setup-tools\nuv sync → tools/host/"]
+
+    G --> G1["1FC9:0130 — BootROM SDP"]
+    G --> G2["15A2:0073 — Flashloader"]
+    G --> G3["dialout — /dev/ttyACM*"]
+
+    H --> H1["SHA-256 uv.lock кешируется\nповторный вызов мгновенный"]
 ```
 
 ### 5.4 После bootstrap
@@ -323,7 +344,7 @@ buildPresets (HIL):
   target-debug-build: test_host_uart, test_hil_button, test_hil_can,
                       test_hil_usb_cdc, test_hil_opto
 
-Источник истины по списку целей — [CMakePresets.json](../CMakePresets.json).
+Источник истины по списку целей — CMakePresets.json.
 ```
 
 ### 6.3 Boot-стратегии
@@ -431,22 +452,36 @@ HIL-тесты проверяют периферию на реальном же�
 
 Только MCU-Link: SWD загружает ELF в RAM, VCOM обеспечивает UART CLI.
 
-```bash
-pytest → uart_cmd("PING")
-  ↓ pyserial / VCOM
-MCU-Link
-  ↓ LPUART1
-RT1052 → "PONG"
+```mermaid
+sequenceDiagram
+    participant PT as pytest
+    participant ML as MCU-Link VCOM
+    participant RT as RT1052
+
+    PT->>ML: uart_cmd("PING")\n(pyserial)
+    ML->>RT: LPUART1
+    RT-->>ML: "PONG"
+    ML-->>PT: "PONG"
 ```
 
 ### С M5StampPLC — `02_test_opto.py` и другие
 
 `M5StampPLC` управляет входными сигналами таргета через реле. pytest оркестрирует оба канала одновременно.
 
-```bash
-pytest
-  ├─▶ m5.opto_set(1, True)    → M5 (JSON) → RLY3 → EXT_IN1 таргета
-  └─▶ uart_cmd("OPTO_READ 1") → MCU-Link VCOM → RT1052 → "ACTIVE"
+```mermaid
+sequenceDiagram
+    participant PT as pytest
+    participant M5 as M5StampPLC
+    participant ML as MCU-Link VCOM
+    participant RT as RT1052
+
+    PT->>M5: m5.opto_set(1, True)\n(JSON-lines)
+    M5->>RT: RLY3 → EXT_IN1
+
+    PT->>ML: uart_cmd("OPTO_READ 1")\n(pyserial)
+    ML->>RT: LPUART1
+    RT-->>ML: "ACTIVE"
+    ML-->>PT: "ACTIVE"
 ```
 
 Перед каждой тест-сессией фикстура `m5` автоматически включает питание таргета (RLY1), ждёт стабилизации, затем `loaded_<n>` загружает ELF через pyOCD.
@@ -503,17 +538,26 @@ timeout-паттерн.
 
 Подробно — [docs/HOW_TO_DEBUG.md](HOW_TO_DEBUG.md). Краткая схема:
 
-```bash
-Хост
-├── just host::debug-server
-│   └── pyocd gdbserver :3333
-│         USB/SWD → MCU-Link → плата
-└── host.docker.internal:3333 ← доступен из devcontainer
+```mermaid
+flowchart LR
+    subgraph DC["Devcontainer"]
+        CD["cortex-debug\n(VSCode F5)"]
+        GDB["arm-none-eabi-gdb"]
+        CD --> GDB
+    end
 
-Devcontainer
-└── cortex-debug (VSCode)
-      ↔ arm-none-eabi-gdb
-            target remote host.docker.internal:3333
+    subgraph Host["Хост"]
+        DS["just host::debug-server"]
+        PO["pyocd gdbserver :3333"]
+        DS --> PO
+    end
+
+    ML["MCU-Link\n(USB/SWD)"]
+    Board["Плата TFT"]
+
+    GDB -->|"TCP host.docker.internal:3333"| PO
+    PO --> ML
+    ML -->|"SWD"| Board
 ```
 
 Три конфигурации в `.vscode/launch.json`:
@@ -529,28 +573,41 @@ RTT-логи доступны в Debug-сборках (`SEGGER_RTT_ENABLED=ON`);
 
 ## 12. Жизненный цикл изменений
 
-```bash
-feature-ветка
-  │
-  ├── devcontainer
-  │     just build::test-host               ← зелёные host-тесты?
-  │     just build::build-firmware-test-debug
-  │     just build::build-hil               ← HIL-прошивки собираются?
-  │
-  ├── хост
-  │     just host::flash-test-debug         ← прошить, проверить на железе
-  │     just host::hil-run                  ← HIL зелёные?
-  │
-  ├── подготовка к MR
-  │     just build::hab-all-release
-  │     just host::flash firmware_test release
-  │
-  └── Merge Request → CI
-        host-тесты · сборка · HIL · публикация артефактов
-              ↓
-        Производственный сервер
-        just host::incoming   → firmware_test release → HIL
-        just host::production → bootloader + tft_app release
+```mermaid
+flowchart TD
+    FB["feature-ветка"]
+
+    subgraph DC["Devcontainer"]
+        T1["just build::test-host\nhost-тесты зелёные?"]
+        T2["just build::build-firmware-test-debug"]
+        T3["just build::build-hil\nHIL-прошивки собираются?"]
+    end
+
+    subgraph HostW["Хост"]
+        T4["just host::flash-test-debug\nпрошить, проверить на железе"]
+        T5["just host::hil-run\nHIL зелёные?"]
+    end
+
+    subgraph MR["Подготовка к MR"]
+        T6["just build::hab-all-release"]
+        T7["just host::flash firmware_test release"]
+    end
+
+    CI["Merge Request → CI\nhost-тесты · сборка · HIL\nпубликация артефактов"]
+
+    subgraph Prod["Производственный сервер"]
+        P1["just host::incoming\nfirmware_test release → HIL"]
+        P2["just host::production\nbootloader + tft_app release"]
+    end
+
+    FB --> DC
+    T1 --> T2 --> T3
+    DC --> HostW
+    T4 --> T5
+    HostW --> MR
+    T6 --> T7
+    MR --> CI
+    CI --> Prod
 ```
 
 ---

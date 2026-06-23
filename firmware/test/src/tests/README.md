@@ -1,730 +1,442 @@
-# firmware_test — Тест-модули
+# firmware_test — Руководство по тестированию
 
-> Расположение: `firmware/test/src/tests/README.md`
->
-> Каждый тест-модуль реализует интерфейс `test_module_t` и регистрируется
-> в реестре `test_runner.c`. Этот документ описывает что именно проверяет
-> каждый тест, какие гарантии даёт, какие аппаратные инварианты должны
-> соблюдаться, и каковы ограничения.
+Тестовая прошивка входного контроля платы MIMXRT1052CVJ5B.  
+Транспорт: USB CDC ACM (J2). Протокол: JSON-lines v2, один JSON-объект на строку.  
+Загружается в RAM через BootROM USB SDP — без предварительной прошивки загрузчика.
 
----
-
-## 1 Содержание
-
-- [Как читать эту таблицу](#как-читать-эту-таблицу)
-- [test_sdram — SDRAM 32 MB](#test_sdram--sdram-32-mb)
-- [test_qspi — QSPI Flash W25Qxx](#test_qspi--qspi-flash-w25qxx)
-- [test_usd — uSD SDIO](#test_usd--usd-sdio)
-- [test_display — Display RGB888](#test_display--display-rgb888)
-- [test_buttons — Test_But_1 / Test_But_2](#test_buttons--test_but_1--test_but_2) *(запланирован)*
-- [test_can — CAN loopback](#test_can--can-loopback) *(запланирован)*
-- [test_uart_ttl — UART TTL](#test_uart_ttl--uart-ttl) *(запланирован)*
-- [test_uart_iso — UART ISO / RS_RX](#test_uart_iso--uart-iso--rs_rx) *(запланирован)*
-- [test_opto — Opto-in EXT_IN1/IN2](#test_opto--opto-in-ext_in1in2) *(запланирован)*
+> Версия прошивки: `0.1.4` (`FIRMWARE_TEST_VERSION` в `protocol.h`)
 
 ---
 
-## 2 Как читать эту таблицу
+## Протокол — справочник сообщений
 
-**Critical** — при провале в `run_all` все последующие тесты получают `SKIP`.
-Некритические тесты могут упасть без остановки прогона.
+### Входящие сообщения (host → target)
 
-**HIL** — тест требует внешних сигналов от M5StampPLC.
-Без стенда тест вернёт `SKIP` или `FAIL`.
+| Тип       | Пример                                           | Описание                    |
+| --------- | ------------------------------------------------ | --------------------------- |
+| `cmd`     | `{"type":"cmd","cmd":"ping"}`                    | Проверка канала             |
+| `cmd`     | `{"type":"cmd","cmd":"run","id":"sdram"}`        | Запустить один тест по ID   |
+| `cmd`     | `{"type":"cmd","cmd":"run_all"}`                 | Запустить все тесты реестра |
+| `confirm` | `{"type":"confirm","id":"usd","confirmed":true}` | Ответ оператора на запрос   |
 
-**Тип confirm:**
+### Исходящие события (target → host)
 
-- `pre_confirm` — test_runner ждёт JSON-ответа оператора до запуска `run()`.
-- `в run()` — тест сам вызывает `test_runner_wait_confirm()` внутри.
-- `prompt only` — отправляет `confirm_request` как UI-подсказку,
-  ответ не ожидается (тест детектирует физическое событие сам).
-- `—` — неинтерактивный тест.
+| Тип                          | Ключевые поля                            | Описание                 |
+| ---------------------------- | ---------------------------------------- | ------------------------ |
+| `session_start`              | `fw`, `target`, `uptime_ms`              | Прошивка готова к работе |
+| `test_begin`                 | `id`, `name`, `critical`                 | Тест запущен             |
+| `test_result`                | `id`, `status`, `ms`, `detail`           | Результат теста          |
+| `confirm_request`            | `id`, `prompt`, `timeout_ms`             | Запрос оператору         |
+| `progress`                   | `test`, `step`, `status`                 | Прогресс внутри теста    |
+| `summary`                    | `passed`, `failed`, `skipped`, `overall` | Итог `run_all`           |
+| `pong`                       | —                                        | Ответ на `ping`          |
+| `{"ok":false,"error":"..."}` | `error`                                  | Ошибка протокола         |
 
----
+**Возможные статусы `test_result`:** `pass` / `fail` / `skip`
 
-## 3 test_sdram — SDRAM 32 MB
+**Коды ошибок в `error`:**
 
-**Файл:** `test_sdram.c`
-**ID:** `sdram`
-**Critical:** ✅ | **HIL:** ❌ | **Confirm:** —
-
-### 3.1 Аппаратный контекст
-
-| Параметр        | Значение                                          |
-| --------------- | ------------------------------------------------- |
-| Чип             | MT48LC16M16A2                                     |
-| Объём           | 32 MB                                             |
-| Шина данных     | 16 бит                                            |
-| Интерфейс MCU   | SEMC (0x402F0000)                                 |
-| Базовый адрес   | 0x80000000                                        |
-| Тестовый регион | 0x80200000 — 0x80A00000                           |
-| MPU             | Region 8: Normal WB cacheable (BOARD_MPU_SDRAM=1) |
-
-### 3.2 Инварианты выполнения
-
-- SEMC инициализирован DCD **до** `main()` — `bsp_sdram_init()` только верифицирует.
-- MPU Region 8 (`Normal WB`) активен — кэш включён для SDRAM.
-- MPU Region 9 (`Non-cacheable`, 0x81E00000, 2MB) активен — USB DMA изолирован.
-- Тестовый регион не пересекается с `.data`/`.bss` прошивки (смещение +2 MB от базы).
-- Тестовый регион не пересекается с non-cacheable регионом (граница 0x81E00000).
-- Сброс кэша (`SCB_CleanDCache_by_Addr`) выполняется **после каждого** write-прохода —
-  readback всегда из физической SDRAM, не из кэша.
-
-### 3.3 Что тестирует — четыре фазы
-
-#### 3.3.1 Фаза 1: Address bus (~1 мс)
-
-Записывает уникальный байт в 24 позиции на степенях двойки
-(2^0..2^23 от TEST_BASE), каждую с индивидуальным cache line flush.
-
-**Покрытие:** все 24 адресных бита MT48LC16M16A2 (13 row + 9 col + 2 bank).
-
-**Ловит:**
-
-- Address aliasing — замыкание адресных линий SEMC.
-- Неправильное подключение адресных линий к чипу.
-
-**Не ловит:**
-
-- Деградацию отдельных ячеек вне точек степеней двойки.
+| Код            | Причина                                                         |
+| -------------- | --------------------------------------------------------------- |
+| `BUSY`         | Предыдущий тест ещё выполняется                                 |
+| `UNKNOWN_TEST` | ID теста не найден в реестре                                    |
+| `PARSE_ERR`    | Не удалось разобрать JSON (нет поля `type`, `cmd`, `id` и т.д.) |
+| `UNKNOWN_CMD`  | Неизвестный тип сообщения или команда                           |
 
 ---
 
-#### 3.3.2 Фаза 2: Data bus (~1 с)
+## Подключение и начало сессии
 
-Walking ones (0x01, 0x02, ..., 0x80, 0x01, ...) и его инверсия
-на регионе 64 KB.
-
-**Покрытие:** все 8 бит шины данных.
-
-**Ловит:**
-
-- Stuck-at-0 и stuck-at-1 фолты на битах шины данных.
-- Обрыв линии DATA между MCU и чипом.
-
-**Не ловит:**
-
-- Coupling между несмежными битами (для этого — фаза 3).
-
----
-
-#### 3.3.3 Фаза 3: Sequential integrity (~25 с)
-
-Address pattern (`offset & 0xFF`) и его инверсия на регионе 2 MB,
-два паттерна × два прохода (write → flush → verify).
-
-**Покрытие:** 2 MB непрерывного адресного пространства.
-
-**Ловит:**
-
-- Coupling faults между соседними ячейками.
-- Деградированные ячейки в тестируемом регионе.
-- Частичный address aliasing внутри 2 MB.
-
-**Не ловит:**
-
-- Деградацию ячеек вне тестируемых 2 MB (всего 32 MB в чипе).
-
----
-
-#### 3.3.4Фаза 4: Retention (~2 с)
-
-Address pattern на 256 KB: запись → `flush_dcache` → ожидание 200 мс → верификация.
-
-200 мс ≈ 3 полных refresh-периода MT48LC16M16A2 (период = 64 мс).
-
-**Покрытие:** 256 KB с задержкой на несколько refresh-циклов.
-
-**Ловит:**
-
-- Refresh timing failures — ячейки теряют данные между refresh-циклами.
-- Деградацию конденсаторов ячеек памяти (capacitor leakage).
-
-**Не ловит:**
-
-- Retention failures при температурных крайностях.
-
----
-
-### 3.4Гарантии теста при PASS
-
-- Все 24 адресных бита работают независимо без aliasing.
-- Все 8 бит шины данных переключаются корректно.
-- 2 MB последовательных ячеек не имеют coupling faults.
-- 256 KB удерживают данные минимум через 3 refresh-цикла.
-- SEMC контроллер инициализирован и отвечает.
-
-### 3.5 Интерпретация FAIL
-
-`detail` содержит: `addr=0xXXXXXXXX exp=0xXX got=0xXX`
-
-| Диапазон addr                                | Вероятная фаза | Диагноз                        |
-| -------------------------------------------- | -------------- | ------------------------------ |
-| `0x80200000` — `0x80A00000` (степени двойки) | Фаза 1         | Address aliasing               |
-| `0x80200000` — `0x80210000`                  | Фаза 2         | Stuck-at на шине данных        |
-| `0x80200000` — `0x80400000`                  | Фаза 3         | Coupling или деградация ячейки |
-| `0x80200000` — `0x80240000`                  | Фаза 4         | Refresh timing failure         |
-
-**Анализ `exp` XOR `got`:** биты где `(exp ^ got) != 0` — сбойные линии шины данных.
-
-### 3.6 Ограничения
-
-- Не покрывает все 32 MB (только 2 MB для sequential).
-- Не проверяет retention при нагреве или низком напряжении питания.
-- Не является заменой полного March C− алгоритма.
-- Во время теста (~28 с) USB CDC занят, `ping` не отвечает.
-
-### 3.7 Типичное время выполнения
-
-| Фаза        | ~Время    |
-| ----------- | --------- |
-| Address bus | < 1 мс    |
-| Data bus    | ~1 с      |
-| Sequential  | ~25 с     |
-| Retention   | ~2 с      |
-| **Итого**   | **~28 с** |
-
----
-
-## 4 test_qspi — QSPI Flash W25Qxx
-
-**Файл:** `test_qspi.c`
-**ID:** `qspi`
-**Critical:** ✅ | **HIL:** ❌ | **Confirm:** —
-
-### 4.1 Аппаратный контекст
-
-| Параметр        | Значение                                    |
-| --------------- | ------------------------------------------- |
-| Чипы            | W25Q64 / W25Q128 / W25Q256 / W25Q512        |
-| Объём           | 8 / 16 / 32 / 64 MB                         |
-| Интерфейс MCU   | FlexSPI1, порт A1                           |
-| BSP             | `bsp_qspi`                                  |
-| Тестовый сектор | `flash_size - 4KB` (последний, динамически) |
-
-### 4.2Инварианты выполнения
-
-- `bsp_qspi_init()` вызывается в `init()` — если чип не опознан, `run()` возвращает FAIL.
-- Слот 0 FlexSPI LUT (XIP read, задан FDCB) **никогда не изменяется** — прошивка
-  выполняется XIP на протяжении всего теста.
-- Во время операций stирания/записи (~45–150 мс) Flash находится в состоянии BUSY.
-  W25Q64/128/256/512 допускают READ-команды в состоянии BUSY — XIP-фетчи инструкций
-  продолжают работать.
-- Тестовый сектор расположен в конце Flash и **не пересекается** с прошивкой
-  (прошивка занимает первые несколько MB).
-- `bsp_usb_cdc_poll()` вызывается вокруг каждой блокирующей операции — USB CDC
-  остаётся отзывчивым во время теста.
-
-### 4.3 Что тестирует — четыре шага
-
-#### 4.3.1 Шаг 1: JEDEC ID (~1 мс)
-
-Команда 0x9F. Читает manufacturer ID и device ID.
-
-**Проверяет:**
-
-- `manufacturer_id == 0xEF` (Winbond).
-- `capacity_byte` принадлежит одному из: 0x17 (64Mbit), 0x18 (128Mbit),
-  0x19 (256Mbit), 0x20 (512Mbit).
-
-По результату вычисляется адрес тестового сектора:
-`test_addr = bsp_qspi_flash_size() - BSP_QSPI_SECTOR_SIZE`.
-
-**Ловит:**
-
-- FlexSPI контроллер не инициализирован или не отвечает.
-- Неизвестный / неподдерживаемый чип.
-- Обрыв или неправильное подключение QSPI-шины.
-
-**Не ловит:**
-
-- Деградацию конкретных ячеек памяти.
-
----
-
-#### 4.3.2 Шаг 2: Erase + Verify (~500 мс)
-
-Стирает тестовый сектор (4KB). Читает первые 256 байт сектора.
-Все байты должны быть `0xFF`.
-
-**Покрытие:** способность чипа выполнить Sector Erase и корректно сообщить о завершении.
-
-**Ловит:**
-
-- Erase command не принимается чипом (неправильный opcode / режим адресации).
-- SR1.WIP не снимается после стирания (erase не завершился).
-- Данные после стирания не `0xFF` (ячейки застряли в `0x00`).
-
-**Не ловит:**
-
-- Проблемы с ячейками вне первой страницы тестового сектора.
-
----
-
-#### 4.3.3 Шаг 3: Write + Read + Compare (~200 мс)
-
-Паттерн `byte[i] = i & 0xFF` (256 байт). Записывает первую страницу
-тестового сектора командой Quad Page Program. Читает обратно командой
-IP Quad Output Read (слот 11). Сравнивает побайтово.
-
-**Покрытие:** полный цикл write → read на 256 байтах.
-
-**Ловит:**
-
-- Ошибки Page Program (неправильный opcode / адрес / данные).
-- Ошибки IP Read (неправильный opcode / адрес).
-- Stuck-at bits в ячейках тестовой страницы.
-- Шина данных Flash (все 4 линии Quad-режима).
-
-**Не ловит:**
-
-- Деградацию ячеек вне первой страницы тестового сектора.
-- Aliasing адресов (это проверяет Шаг 4).
-
----
-
-#### 4.3.4 Шаг 4: Address range — только W25Q256/512 (~100 мс)
-
-Для чипов с `flash_size > 16 MB`.
-Для W25Q64/128 шаг пропускается (24-bit покрывает весь чип).
-
-**Проблема, которую ловит:**
-
-При 24-bit адресации адрес обрезается до 24 бит. Для W25Q256/512
-last-sector находится выше 16 MB:
+При старте прошивка ждёт CDC-подключение хоста (LED_HEARTBEAT мигает).
+После подключения немедленно отправляет `session_start`:
 
 ```bash
-W25Q256: last sector = 0x1FFF000,  0x1FFF000 & 0xFFFFFF = 0xFFF000
-W25Q512: last sector = 0x3FFF000,  0x3FFF000 & 0xFFFFFF = 0xFFF000
+← {"type":"session_start","fw":"0.1.4","target":"IMXRT1052","uptime_ms":1108}
 ```
 
-Если dedicated 4-byte opcodes не работают (чип игнорирует старший байт
-адреса), Шаг 3 **формально проходит** — запись и чтение ошибаются в одно и
-то же место (`0xFFF000`) одинаково. Алиасирование остаётся незамеченным.
-
-**Метод:**
-
-После Шага 3 `test_addr` содержит паттерн `i & 0xFF`. Записываем `0xAA`
-в anchor-сектор (`0x00FFF000`). Читаем `test_addr`:
-
-- Получаем `i & 0xFF` → `test_addr` — это физически другой сектор → `PASS`.
-- Получаем `0xAA` → `test_addr` физически совпадает с anchor → алиасирование
-  подтверждено → dedicated 4-byte opcodes не работают → `FAIL`.
-
-**Ловит:**
-
-- 24-bit алиасирование адресов для W25Q256/512.
-- Несовместимость LUT dedicated 4-byte opcodes с конкретным чипом.
-
-**Не ловит:**
-
-- Алиасирование на W25Q64/128 (невозможно по архитектуре).
-
----
-
-### 4.4 Гарантии теста при PASS
-
-- FlexSPI1 инициализирован и отвечает.
-- Подключён поддерживаемый Winbond Flash с ожидаемым JEDEC ID.
-- Команды Sector Erase, Quad Page Program, IP Read работают корректно.
-- Для W25Q256/512: dedicated 4-byte address opcodes функционируют и
-  адресуют физически разные секторы выше и ниже 16 MB.
-
-### 4.5 Интерпретация FAIL
-
-`detail` содержит текстовое описание шага и причины:
-
-| Паттерн `detail`                 | Шаг | Вероятный диагноз                             |
-| -------------------------------- | --- | --------------------------------------------- |
-| `JEDEC: read failed`             | 1   | FlexSPI не инициализирован / нет связи        |
-| `JEDEC: mfr=0xXX exp=0xEF`       | 1   | Неизвестный производитель чипа                |
-| `JEDEC: unknown cap=0xXX`        | 1   | Незнакомая ёмкость, чип не в списке поддержки |
-| `erase: sector erase failed`     | 2   | FlexSPI ошибка при erase command              |
-| `erase verify failed at 0x…`     | 2   | Сектор не стёрся, ячейки застряли             |
-| `rw: page write failed`          | 3   | FlexSPI ошибка при Page Program               |
-| `rw mismatch at 0x… exp=… got=…` | 3   | Stuck-at bit или ошибка шины данных           |
-| `addr alias: 0x… mirrors 0x…`    | 4   | Алиасирование — 4-byte opcodes не работают    |
-| `addr range mismatch at 0x…`     | 4   | Неожиданные данные при чтении last sector     |
-
-**Анализ `rw mismatch`:** `exp XOR got` — биты, где `(exp ^ got) != 0`,
-соответствуют сбойным линиям Quad-шины.
-
-### 4.6 Ограничения
-
-- Тестирует только **1 страницу** (256 байт) — не покрывает весь объём чипа.
-- Не проверяет endurance (многократные write/erase циклы).
-- Не является заменой полного тестирования Flash (march-алгоритмы).
-- Шаг 4 не проверяет адреса в диапазоне 16–32 MB (только крайние точки).
-
-### 4.7 Типичное время выполнения
-
-| Шаг               | Чип         | ~Время      |
-| ----------------- | ----------- | ----------- |
-| 1: JEDEC ID       | все         | < 1 мс      |
-| 2: Erase + Verify | все         | ~500 мс     |
-| 3: Write + Read   | все         | ~200 мс     |
-| 4: Address range  | W25Q64/128  | 0 мс (skip) |
-| 4: Address range  | W25Q256/512 | ~100 мс     |
-| **Итого**         | W25Q64/128  | **~700 мс** |
-| **Итого**         | W25Q256/512 | **~800 мс** |
-
----
-
-## 5 test_usd — uSD SDIO
-
-**Файл:** `test_usd.c`
-**ID:** `usd`
-**Critical:** ❌ | **HIL:** ❌ | **Confirm:** pre_confirm
-
-### 5.1 Аппаратный контекст
-
-| Параметр          | Значение                                                        |
-| ----------------- | --------------------------------------------------------------- |
-| Интерфейс MCU     | USDHC1                                                          |
-| CLK / CMD / D0–D3 | GPIO_SD_B0_00–05                                                |
-| Card Detect       | GPIO_B1_12 → USDHC1_CD_B → `USDHC_GetPresentStatusFlags`        |
-| Питание карты     | GPIO_AD_B1_03 (SdPwr, active-low, управляется SDK)              |
-| Drive FatFS       | `2:/`                                                           |
-| BSP               | `bsp_sd` (host init/deinit/card detect) + `firmware_test_fatfs` |
-
-### 5.2 Инварианты выполнения
-
-- `bsp_sd_init()` вызывается в `init()`. При провале `run()` возвращает FAIL немедленно.
-- Все ресурсы (файл, mount, host) освобождаются в `deinit()` — вызывается test_runner
-  всегда, включая FAIL и SKIP.
-- Тестовый файл `2:/FWTEST.TMP` удаляется при любом исходе.
-- `bsp_usb_cdc_poll()` вызывается вокруг каждой блокирующей операции.
-
-### 5.3 Что тестирует — четыре шага
-
-| Шаг          | Действие                                   | Progress event      | ~Время   |
-| ------------ | ------------------------------------------ | ------------------- | -------- |
-| card_detect  | `bsp_sd_is_inserted()`                     | `step:card_detect`  | < 1 мс   |
-| mount        | `f_mount(&fs, "2:/", 1)`                   | `step:mount`        | < 200 мс |
-| write        | `f_open` + `f_write` 4 KB + `f_close`      | `step:write`        | < 500 мс |
-| read_compare | `f_open` + `f_read` + `memcmp` + `f_close` | `step:read_compare` | < 200 мс |
-
-**Паттерн:** `byte[i] = i & 0xFF`, 4096 байт. Детектирует stuck-at-0/1 и partial write.
-
-### 5.4 Гарантии теста при PASS
-
-- USDHC host инициализирован и карта подключена.
-- FatFS корректно монтирует раздел (FAT32 / exFAT).
-- Запись и чтение 4 KB совпадают побайтово.
-- Тестовый файл удалён с карты.
-
-### 5.5 Интерпретация FAIL
-
-| Паттерн `detail`                               | Причина                                               |
-| ---------------------------------------------- | ----------------------------------------------------- |
-| `no card detected`                             | Карта не вставлена или CD не работает                 |
-| `sd init failed`                               | USDHC host не инициализировался                       |
-| `mount failed: N`                              | FatFS не может прочитать файловую систему (FR code N) |
-| `open failed: N`                               | Нет места или файловая система только для чтения      |
-| `write failed: N` / `write incomplete: X/4096` | Ошибка записи на карту                                |
-| `read failed: N`                               | Ошибка чтения                                         |
-| `compare failed at offset N`                   | Данные не совпадают — битый сектор карты              |
-
-### 5.6 Поведение без карты / отказ оператора
-
-- Оператор не ответил за 30 с → `TEST_STATUS_SKIP`, `detail: "confirm timeout"`.
-- Оператор нажал "отказ" → `TEST_STATUS_SKIP`, `detail: "operator declined"`.
-- Тест не critical → `run_all` продолжает выполнение остальных тестов.
-
-### 5.7 Типичное время выполнения
-
-| Этап                | ~Время      |
-| ------------------- | ----------- |
-| SD init + card init | ~200 мс     |
-| Mount               | ~100 мс     |
-| Write 4 KB          | ~400 мс     |
-| Read + Compare 4 KB | ~150 мс     |
-| **Итого**           | **~850 мс** |
-
----
-
-## 6 test_display — TFT-дисплей RGB888
-
-**Файл:** `test_display.c`
-**ID:** `display`
-**Critical:** ❌ | **HIL:** ❌ | **Confirm:** в run()
-
-### 6.1 Аппаратный контекст
-
-| Параметр       | Значение                                            |
-| -------------- | --------------------------------------------------- |
-| Контроллер     | ELCDIF (RGB888, DE mode)                            |
-| Дисплейный IC  | HX8264-D02 (TFT7/TFT8/TFT10)                        |
-| Фреймбуфер     | NonCacheable SDRAM, `AT_NONCACHEABLE_SECTION_ALIGN` |
-| Подсветка      | GPIO1[20] (LcdLed), active-high                     |
-| Горизонт. скан | GPIO1[28] (LcdLR / SHLR контроллера)                |
-| Вертикал. скан | GPIO1[30] (LcdUd / UPDN контроллера)                |
-| MODE           | GPIO1[29] — HIGH обязательно (DE mode для ELCDIF)   |
-| DITHB          | GPIO1[31] — HIGH (dithering disable, IC default)    |
-| Тип дисплея    | CMake-define `DISPLAY_TEST_TYPE` (сейчас TFT8)      |
-
-### 6.2 Инварианты выполнения
-
-- `bsp_display_init()` вызывается в `init()`. При провале `run()` возвращает FAIL немедленно.
-- Фреймбуфер `g_s_framebuf` статический, в NonCacheable SDRAM — ELCDIF DMA
-  всегда читает актуальные данные без cache flush.
-- `bsp_usb_cdc_poll()` вызывается в циклах заливки буфера и ожидания FRAME_DONE —
-  USB CDC остаётся отзывчивым во время теста.
-- После теста `bsp_display_deinit()` восстанавливает ROTATE_0 и выключает подсветку.
-
-### 6.3 Что тестирует — два этапа
-
-#### 6.3.1 Этап 1: Цвет (все типы дисплеев)
-
-Четыре шага: Red → Green → Blue → White.
-
-На каждом шаге прошивка заливает фреймбуфер сплошным цветом XRGB8888,
-ждёт ISR FRAME_DONE, затем ждёт визуального подтверждения оператора
-(таймаут 15 с).
-
-**Ловит:**
-
-- Неработающую подсветку.
-- Обрыв или неправильное подключение отдельных RGB-каналов шины данных.
-- Полное отсутствие изображения (ELCDIF / питание дисплея).
-
-**Не ловит:**
-
-- Деградацию отдельных пикселей (stuck pixel).
-- Проблемы с яркостью и гамма-коррекцией.
-
----
-
-#### 6.3.2 Этап 2: Проверка LR/UD пинов (TFT7/TFT8/TFT10)
-
-Диагностирует непропаянные ножки `LcdLR` (GPIO1[28]) и `LcdUd` (GPIO1[30]).
-
-**Паттерн:** левая половина экрана RED, правая BLUE.
-
-**Шаг 1 — базовая ориентация (`ROTATE_0`):**
-прошивка устанавливает `LR=1 UD=0`, заливает паттерн, оператор
-подтверждает что левая зона красная, правая синяя.
-
-**Шаг 2 — горизонтальный флип (`FLIP_HORIZONTAL`):**
-прошивка устанавливает `LR=0 UD=0` — контроллер HX8264-D02 меняет
-направление источника (SHLR). При исправном LR-пине цветовые зоны
-меняются местами. Оператор подтверждает изменение.
-
-После теста прошивка восстанавливает `ROTATE_0` независимо от результата.
-
-> **Примечание по контроллеру HX8264-D02:**
-> LR (SHLR) управляет **горизонтальным** направлением источников —
-> меняет местами левую/правую части. UD (UPDN) управляет **вертикальным**
-> направлением затвора. Для детектирования непропаянного LR-пина
-> используется горизонтальный паттерн и `FLIP_HORIZONTAL`.
-
-**Ловит:**
-
-- Непропаянный `LcdLR` (GPIO1[28]) — горизонтальные зоны не меняются.
-- Непропаянный `LcdUd` (GPIO1[30]) — тест не проверяет UD напрямую,
-  но бракованная плата с обоими непропаянными пинами также не пройдёт
-  шаг 1 (непредсказуемая ориентация при старте).
-
-**Не ловит:**
-
-- Изолированный непропай `LcdUd` при исправном `LcdLR`.
-
----
-
-### 6.4 Гарантии теста при PASS
-
-- ELCDIF инициализирован, фреймбуфер DMA работает корректно.
-- Все три RGB-канала шины данных функционируют.
-- Подсветка включается и отключается.
-- Пин `LcdLR` (GPIO1[28]) физически пропаян и реагирует на GPIO-запись.
-
-### 6.5 Интерпретация FAIL
-
-| `detail`                         | Вероятный диагноз                            |
-| -------------------------------- | -------------------------------------------- |
-| `display init failed`            | Неверный `DISPLAY_TEST_TYPE` или нет питания |
-| `display_red not confirmed`      | Нет изображения / канал R / подсветка        |
-| `display_green not confirmed`    | Канал G мёртв                                |
-| `display_blue not confirmed`     | Канал B мёртв                                |
-| `display_white not confirmed`    | Подсветка или несколько RGB-каналов          |
-| `display_rot_base not confirmed` | Нет изображения в паттерне (ELCDIF)          |
-| `display_rot_lr not confirmed`   | **LcdLR (GPIO1[28]) не пропаян**             |
-
-### 6.6 Последовательность событий протокола
+### Проверка канала (ping)
 
 ```bash
-test_begin
-→ confirm_request(display_red)    ← оператор видит сплошной красный
-→ confirm_request(display_green)  ← сплошной зелёный
-→ confirm_request(display_blue)   ← сплошной синий
-→ confirm_request(display_white)  ← сплошной белый
-→ confirm_request(display_rot_base) ← левая RED / правая BLUE (ROTATE_0)
-→ confirm_request(display_rot_lr)   ← цветовые зоны поменялись (FLIP_HORIZONTAL)
-test_result
+→ {"type":"cmd","cmd":"ping"}
+← {"type":"pong"}
 ```
 
-> **Важно:** `test_display` не использует `pre_confirm_prompt`.
-> Первый confirm_request (`display_red`) отправляется изнутри `run()`
-> после `test_begin`. Хост должен отвечать только на события типа
-> `confirm_request`, не опережая их.
-
-### 6.7 Зависимости
-
-| Зависимость   | Описание                                   |
-| ------------- | ------------------------------------------ |
-| `bsp_display` | ELCDIF init/deinit, rotation, frame buffer |
-| `bsp_usb_cdc` | `bsp_usb_cdc_poll()` в циклах ожидания     |
-
-### 6.8 Типичное время выполнения
-
-| Этап                 | ~Время         |
-| -------------------- | -------------- |
-| init (ELCDIF + GPIO) | < 10 мс        |
-| 4 × цветовой шаг     | 4 × 15 с (max) |
-| 2 × шаг ротации      | 2 × 15 с (max) |
-| **Итого (max)**      | **~90 с**      |
-| **Итого (типичный)** | **~40–60 с**   |
-
-## 7 test_buttons — Test_But_1 / Test_But_2
-
-**Файл:** `test_buttons.c` *(не реализован — Этап 5)*
-**ID:** `buttons`
-**Critical:** ❌ | **HIL:** ❌ | **Confirm:** prompt only
-
-### 7.1 Аппаратный контекст
-
-| Кнопка     | Пин MCU    | GPIO      |
-| ---------- | ---------- | --------- |
-| Test_But_1 | GPIO_B1_14 | GPIO2[30] |
-| Test_But_2 | GPIO_B1_15 | GPIO2[31] |
-
-### Что будет тестировать
-
-Два шага. Таргет отправляет `confirm_request` как инструкцию оператору
-и детектирует нажатие через `bsp_button` — JSON confirm не нужен.
-
-| Шаг      | ID           | Промпт                      | Таймаут |
-| -------- | ------------ | --------------------------- | ------- |
-| Кнопка 1 | `btn1_press` | "Нажмите кнопку Test_But_1" | 10 с    |
-| Кнопка 2 | `btn2_press` | "Нажмите кнопку Test_But_2" | 10 с    |
-
-### Гарантии при PASS
-
-- Оба GPIO входа корректно регистрируют нажатие.
-- `bsp_button` debounce логика работает.
-
 ---
 
-## test_can — CAN loopback
+## SDRAM — контроль оперативной памяти
 
-**Файл:** `test_can.c` *(не реализован — Этап 6)*
-**ID:** `can`
-**Critical:** ❌ | **HIL:** ✅ | **Confirm:** —
+| Параметр         | Значение                                      |
+| ---------------- | --------------------------------------------- |
+| ID               | `sdram`                                       |
+| Критичный        | ✅ Да — при FAIL остальные тесты получают SKIP |
+| HIL              | ❌ Нет                                         |
+| Тип              | Self-test                                     |
+| Время выполнения | ~15–30 с                                      |
 
-### Аппаратный контекст
+Четыре фазы:
 
-| Параметр | Значение                            |
-| -------- | ----------------------------------- |
-| BSP      | `bsp_can` ✅                         |
-| M5       | CAN интерфейсная плата → шина платы |
+1. **Address bus** — проверка 24 адресных бит (2⁰…2²³ от `TEST_BASE`)
+2. **Data bus** — walking ones + инверсия, 64 KB
+3. **Sequential integrity** — address pattern + инверсия, 2 MB
+4. **Retention** — 256 KB: запись → flush → 200 мс → верификация
 
-### Что будет тестировать
-
-M5StampPLC отправляет CAN фрейм → плата принимает → сравниваем ID и данные.
-
-### Гарантии при PASS
-
-- CAN контроллер и трансивер работают.
-- Принятый фрейм совпадает с отправленным по ID и payload.
-
----
-
-## test_uart_ttl — UART TTL
-
-**Файл:** `test_uart_ttl.c` *(не реализован — Этап 6)*
-**ID:** `uart_ttl`
-**Critical:** ❌ | **HIL:** ✅ | **Confirm:** —
-
-### Аппаратный контекст
-
-| Параметр | Значение              |
-| -------- | --------------------- |
-| BSP      | `bsp_uart_host` ✅     |
-| M5       | UART ↔ UART TTL платы |
-
-### Что будет тестировать
-
-M5 отправляет пакет → плата получает → echo обратно → M5 верифицирует.
-
----
-
-## test_uart_iso — UART ISO / RS_RX
-
-**Файл:** `test_uart_iso.c` *(не реализован — Этап 6)*
-**ID:** `uart_iso`
-**Critical:** ❌ | **HIL:** ✅ | **Confirm:** —
-
-### Аппаратный контекст
-
-| Параметр | Значение                                |
-| -------- | --------------------------------------- |
-| BSP      | `bsp_opto` (rs_as_gpio=true) ✅          |
-| Пин MCU  | GPIO_AD_B1_07 / GPIO1[23]               |
-| Оптопара | PS2801-4 (неинвертирующая, active-HIGH) |
-| M5       | RLY2 → RS_RX                            |
-
-### Что будет тестировать
-
-M5 RLY2 активирует оптовход RS_RX → плата детектирует через `bsp_opto`.
-M5 RLY2 деактивирует → плата детектирует inactive.
-
-### Инварианты
-
-- `bsp_opto` инициализирован с `rs_as_gpio=true`.
-- Пин GPIO_AD_B1_07 переведён в GPIO INPUT (не LPUART3_RX).
-
----
-
-## test_opto — Opto-in EXT_IN1/IN2
-
-**Файл:** `test_opto.c` *(не реализован — Этап 6)*
-**ID:** `opto`
-**Critical:** ❌ | **HIL:** ✅ | **Confirm:** —
-
-### Аппаратный контекст
-
-| Канал   | Пин MCU       | GPIO      | Оптопара | M5   |
-| ------- | ------------- | --------- | -------- | ---- |
-| EXT_IN1 | GPIO_AD_B1_06 | GPIO1[22] | PS2801-4 | RLY3 |
-| EXT_IN2 | GPIO_AD_B1_05 | GPIO1[21] | PS2801-4 | RLY4 |
-
-### Что будет тестировать
-
-Каждый канал независимо: M5 активирует реле → плата детектирует ACTIVE →
-M5 деактивирует → плата детектирует INACTIVE.
-
-### Гарантии при PASS
-
-- Оба оптоизолированных входа корректно детектируют HIGH/LOW.
-- Debounce логика `bsp_opto` (MODE_LEVEL) работает корректно.
-
----
-
-## Порядок в реестре `test_runner.c`
-
-```c
-static const test_module_t *const k_registry[] = {
-    &K_TEST_SDRAM,       /* critical — первым */
-    &K_TEST_QSPI,        /* critical */
-    &K_TEST_USD,         /* non-critical, interactive, pre_confirm */
-    &K_TEST_DISPLAY,     /* non-critical, interactive, confirm в run() */
-    &K_TEST_BUTTONS,     /* non-critical, interactive, prompt only */
-    &K_TEST_CAN,         /* non-critical, HIL */
-    &K_TEST_UART_TTL,    /* non-critical, HIL */
-    &K_TEST_UART_ISO,    /* non-critical, HIL */
-    &K_TEST_OPTO,        /* non-critical, HIL */
-};
+```mermaid
+sequenceDiagram
+    participant H as HOST
+    participant T as TARGET
+    H->>T: run("sdram")
+    T->>H: test_begin
+    Note over T: ~15–30 с: 4 фазы
+    T->>H: test_result: pass/fail
 ```
 
-Critical тесты идут первыми — при их провале HIL и интерактивные тесты
-пропускаются автоматически, экономя время диагностики.
+**PASS:**
+
+```bash
+→ {"type":"cmd","cmd":"run","id":"sdram"}
+← {"type":"test_begin","id":"sdram","name":"SDRAM 32 MB","critical":true}
+← {"type":"test_result","id":"sdram","status":"pass","ms":15304,"detail":""}
+```
+
+**FAIL — пример адресной ошибки:**
+
+```bash
+← {"type":"test_result","id":"sdram","status":"fail","ms":1203,
+   "detail":"addr=0x80200001 exp=0x02 got=0xFF"}
+```
+
+**FAIL — SEMC не инициализирован (DCD не отработал):**
+
+```bash
+← {"type":"test_result","id":"sdram","status":"fail","ms":0,
+   "detail":"SEMC not ready — DCD failed?"}
+```
+
+---
+
+## QSPI Flash — контроль внешней Flash-памяти
+
+| Параметр         | Значение  |
+| ---------------- | --------- |
+| ID               | `qspi`    |
+| Критичный        | ✅ Да      |
+| HIL              | ❌ Нет     |
+| Тип              | Self-test |
+| Время выполнения | < 500 мс  |
+
+Четыре шага:
+
+1. **JEDEC ID** — производитель `0xEF` (Winbond), распознавание W25Q64/128/256/512
+2. **Erase + Verify** — стирание последнего сектора, проверка (все байты `0xFF`)
+3. **Write + Read + Compare** — 256 байт паттерна `i & 0xFF`
+4. **Address range** — только W25Q256/512: проверка dedicated 4-byte opcodes
+
+```mermaid
+sequenceDiagram
+    participant H as HOST
+    participant T as TARGET
+    H->>T: run("qspi")
+    T->>H: test_begin
+    Note over T: JEDEC → erase → rw → addr range
+    T->>H: test_result: pass/fail
+```
+
+**PASS:**
+
+```bash
+→ {"type":"cmd","cmd":"run","id":"qspi"}
+← {"type":"test_begin","id":"qspi","name":"QSPI Flash W25Qxx","critical":true}
+← {"type":"test_result","id":"qspi","status":"pass","ms":86,"detail":""}
+```
+
+**FAIL — чип не отвечает:**
+
+```bash
+← {"type":"test_result","id":"qspi","status":"fail","ms":1,
+   "detail":"JEDEC: mfr=0xFF exp=0xEF"}
+```
+
+**FAIL — адресное алиасирование (3-byte wrap на W25Q256/512):**
+
+```bash
+← {"type":"test_result","id":"qspi","status":"fail","ms":312,
+   "detail":"addr alias: 0x1FFF000 mirrors 0x00FFF000 (3-byte wrap)"}
+```
+
+---
+
+## microSD — контроль SDIO-интерфейса
+
+| Параметр         | Значение                  |
+| ---------------- | ------------------------- |
+| ID               | `usd`                     |
+| Критичный        | ❌ Нет                     |
+| HIL              | ❌ Нет                     |
+| Тип              | Interactive (pre-confirm) |
+| Время выполнения | < 1 с после вставки карты |
+
+Оператор вставляет карту по запросу. Тест запускается только после подтверждения.  
+Отказ или таймаут 30 с → `SKIP`.
+
+Пять шагов с `progress`-событиями: card detect → mount → write 4 KB → read/compare → unmount.
+
+```mermaid
+sequenceDiagram
+    participant H as HOST
+    participant T as TARGET
+    H->>T: run("usd")
+    T->>H: confirm_request("usd", timeout=30s)
+    Note over H: оператор вставляет карту
+    H->>T: confirm("usd", true)
+    T->>H: test_begin
+    T->>H: progress: card_detect ok
+    T->>H: progress: mount ok
+    T->>H: progress: write ok
+    T->>H: progress: read_compare ok
+    T->>H: test_result: pass/fail/skip
+```
+
+**PASS:**
+
+```bash
+→ {"type":"cmd","cmd":"run","id":"usd"}
+← {"type":"confirm_request","id":"usd","prompt":"Insert microSD card and press OK","timeout_ms":30000}
+→ {"type":"confirm","id":"usd","confirmed":true}
+← {"type":"test_begin","id":"usd","name":"microSD (SDIO)","critical":false}
+← {"type":"progress","test":"usd","step":"card_detect","status":"ok"}
+← {"type":"progress","test":"usd","step":"mount","status":"ok"}
+← {"type":"progress","test":"usd","step":"write","status":"ok"}
+← {"type":"progress","test":"usd","step":"read_compare","status":"ok"}
+← {"type":"test_result","id":"usd","status":"pass","ms":874,"detail":""}
+```
+
+**SKIP — оператор нажал Cancel:**
+
+```
+→ {"type":"confirm","id":"usd","confirmed":false}
+← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"operator declined"}
+```
+
+**SKIP — таймаут 30 с (карта не вставлена, confirm не получен):**
+
+```bash
+← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"confirm timeout"}
+```
+
+**FAIL — карта не вставлена (confirmed:true, но карты нет в слоте):**
+
+```bash
+← {"type":"test_result","id":"usd","status":"fail","ms":5,"detail":"no card detected"}
+```
+
+---
+
+## TFT-дисплей — визуальная проверка
+
+| Параметр         | Значение                                    |
+| ---------------- | ------------------------------------------- |
+| ID               | `display`                                   |
+| Критичный        | ❌ Нет                                       |
+| HIL              | ❌ Нет                                       |
+| Тип              | Interactive (in-run confirm)                |
+| Время выполнения | ~1–2 мин (определяется скоростью оператора) |
+
+**pre-confirm отсутствует** — `test_begin` отправляется сразу после `run`.
+
+Два этапа, каждый шаг требует подтверждения оператора (таймаут 15 с → FAIL):
+
+- **Этап 1 (все дисплеи):** Red → Green → Blue → White
+- **Этап 2 (TFT7/8/10):** паттерн Red/Blue + горизонтальный флип — диагностика непропаянных LR/UD пинов
+
+```mermaid
+sequenceDiagram
+    participant H as HOST
+    participant T as TARGET
+    H->>T: run("display")
+    T->>H: test_begin
+    T->>H: confirm_request(display_red, 15s)
+    H->>T: confirm(display_red, true)
+    T->>H: confirm_request(display_green, 15s)
+    H->>T: confirm(display_green, true)
+    T->>H: confirm_request(display_blue, 15s)
+    H->>T: confirm(display_blue, true)
+    T->>H: confirm_request(display_white, 15s)
+    H->>T: confirm(display_white, true)
+    T->>H: confirm_request(display_rot0, 15s)
+    H->>T: confirm(display_rot0, true)
+    T->>H: confirm_request(display_rot_base, 15s)
+    H->>T: confirm(display_rot_base, true)
+    T->>H: test_result: pass/fail
+```
+
+**PASS (TFT8 — 6 confirm-шагов):**
+
+```bash
+→ {"type":"cmd","cmd":"run","id":"display"}
+← {"type":"test_begin","id":"display","name":"TFT Display RGB888","critical":false}
+← {"type":"confirm_request","id":"display_red","prompt":"Screen is solid red?","timeout_ms":15000}
+→ {"type":"confirm","id":"display_red","confirmed":true}
+← {"type":"confirm_request","id":"display_green","prompt":"Screen is solid green?","timeout_ms":15000}
+→ {"type":"confirm","id":"display_green","confirmed":true}
+← {"type":"confirm_request","id":"display_blue","prompt":"Screen is solid blue?","timeout_ms":15000}
+→ {"type":"confirm","id":"display_blue","confirmed":true}
+← {"type":"confirm_request","id":"display_white","prompt":"Screen is solid white?","timeout_ms":15000}
+→ {"type":"confirm","id":"display_white","confirmed":true}
+← {"type":"confirm_request","id":"display_rot0","prompt":"Screen: left RED, right BLUE?","timeout_ms":15000}
+→ {"type":"confirm","id":"display_rot0","confirmed":true}
+← {"type":"confirm_request","id":"display_rot_base","prompt":"Left RED and right BLUE swapped sides?","timeout_ms":15000}
+→ {"type":"confirm","id":"display_rot_base","confirmed":true}
+← {"type":"test_result","id":"display","status":"pass","ms":42310,"detail":""}
+```
+
+**FAIL — синий экран не подтверждён или таймаут:**
+
+```bash
+← {"type":"test_result","id":"display","status":"fail","ms":15001,
+   "detail":"display_blue not confirmed"}
+```
+
+---
+
+## Тактовые кнопки — проверка GPIO
+
+| Параметр         | Значение                         |
+| ---------------- | -------------------------------- |
+| ID               | `buttons`                        |
+| Критичный        | ❌ Нет                            |
+| HIL              | ❌ Нет                            |
+| Тип              | Interactive (физическое нажатие) |
+| Время выполнения | до 20 с (2 × 10 с таймаут)       |
+
+| Кнопка     | Пин MCU    | GPIO      | Нажатие           |
+| ---------- | ---------- | --------- | ----------------- |
+| Test_But_1 | GPIO_B1_14 | GPIO2[30] | LOW (pull-up 3V3) |
+| Test_But_2 | GPIO_B1_15 | GPIO2[31] | LOW (pull-up 3V3) |
+
+**Ключевое отличие от других тестов:** хост **не** отправляет `{"type":"confirm",...}`.  
+`confirm_request` — только UI-подсказка оператору. Прошивка детектирует нажатие
+через `bsp_button_get_event_pressed()` с debounce 20 мс.  
+Таймаут 10 с → `SKIP` (не FAIL).
+
+```mermaid
+sequenceDiagram
+    participant H as HOST
+    participant T as TARGET
+    participant OP as Оператор
+    H->>T: run("buttons")
+    T->>H: test_begin
+    T->>H: confirm_request(btn1_press, timeout=10s)
+    Note over OP: нажимает Test_But_1
+    Note over T: bsp_button детектирует нажатие
+    T->>H: confirm_request(btn2_press, timeout=10s)
+    Note over OP: нажимает Test_But_2
+    T->>H: test_result: pass/skip
+```
+
+> **Важно:** после `confirm_request(btn1_press)` от хоста ничего отправлять не нужно.
+> Следующий `confirm_request(btn2_press)` придёт сразу после физического нажатия кнопки.
+
+**PASS:**
+
+```bash
+→ {"type":"cmd","cmd":"run","id":"buttons"}
+← {"type":"test_begin","id":"buttons","name":"Test Buttons","critical":false}
+← {"type":"confirm_request","id":"btn1_press","prompt":"Press Test_But_1","timeout_ms":10000}
+  ... оператор нажимает Test_But_1 ...
+← {"type":"confirm_request","id":"btn2_press","prompt":"Press Test_But_2","timeout_ms":10000}
+  ... оператор нажимает Test_But_2 ...
+← {"type":"test_result","id":"buttons","status":"pass","ms":8516,"detail":""}
+```
+
+**SKIP — кнопка не нажата за 10 с:**
+
+```bash
+← {"type":"test_result","id":"buttons","status":"skip","ms":10001,
+   "detail":"btn1_press timeout"}
+```
+
+**Типичная ошибка — неверный ID (`button` без `s`):**
+
+```bash
+→ {"type":"cmd","cmd":"run","id":"button"}
+← {"ok":false,"error":"UNKNOWN_TEST"}
+→ {"type":"cmd","cmd":"run","id":"buttons"}
+← {"type":"test_begin","id":"buttons",...}
+```
+
+---
+
+## Запуск всего набора (run_all)
+
+Тесты запускаются строго в порядке реестра. При провале критичного теста
+(`sdram` или `qspi`) все последующие тесты получают `SKIP` с `detail:"critical test failed"`.
+
+```bash
+→ {"type":"cmd","cmd":"run_all"}
+← {"type":"test_begin","id":"sdram","name":"SDRAM 32 MB","critical":true}
+← {"type":"test_result","id":"sdram","status":"pass","ms":15304,"detail":""}
+← {"type":"test_begin","id":"qspi","name":"QSPI Flash W25Qxx","critical":true}
+← {"type":"test_result","id":"qspi","status":"pass","ms":86,"detail":""}
+← {"type":"confirm_request","id":"usd","prompt":"Insert microSD card and press OK","timeout_ms":30000}
+  ... оператор вставляет карту и подтверждает ...
+← {"type":"test_begin","id":"usd","name":"microSD (SDIO)","critical":false}
+  ...progress events...
+← {"type":"test_result","id":"usd","status":"pass","ms":874,"detail":""}
+← {"type":"test_begin","id":"display","name":"TFT Display RGB888","critical":false}
+  ...confirm цикл 6 шагов...
+← {"type":"test_result","id":"display","status":"pass","ms":42310,"detail":""}
+← {"type":"test_begin","id":"buttons","name":"Test Buttons","critical":false}
+← {"type":"confirm_request","id":"btn1_press","prompt":"Press Test_But_1","timeout_ms":10000}
+  ...
+← {"type":"test_result","id":"buttons","status":"pass","ms":6200,"detail":""}
+← {"type":"summary","passed":5,"failed":0,"skipped":0,"overall":"pass"}
+```
+
+**SKIP-каскад при critical fail:**
+
+```bash
+← {"type":"test_result","id":"sdram","status":"fail","ms":1203,"detail":"addr=0x80200001..."}
+← {"type":"test_begin","id":"qspi",...}
+← {"type":"test_result","id":"qspi","status":"skip","ms":0,"detail":"critical test failed"}
+← {"type":"test_begin","id":"usd",...}
+← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"critical test failed"}
+  ...
+← {"type":"summary","passed":0,"failed":1,"skipped":4,"overall":"fail"}
+```
+
+---
+
+## Реестр тестов — порядок выполнения
+
+| №   | ID        | Название           | Critical | Тип                          |
+| --- | --------- | ------------------ | -------- | ---------------------------- |
+| 1   | `sdram`   | SDRAM 32 MB        | ✅        | Self-test                    |
+| 2   | `qspi`    | QSPI Flash W25Qxx  | ✅        | Self-test                    |
+| 3   | `usd`     | microSD (SDIO)     | ❌        | Interactive (pre-confirm)    |
+| 4   | `display` | TFT Display RGB888 | ❌        | Interactive (in-run confirm) |
+| 5   | `buttons` | Test Buttons       | ❌        | Interactive (physical)       |
+
+---
+
+## Диагностика — строки detail
+
+| Тест      | Значение `detail`                               | Диагноз                                     |
+| --------- | ----------------------------------------------- | ------------------------------------------- |
+| `sdram`   | `addr=0x... exp=0x.. got=0x..`                  | Сбой ячейки по адресу                       |
+| `sdram`   | `SEMC not ready — DCD failed?`                  | DCD не инициализировал SEMC                 |
+| `qspi`    | `JEDEC: mfr=0xFF exp=0xEF`                      | Чип не отвечает / не пропаян                |
+| `qspi`    | `JEDEC: unknown cap=0x..`                       | Неизвестный тип чипа                        |
+| `qspi`    | `erase verify failed at 0x...`                  | Сектор не стирается                         |
+| `qspi`    | `rw mismatch at 0x... exp=0x.. got=0x..`        | Ошибка записи или чтения                    |
+| `qspi`    | `addr alias: 0x... mirrors 0x... (3-byte wrap)` | Dedicated 4-byte opcodes не работают        |
+| `usd`     | `no card detected`                              | Карта не вставлена в слот                   |
+| `usd`     | `mount failed: <N>`                             | `f_mount()` вернул FRESULT N                |
+| `usd`     | `write failed: <N>`                             | `f_write()` вернул FRESULT N                |
+| `usd`     | `compare failed at offset <N>`                  | Данные после чтения не совпадают            |
+| `display` | `display init failed`                           | `bsp_display_init()` вернул ошибку          |
+| `display` | `<id> not confirmed`                            | Оператор не подтвердил / истёк таймаут 15 с |
+| `buttons` | `btn1_press timeout`                            | Test_But_1 не нажата за 10 с                |
+| `buttons` | `btn2_press timeout`                            | Test_But_2 не нажата за 10 с                |
+| любой     | `confirm timeout`                               | pre-confirm не получен за 30 с              |
+| любой     | `operator declined`                             | Получен `"confirmed":false`                 |
+| любой     | `critical test failed`                          | Предшествующий критичный тест провалился    |

@@ -1,130 +1,114 @@
 # bsp_sd — SD host-контроллер (USDHC1)
 
-Модуль инициализирует SD host-контроллер и проверяет наличие карты.
-Файловой системой не занимается — это ответственность `bsp_usd` (поверх) или
-приложения напрямую.
-
-## Место в архитектуре
-
-Каждый слой знает только о слое ниже — зависимости не пересекают границы.
-
-```bash
-firmware_test / tft_app
-│
-▼
-bsp_usd                  ← монтирование FatFS, тест R/W
-│
-├──► firmware_test_fatfs   ← ff.c + fsl_sd_disk + diskio (bare-metal ffconf)
-│    tft_app_fatfs         ← ff.c + fsl_sd_disk + diskio (FreeRTOS ffconf)
-│         │
-│         ▼
-│    port/fatfs/sd         ← diskio_sd.c: microsd_disk_* → fsl_sd_disk
-│         │
-▼         ▼
-bsp_sd                   ← этот модуль: host init / deinit / card detect
-│
-▼
-bsp/generated/sdmmc_config   ← board-level: BOARD_SD_Config, GPIO питания, pad config
-│
-▼
-sdk_sdmmc_sd                 ← NXP: fsl_sd, fsl_sdmmc_common, fsl_sdmmc_host (non-blocking)
-│
-▼
-sdk_usdhc                    ← NXP HAL: fsl_usdhc
-
-```
+Инициализация SD host-контроллера и детект карты. Файловой системой не
+занимается — это ответственность слоя `bsp_usd` / `port_fatfs_sd` поверх.
 
 ---
 
-## Аппаратный контекст
+## Аппаратура
 
-| Сигнал | Пин MCU          | Конфигурация                                     |
-| ------ | ---------------- | ------------------------------------------------ |
-| CLK    | GPIO_SD_B0_01    | USDHC1_CLK, периферийный режим                   |
-| CMD    | GPIO_SD_B0_00    | USDHC1_CMD, периферийный режим                   |
-| D0–D3  | GPIO_SD_B0_02–05 | USDHC1_DATA0–3, периферийный режим               |
-| CD_B   | GPIO_B1_12       | USDHC1_CD_B — детект через GPIO2[28]             |
-| SdPwr  | GPIO_AD_B1_03    | GPIO1[19], active-low, управляется SDK через BSP |
+| Сигнал | Пин MCU       | Корпус | Конфигурация                                  |
+| ------ | ------------- | ------ | --------------------------------------------- |
+| CLK    | GPIO_SD_B0_01 | J3     | USDHC1_CLK, периферийный режим                |
+| CMD    | GPIO_SD_B0_00 | J4     | USDHC1_CMD, периферийный режим                |
+| D0     | GPIO_SD_B0_02 | J1     | USDHC1_DATA0, периферийный режим              |
+| D1     | GPIO_SD_B0_03 | K1     | USDHC1_DATA1, периферийный режим              |
+| D2     | GPIO_SD_B0_04 | H2     | USDHC1_DATA2, периферийный режим              |
+| D3     | GPIO_SD_B0_05 | J2     | USDHC1_DATA3, периферийный режим              |
+| CD_B   | GPIO_B1_12    | D13    | USDHC1_CD_B — детект через периферийный режим |
+| SdPwr  | GPIO_AD_B1_03 | M12    | GPIO1[19], active-low                         |
 
-**CD_B** подключён как периферийный сигнал USDHC1, а не как GPIO. Детект карты
-читается через `USDHC_GetPresentStatusFlags` → `kUSDHC_CardInsertedFlag`.
-GPIO-прерывание на CD не используется (`kSD_DetectCardByHostCD`).
+**CD_B** подключён как периферийный сигнал USDHC1 — детект читается через
+`USDHC_GetPresentStatusFlags` → `kUSDHC_CardInsertedFlag`. GPIO-прерывание
+не используется (`kSD_DetectCardByHostCD`).
 
-**SdPwr** инициализируется в `BOARD_SD_Config()` как GPIO-выход, выключен при старте.
-SDK включает питание автоматически в процессе `SD_HostInit()` через callback.
+**SdPwr** инициализируется в `BOARD_SD_Config()` как GPIO-выход, выключен
+при старте. SDK включает питание автоматически в `SD_HostInit()` через callback.
+
+---
+
+## Архитектура
+
+```mermaid
+graph TB
+    FW["firmware_test / tft_app"]
+    USD["bsp_usd\nмонтирование FatFS, тест R/W"]
+    FATFS["firmware_test_fatfs / tft_app_fatfs\nff.c + fsl_sd_disk + diskio"]
+    PORT["port/fatfs/sd\ndiskio_sd.c → fsl_sd_disk"]
+    BSP["bsp_sd\nhost init / deinit / card detect"]
+    SDMMC_CFG["bsp/generated/sdmmc_config\nBOARD_SD_Config, GPIO питания"]
+    SDK_SD["sdk_sdmmc_sd\nfsl_sd, fsl_sdmmc_common"]
+    SDK_USDHC["sdk_usdhc\nfsl_usdhc"]
+
+    FW --> USD --> FATFS --> PORT --> BSP
+    BSP --> SDMMC_CFG --> SDK_SD --> SDK_USDHC
+```
+
+**Почему `ff.c` и `fsl_sd_disk.c` не собираются как общая библиотека:**
+оба включают `ffconf.h`, который разный для `firmware_test` (`FF_FS_REENTRANT=0`)
+и `tft_app` (`FF_FS_REENTRANT=1`). Общий только `port_fatfs_sd` — он `ff.h`
+напрямую не включает.
 
 ---
 
 ## API
 
-### `bsp_sd_init(void)`
-
-Конфигурирует SDMMC host однократно (`BOARD_SD_Config`) и запускает
-host-контроллер (`SD_HostInit`).
-
-Повторный вызов без `bsp_sd_deinit` — no-op, возвращает `BSP_OK`.
-
-Возвращает:
-
-- `BSP_OK` — host готов к работе;
-- `BSP_ERR_INIT` — `SD_HostInit` вернул ошибку.
-
-### `bsp_sd_deinit(void)`
-
-Останавливает host-контроллер и отключает питание карты.
-Безопасен при вызове до `init` или повторно после `deinit`.
-
-Возвращает:
-
-- `BSP_OK` — всегда.
-
-### `bsp_sd_is_inserted(void)`
-
-Читает регистр `USDHC1 PRSSTAT`. Не требует предварительного `bsp_sd_init()` —
-включает тактирование USDHC1 самостоятельно через `CLOCK_EnableClock`.
-
-Возвращает:
-
-- `true`  — карта вставлена;
-- `false` — карта отсутствует.
-
----
-
-## Разделение ответственности: bsp_sd vs sdmmc_config vs port_fatfs_sd
-
-| Слой                  | Что делает                                              | Где живёт                           |
-| --------------------- | ------------------------------------------------------- | ----------------------------------- |
-| `sdmmc_config`        | Константы платы, `BOARD_SD_Config`, GPIO питания, pads  | `bsp/generated/`                    |
-| `bsp_sd`              | `SD_HostInit/Deinit`, идемпотентность, card detect      | `bsp/sd/`                           |
-| `port_fatfs_sd`       | `microsd_disk_*` → `fsl_sd_disk` (FatFS diskio glue)    | `port/fatfs/sd/`                    |
-| `firmware_test_fatfs` | `ff.c` + `fsl_sd_disk` + `diskio.c` (bare-metal ffconf) | `firmware/test/fatfs/`              |
-| `tft_app_fatfs`       | `ff.c` + `fsl_sd_disk` + `diskio.c` (FreeRTOS ffconf)   | `firmware/tft_app/fatfs/` (будущее) |
-
-**Почему `ff.c` и `fsl_sd_disk.c` не компилируются один раз как общая библиотека:**
-оба включают `ff.h` → `ffconf.h`, который разный для `firmware_test` (bare-metal,
-`FF_FS_REENTRANT=0`) и `tft_app` (FreeRTOS, `FF_FS_REENTRANT=1`, `FF_VOLUMES=3`).
-Общий только `port_fatfs_sd` — он не включает `ff.h` напрямую.
-
----
-
-## Зависимости
-
-```cmake
-target_link_libraries(bsp_sd
-    PUBLIC  bsp_status       # bsp_status_t
-    PRIVATE bsp_sdmmc_config # BOARD_SD_Config, sdmmc_config.h, sdk_sdmmc_sd
-)
+```c
+bsp_status_t bsp_sd_init(void);
+bsp_status_t bsp_sd_deinit(void);
+bool         bsp_sd_is_inserted(void);
 ```
 
-`sdk_sdmmc_sd` — транзитивно через `bsp_sdmmc_config`.
-`sdk_usdhc` — транзитивно через `sdk_sdmmc_sd`.
+**`bsp_sd_init()`** — конфигурирует SDMMC host однократно (`BOARD_SD_Config`)
+и запускает host-контроллер (`SD_HostInit`). Повторный вызов без `deinit` — no-op,
+возвращает `BSP_OK`.
+
+**`bsp_sd_is_inserted()`** — читает регистр `USDHC1 PRSSTAT`. Не требует
+предварительного `bsp_sd_init()` — включает тактирование через `CLOCK_EnableClock`.
+Читает аппаратный регистр без дебаунса — добавляй дебаунс в вызывающем коде
+при механическом детекте.
+
+**Коды возврата:**
+
+| Функция         | Код            | Условие                     |
+| --------------- | -------------- | --------------------------- |
+| `bsp_sd_init`   | `BSP_OK`       | Host готов к работе         |
+| `bsp_sd_init`   | `BSP_ERR_INIT` | `SD_HostInit` вернул ошибку |
+| `bsp_sd_deinit` | `BSP_OK`       | Всегда                      |
 
 ---
 
-## Ограничения
+## Быстрый старт
 
-- Модуль рассчитан на одну карту (USDHC1, `g_sd` — единственный дескриптор).
-- `bsp_sd_is_inserted()` читает аппаратный регистр без дебаунса. При
-  механическом детекте возможны ложные срабатывания в момент вставки/извлечения —
-  добавляй дебаунс в вызывающем коде если нужно.
-- Hot-swap не поддерживается: `bsp_sd_deinit()` + `bsp_sd_init()` между сессиями.
+```c
+#include "bsp/sd.h"
+
+if (!bsp_sd_is_inserted()) {
+    /* карта отсутствует */
+}
+
+if (bsp_sd_init() != BSP_OK) {
+    /* host не инициализирован */
+}
+
+/* работа с картой через FatFS... */
+
+bsp_sd_deinit();
+```
+
+---
+
+## CMake
+
+```cmake
+target_link_libraries(firmware_test PRIVATE bsp_sd)
+```
+
+**Зависимости модуля:**
+
+| Зависимость        | Тип     | Описание                                        |
+| ------------------ | ------- | ----------------------------------------------- |
+| `bsp_status`       | PUBLIC  | `bsp_status_t` в публичном API                  |
+| `bsp_sdmmc_config` | PRIVATE | `BOARD_SD_Config`, sdmmc_config.h, sdk_sdmmc_sd |
+
+`sdk_sdmmc_sd` и `sdk_usdhc` — транзитивно через `bsp_sdmmc_config`.

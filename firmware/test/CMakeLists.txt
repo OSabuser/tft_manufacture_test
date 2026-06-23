@@ -15,6 +15,7 @@ add_executable(
   src/tests/test_qspi.c
   src/tests/test_usd.c
   src/tests/test_display.c
+  src/tests/test_buttons.c
   ${BSP_GENERATED}/clock_config.c
   ${BSP_STARTUP_FILE}
   ${BSP_SYSCALLS_FILE})
@@ -38,6 +39,7 @@ target_link_libraries(
   ${TARGET_NAME}
   PRIVATE bsp_board
           bsp_led
+          bsp_button
           bsp_display
           bsp_tick
           bsp_boot_xip

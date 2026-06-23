@@ -1,25 +1,26 @@
-# bsp_led
+# bsp_led — пользовательские светодиоды
 
-Драйвер двух пользовательских светодиодов на плате.
+Управление двумя пользовательскими светодиодами на плате.
+Используется для индикации heartbeat и состояния приложения.
 
 ---
 
-## Аппаратная часть
+## Аппаратура
 
-| `led_id_t`      | Сигнал     | GPIO  | Pin | Координата | Активный уровень |
-| --------------- | ---------- | ----- | --- | ---------- | ---------------- |
-| `LED_HEARTBEAT` | `UserLed1` | GPIO3 | 3   | M4         | LOW (0 = горит)  |
-| `LED_APP`       | `UserLed2` | GPIO3 | 4   | P2         | LOW (0 = горит)  |
+| Идентификатор   | Сигнал   | Пин MCU       | Корпус | GPIO     | Активный уровень |
+| --------------- | -------- | ------------- | ------ | -------- | ---------------- |
+| `LED_HEARTBEAT` | UserLed1 | GPIO_SD_B1_03 | M4     | GPIO3[3] | LOW (0 = горит)  |
+| `LED_APP`       | UserLed2 | GPIO_SD_B1_04 | P2     | GPIO3[4] | LOW (0 = горит)  |
 
-Пины сконфигурированы в `generated/pin_mux.h` (MCUXpresso Config Tools).  
-`INIT_GPIO_VALUE = 1U` — оба LED выключены сразу после `led_init()`.
+Пины настроены в `BOARD_InitPins()` (`generated/pin_mux.c`) как OUTPUT,
+`INIT_GPIO_VALUE = 1U` — оба LED выключены сразу после `bsp_led_init()`.
 
 ---
 
 ## API
 
 ```c
-void bsp_led_init(void);               // вызвать один раз после board_hw_init()
+void bsp_led_init(void);
 
 void bsp_led_on(led_id_t id);
 void bsp_led_off(led_id_t id);
@@ -28,22 +29,24 @@ void bsp_led_set(led_id_t id, bool on);
 bool bsp_led_get(led_id_t id);
 ```
 
+Вызвать `bsp_led_init()` один раз после `board_hw_init()`.
+
 ---
 
-## Использование
+## Быстрый старт
 
 ```c
 #include "bsp/led.h"
 
-// инициализация
 bsp_led_init();
 
-// heartbeat
+/* heartbeat в main loop */
 bsp_led_toggle(LED_HEARTBEAT);
 
-// прикладная индикация
-bsp_led_on(LED_APP);    // пакет принят / тест запущен
-bsp_led_off(LED_APP);   // сброс
+/* индикация события */
+bsp_led_on(LED_APP);
+/* ... */
+bsp_led_off(LED_APP);
 ```
 
 ---
@@ -51,20 +54,13 @@ bsp_led_off(LED_APP);   // сброс
 ## CMake
 
 ```cmake
-target_link_libraries(<target> PRIVATE bsp_led)
+target_link_libraries(firmware_test PRIVATE bsp_led)
 ```
 
-Зависимости: `bsp_board` (PUBLIC, транзитивно), `sdk_gpio` (PRIVATE).  
-При `BUILD_TESTS_HOST=ON` компонент не собирается — мокается через `fff` на уровне теста.
+**Зависимости модуля:**
 
----
-
-## Файлы
-
-```bash
-led/
-├── CMakeLists.txt
-├── include/led.h   # публичный API — без NXP хедеров
-├── src/led.c           # реализация, fsl_gpio.h только здесь
-└── README.md           # этот файл
-```
+| Зависимость  | Тип     | Описание                                     |
+| ------------ | ------- | -------------------------------------------- |
+| `bsp_status` | PUBLIC  | `bsp_status_t` в публичном API               |
+| `bsp_board`  | PRIVATE | Транзитивно: `pin_mux.h`, clock, SDK headers |
+| `sdk_gpio`   | PRIVATE | `fsl_gpio.h` — `GPIO_PinWrite/Read()`        |

@@ -2,30 +2,31 @@
 
 ## Обзор стека
 
-```bash
-devcontainer                         хост
-─────────────────────────────────    ──────────────────────────────────── 
-tests/target/<name>/                 tools/hil/
-  main.c        ← C-прошивка с CLI     test_<name>.py  ← pytest-тесты
-  CMakeLists.txt                        conftest.py     ← фикстуры (общие)
-                                        m5/agent.py     ← агент M5 (если нужен)
-CMakePresets.json
-  target-debug-build                 just/host.just
-  └── targets: [test_<name>]           hil-run, hil-<name>
+```mermaid
+flowchart LR
+    subgraph DC["Devcontainer"]
+        C["tests/target/&lt;name&gt;/\nmain.c — C-прошивка с CLI\nCMakeLists.txt"]
+        CP["CMakePresets.json\ntarget-debug-build"]
+        JB["just/build.just\nbuild-hil"]
+        C --> CP --> JB
+    end
 
-just/build.just
-  build-hil
+    subgraph Host["Хост"]
+        PY["tools/hil/\ntest_&lt;name&gt;.py — pytest\nconftest.py — фикстуры"]
+        JH["just/host.just\nhil-run, hil-&lt;name&gt;"]
+        PY --> JH
+    end
 ```
 
 Три типа тестов:
 
 | Тип               | Использует M5 | Запуск                | Когда применять                                       |
 | ----------------- | ------------- | --------------------- | ----------------------------------------------------- |
-| **Базовый**       | Нет           | `hil-run`             | Тестирование UART CLI, алгоритмов, таймингов          |
-| **С M5**          | Да            | `hil-run`             | Тестирование GPIO, оптовходов, реле, питания          |
+| **Базовый**       | Нет           | `hil-run`             | UART CLI, алгоритмы, тайминги                         |
+| **С M5**          | Да            | `hil-run`             | GPIO, оптовходы, реле, питание                        |
 | **Интерактивный** | Нет / Да      | `hil-run-interactive` | Периферия требует действий оператора: кнопки, дисплей |
 
-Интерактивные тесты помечаются `@pytest.mark.interactive` и **никогда не входят в `hil-run`** — они требуют живого оператора и не пригодны для CI.
+Интерактивные тесты помечаются `@pytest.mark.interactive` и **не входят в `hil-run`**.
 
 ---
 
@@ -42,7 +43,7 @@ just/build.just
 
 #define CLI_BAUD_RATE  115200U
 #define CLI_LINE_MAX   128U
-#define CLI_RX_TIMEOUT 100U   /* мс — увеличить если нужен частый process() */
+#define CLI_RX_TIMEOUT 100U
 
 static size_t cli_read_line(uint8_t *p_buf, size_t max_len)
 {
@@ -77,7 +78,6 @@ int main(void)
     bsp_uart_host_init(CLI_BAUD_RATE);
     bsp_led_on(LED_HEARTBEAT);
 
-    /* Шлём READY пока хост не открыл порт */
     while (bsp_uart_host_rx_available() == 0U) {
         bsp_uart_host_write_str("READY\r\n");
         bsp_delay(200U);
@@ -85,7 +85,6 @@ int main(void)
 
     static uint8_t s_line_buf[CLI_LINE_MAX];
     for (;;) {
-        /* Если тест использует прерывания/process() — вызывать здесь */
         size_t len = cli_read_line(s_line_buf, sizeof(s_line_buf));
         if (len > 0U) cli_process_line((const char *)s_line_buf);
     }
@@ -132,7 +131,7 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 ```cmake
 add_subdirectory(host_uart)
 add_subdirectory(hil_opto)
-add_subdirectory(<name>)   # ← добавить строку
+add_subdirectory(<name>)   # ← добавить
 ```
 
 ---
@@ -153,13 +152,13 @@ add_subdirectory(<name>)   # ← добавить строку
 
 ---
 
-## Шаг 4 — Сборка
+## Шаг 4 — Собрать
 
 ```bash
 # В devcontainer:
 just build::build-hil
 
-# Проверить что новый таргет собрался:
+# Проверить:
 ls build/target-debug/tests/target/<name>/test_<name>.elf
 ```
 
@@ -167,16 +166,10 @@ ls build/target-debug/tests/target/<name>/test_<name>.elf
 
 ## Шаг 5 — `conftest.py`: добавить фикстуры
 
-Открыть `tools/hil/conftest.py` и добавить:
-
-1. Фикстуру загрузки `loaded_<n>` в конец раздела загрузок.
-2. Одну строку в `_UART_FIXTURE_MAP` — фабрика `_make_uart_fixture` автоматически
-   создаст фикстуру `uart_<n>` через контекстный менеджер `_uart_context`.
-
 ### Базовый тест (без M5)
 
 ```python
-# 1. Фикстура загрузки — добавить в раздел loaded_*
+# 1. Фикстура загрузки
 @pytest.fixture(scope="module")
 def loaded_<n>(request: pytest.FixtureRequest) -> None:
     _load_elf(
@@ -184,22 +177,19 @@ def loaded_<n>(request: pytest.FixtureRequest) -> None:
         Path(cfg.BUILD_DIR) / "tests/target/<n>/test_<n>.elf",
     )
 
-# 2. UART-фикстура — добавить одну строку в словарь
+# 2. UART-фикстура — одна строка в словарь
 _UART_FIXTURE_MAP = {
     ...
-    "uart_<n>":  "loaded_<n>",   # ← добавить
+    "uart_<n>": "loaded_<n>",
 }
 ```
 
-### Тест с M5 (GPIO, реле, питание)
+### Тест с M5
 
 ```python
-# 1. Фикстура загрузки — зависимость от m5 гарантирует питание
+# 1. Зависимость от m5 гарантирует что питание включено до загрузки ELF
 @pytest.fixture(scope="module")
 def loaded_<n>(request: pytest.FixtureRequest, m5: M5Agent) -> None:
-    """
-    Зависит от m5 — питание таргета уже включено к моменту загрузки ELF.
-    """
     _load_elf(
         request,
         Path(cfg.BUILD_DIR) / "tests/target/<n>/test_<n>.elf",
@@ -208,23 +198,18 @@ def loaded_<n>(request: pytest.FixtureRequest, m5: M5Agent) -> None:
 # 2. UART-фикстура — та же одна строка
 _UART_FIXTURE_MAP = {
     ...
-    "uart_<n>":  "loaded_<n>",   # ← добавить
+    "uart_<n>": "loaded_<n>",
 }
 ```
 
 **Правило:** если тест управляет железом через M5 — `loaded_<n>` должен явно
-зависеть от `m5`. Это гарантирует что питание включено до того как pyOCD
-попытается подключиться к MCU.
-
-> Ручное написание `uart_<n>` фикстур больше не требуется — фабрика
-> `_make_uart_fixture` создаёт фикстуру с `_uart_context` (контекстный менеджер,
-> гарантирует `ser.close()` при любом исходе).
+зависеть от `m5`, иначе pyOCD попытается подключиться до включения питания.
 
 ---
 
 ## Шаг 6 — `tools/hil/test_<name>.py`
 
-### Базовый тест (без M5)
+### Базовый тест
 
 ```python
 """test_<name>.py — HIL тест <что тестируем>."""
@@ -239,23 +224,21 @@ class Test<Name>:
         self.ser = uart_<name>
 
     def test_ping(self):
-        """Базовая проверка канала."""
         assert uart_cmd(self.ser, "PING") == "PONG"
 
     def test_something(self):
-        resp = uart_cmd(self.ser, "MY_CMD")
-        assert resp == "EXPECTED"
+        assert uart_cmd(self.ser, "MY_CMD") == "EXPECTED"
 ```
 
 ### Тест с M5
 
 ```python
-"""test_<name>.py — HIL тест <что тестируем> через M5StampPLC."""
+"""test_<name>.py — HIL тест через M5StampPLC."""
 import time
 import pytest
 from conftest import uart_cmd
 
-SETTLE_S = 0.15   # ждать после переключения реле
+SETTLE_S = 0.15
 
 
 class Test<Name>:
@@ -264,14 +247,11 @@ class Test<Name>:
     def _setup(self, uart_<name>, m5):
         self.ser = uart_<name>
         self.m5 = m5
-        self.m5.opto_all_off()   # или другой сброс состояния стенда
+        self.m5.opto_all_off()
         time.sleep(SETTLE_S)
 
     def test_ping(self):
         assert uart_cmd(self.ser, "PING") == "PONG"
-
-    def test_m5_ping(self):
-        self.m5.ping()
 
     def test_something_with_relay(self):
         self.m5.opto_set(1, True)
@@ -279,9 +259,7 @@ class Test<Name>:
         assert uart_cmd(self.ser, "READ_INPUT") == "ACTIVE"
 ```
 
-**Важно про таймауты:** после переключения реле нужно ждать:
-реле (~10 мс) + оптопара (~0.1 мс) + дебаунс прошивки + один цикл `process()`.
-Используй активное ожидание вместо фиксированного `sleep` там где важна скорость:
+Для критичных к скорости тестов — активное ожидание вместо фиксированного `sleep`:
 
 ```python
 def wait_until(ser, cmd, expected, timeout_s=1.0):
@@ -293,22 +271,20 @@ def wait_until(ser, cmd, expected, timeout_s=1.0):
     raise TimeoutError(f"Ожидали {expected!r} от '{cmd}'")
 ```
 
-### Интерактивный тест (оператор нажимает кнопки / смотрит на дисплей)
-
-Добавить маркер на класс. Для ввода использовать `/dev/tty` напрямую — `input()` не работает под захватом pytest даже с `-s`:
+### Интерактивный тест
 
 ```python
-"""test_<name>.py — интерактивный HIL-тест <что тестируем>."""
+"""test_<name>.py — интерактивный HIL-тест."""
 import time
 import pytest
 from conftest import uart_cmd
 
-SETTLE_S = 0.10   # ждать после действия оператора (debounce и т.п.)
+SETTLE_S = 0.10
 
 
 def _operator_prompt(msg: str) -> None:
-    """Вывести подсказку и дождаться Enter от оператора.
-    Читает /dev/tty напрямую — работает независимо от захвата pytest."""
+    """Вывести подсказку и ждать Enter. Читает /dev/tty напрямую — работает
+    независимо от захвата pytest."""
     with open("/dev/tty", "w") as tty_out:
         tty_out.write(f"\n  >>> {msg}\n      Нажмите Enter когда готово...\n")
         tty_out.flush()
@@ -332,14 +308,7 @@ class Test<Name>:
         assert uart_cmd(self.ser, "MY_CMD") == "EXPECTED"
 ```
 
-**Запуск интерактивных тестов:**
-
-```bash
-just host::hil-run-interactive   # все интерактивные
-just host::hil-button            # конкретный интерактивный
-```
-
-**Правило:** интерактивные тесты **не добавлять** в `hil-run` — они входят только в `hil-run-interactive`.
+Запуск: `just host::hil-run-interactive` или `just host::hil-<name>` (с флагом `-s`).
 
 ---
 
@@ -365,86 +334,50 @@ hil-<n>:
 
 ---
 
-## Полный цикл
-
-```bash
-# 1. devcontainer — собрать прошивку
-just build::build-hil
-
-# 2. хост — убедиться что стенд готов (если тест использует M5)
-just host::m5-deploy       # если менялся agent.py
-just host::m5-scan         # убедиться что M5 видна
-
-# 3. хост — запустить только новый тест
-just host::hil-<name>
-
-# 4. хост — загрузить ELF вручную без тестов (для отладки)
-uv run --directory tools/hil python load_and_run.py \
-    build/target-debug/tests/target/<name>/test_<name>.elf
-
-# 5. хост — запустить один тест
-uv run --directory tools/hil pytest test_<name>.py::Test<Name>::test_ping -v
-```
-
----
-
 ## Как работают фикстуры
 
-### Цепочка зависимостей
+```mermaid
+flowchart TB
+    TF["test_foo()"]
+    SU["_setup\n(function scope, autouse)"]
+    UN["uart_&lt;n&gt;\n(module scope)"]
+    LN["loaded_&lt;n&gt;\n(module scope)"]
+    M5["m5\n(module scope, если нужен)"]
 
-```bash
-test_foo()
-  └── _setup (function scope, autouse)
-        ├── uart_<n> (module scope)     ← открыт один раз на весь файл
-        │     └── loaded_<n>            ← ELF загружен один раз
-        │           └── m5              ← (если нужен) питание включено
-        └── m5 (module scope)           ← (если нужен напрямую в тесте)
+    TF --> SU
+    SU --> UN --> LN
+    LN --> M5
 ```
 
-`scope=module` — фикстура создаётся один раз на весь тест-файл, уничтожается
-после последнего теста. ELF грузится один раз, порт открывается один раз.
+`scope=module` — фикстура создаётся один раз на весь тест-файл. ELF грузится
+один раз, порт открывается один раз.
 
-### Порядок при запуске нескольких файлов
-
-```bash
-pytest 01_test_uart.py test_<name>.py
-
-01_test_uart.py            test_<name>.py
-─────────────────────      ─────────────────────
-loaded_host_uart           m5 ← создаётся
-uart ← создаётся           loaded_<name>
-  test_ping                uart_<name> ← создаётся
-  test_echo                  test_ping
-uart.close()                 test_something
-                           uart_<name>.close()
-                           m5 teardown → power(False)
-```
-
-Каждый файл — своя загрузка ELF, свой UART-сеанс. MCU перезагружается между файлами.
+**Порядок при нескольких файлах:** каждый файл — своя загрузка ELF, свой
+UART-сеанс. MCU перезагружается между файлами.
 
 ---
 
 ## Чеклист
 
-### Автоматический тест (базовый или с M5)
+### Автоматический тест
 
 ```bash
-[ ] tests/target/<n>/main.c           — C-прошивка с CLI + READY-паттерн
-[ ] tests/target/<n>/CMakeLists.txt   — сборка с bsp_boot_ram
+[ ] tests/target/<n>/main.c              — C-прошивка с CLI + READY-паттерн
+[ ] tests/target/<n>/CMakeLists.txt      — сборка с bsp_boot_ram
 [ ] tests/target/CMakeLists.txt          — add_subdirectory(<n>)
 [ ] CMakePresets.json                    — добавить test_<n> в targets
 [ ] tools/hil/conftest.py                — loaded_<n> + строка в _UART_FIXTURE_MAP
-[ ] tools/hil/test_<n>.py             — pytest-тесты
+[ ] tools/hil/test_<n>.py               — pytest-тесты
 [ ] just/host.just                       — рецепт hil-<n> (опционально)
 [ ] just build::build-hil                — зелёная сборка
-[ ] just host::hil-<n>                — зелёный прогон
+[ ] just host::hil-<n>                  — зелёный прогон
 ```
 
-### Интерактивный тест (дополнительно к базовому чеклисту)
+### Дополнительно для интерактивного теста
 
 ```bash
 [ ] @pytest.mark.interactive             — пометить класс в test_<n>.py
 [ ] just/host.just                       — рецепт hil-<n> с флагом -s
 [ ] just host::hil-run-interactive       — зелёный прогон
-[ ] убедиться что just host::hil-run     — NOT в выборке (маркер исключает)
+[ ] убедиться что just host::hil-run     — НЕ включает этот тест
 ```

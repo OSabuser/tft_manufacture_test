@@ -2,23 +2,33 @@
 
 ## Обзор архитектуры
 
-Отладка построена на проброске GDB-сервера с хоста в devcontainer по TCP. Это позволяет держать весь инструментарий сборки и языковой сервер внутри контейнера, не проводя USB-пробник внутрь Docker.
+Отладка построена на пробросе GDB-сервера с хоста в devcontainer по TCP. Это
+позволяет держать весь инструментарий сборки и языковой сервер внутри контейнера,
+не проводя USB-пробник внутрь Docker.
 
-```bash
-┌─────────────────────────────────────┐     ┌──────────────────────────────────┐
-│            Хост (macOS/Linux)       │     │         DevContainer             │
-│                                     │     │                                  │
-│  just host::debug-server            │     │  VSCode + cortex-debug           │
-│  └─ pyocd gdbserver :3333 ──────────┼─────┼──► arm-none-eabi-gdb             │
-│                                     │TCP  │       └─ символы из .elf         │
-│  MCU-Link (CMSIS-DAP)               │3333 │                                  │
-│  └─ SWD ──► MIMXRT1052             │     │  RTT Console (SEGGER RTT логи)   │
-│             Flash / SDRAM           │     │  Peripherals (SVD регистры)      │
-│             SEGGER RTT буфер        │     │  RTOS view (FreeRTOS задачи)     │
-└─────────────────────────────────────┘     └──────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Host["Хост (macOS / Linux)"]
+        DS["just host::debug-server\npyocd gdbserver :3333"]
+        ML["MCU-Link (CMSIS-DAP)"]
+        DS --> ML
+    end
+
+    subgraph DC["Devcontainer"]
+        CD["cortex-debug\n(VSCode F5)"]
+        GDB["arm-none-eabi-gdb\nсимволы из .elf"]
+        CD --> GDB
+    end
+
+    Board["MIMXRT1052\nFlash / SDRAM\nSEGGER RTT буфер"]
+
+    GDB -->|"TCP host.docker.internal:3333"| DS
+    ML -->|"SWD"| Board
 ```
 
-**Ключевой принцип:** `pyocd gdbserver` запускается на хосте и слушает на `0.0.0.0:3333`. Из контейнера GDB подключается через `host.docker.internal:3333` — специальный DNS-алиас Docker, который резолвится в IP хост-машины.
+**Ключевой принцип:** `pyocd gdbserver` слушает на `0.0.0.0:3333`. Из контейнера
+GDB подключается через `host.docker.internal:3333` — специальный DNS-алиас Docker,
+резолвится в IP хост-машины.
 
 ---
 
@@ -48,10 +58,9 @@
 
 ### Конфигурация
 
-Параметры отладки задаются в `.env` и автоматически экспортируются через `just` (`set export`), откуда наследуются скриптами:
+Параметры отладки задаются в `.env`:
 
 ```bash
-# .env — секция Debug / SWD
 GDB_PORT=3333
 PYOCD_TARGET=mimxrt1050_quadspi
 PYOCD_FREQUENCY=4000000
@@ -60,7 +69,7 @@ FCB_PATH=tools/host/dcd/w25q128_fdcb.bin
 
 ---
 
-## Прошивки, поддерживаемые отладкой
+## Поддерживаемые прошивки
 
 | Конфигурация VSCode           | ELF                             | Особенности                  |
 | ----------------------------- | ------------------------------- | ---------------------------- |
@@ -68,7 +77,7 @@ FCB_PATH=tools/host/dcd/w25q128_fdcb.bin
 | `🐛 Debug: bootloader`         | `build/Debug/bootloader.elf`    | Bare-metal, A/B обновление   |
 | `🐛 Debug: tft_app (FreeRTOS)` | `build/Debug/app.elf`           | FreeRTOS, task view          |
 
-Все три — XIP-прошивки, исполняются напрямую из QuadSPI NOR Flash (`0x60000000`).
+Все три — XIP-прошивки, исполняются из QuadSPI NOR Flash (`0x60000000`).
 
 ---
 
@@ -76,32 +85,29 @@ FCB_PATH=tools/host/dcd/w25q128_fdcb.bin
 
 ### Режим А — прошивка уже в Flash
 
-Стандартный ежедневный сценарий. Прошивка была залита ранее любым способом и исполняется на плате.
-
 ```bash
-# 1. Хост — запустить GDB-сервер (оставить работать в отдельном терминале)
+# 1. Хост — запустить GDB-сервер (оставить в отдельном терминале)
 just host::debug-server
 
 # 2. DevContainer — VSCode
 #    Run & Debug (Ctrl+Shift+D) → выбрать конфигурацию → F5
 ```
 
-GDB сбрасывает MCU, загружает символы из ELF и останавливается на входе в `main`. Flash не перезаписывается.
+GDB сбрасывает MCU, загружает символы из ELF и останавливается на входе
+в `main`. Flash не перезаписывается.
 
 ### Режим Б — прошить через SWD, затем отладить
 
-Когда нужно обновить прошивку без перевода платы в режим Serial Downloader. Удобно при итеративной разработке когда плата закреплена в стенде.
-
 ```bash
-# 1. DevContainer — собрать HAB-образ
+# 1. DevContainer
 just build::hab-firmware-test-debug
 
-# 2. Хост — прошить через SWD (MCU-Link, без смены BOOT_MODE)
+# 2. Хост
 just host::flash-swd-test-debug
 
-# 3. ⚡ Power cycle платы (обязательно — VECTRESET не реинициализирует FlexSPI)
+# 3. ⚡ Power cycle платы (обязательно)
 
-# 4. Хост — запустить GDB-сервер
+# 4. Хост
 just host::debug-server
 
 # 5. DevContainer — VSCode → 🐛 Debug: firmware_test → F5
@@ -109,16 +115,14 @@ just host::debug-server
 
 ### Режим В — прошить через USB SDP, затем отладить
 
-Классический способ. Требует перевода платы в режим Serial Downloader (BOOT_MODE = 01).
-
 ```bash
-# 1. DevContainer — собрать
+# 1. DevContainer
 just build::build-firmware-test-debug
 
-# 2. Хост — перевести плату в Serial Downloader mode, затем:
+# 2. Хост — перевести плату в SDP-режим, затем:
 just host::flash-test-debug
 
-# 3. Хост — запустить GDB-сервер
+# 3. Хост
 just host::debug-server
 
 # 4. DevContainer — VSCode → 🐛 Debug: firmware_test → F5
@@ -128,33 +132,32 @@ just host::debug-server
 
 ## Почему flash через SWD требует FCB
 
-При прошивке через USB SDP (режимы А и В) ROM-загрузчик сам инициализирует FlexSPI контроллер по DCD из HAB-образа — Flash Configuration Block ему не нужен.
+При USB SDP ROM-загрузчик инициализирует FlexSPI по DCD из HAB-образа — FCB
+не нужен. При SWD flash-алгоритм pyOCD пишет в NOR Flash напрямую. При
+cold-start Boot ROM сначала читает FCB по адресу `0x60000000`, конфигурирует
+FlexSPI, и только потом ищет IVT. Без FCB бутлоадер не стартует.
 
-При прошивке через SWD flash-алгоритм pyOCD записывает данные напрямую в NOR Flash. При cold-start Boot ROM первым делом читает FCB по адресу `0x60000000`, конфигурирует по нему FlexSPI, и только потом ищет IVT. Без FCB бутлоадер не может обратиться к Flash.
-
-`flash_swd.py` решает это, собирая итоговый образ перед записью:
+`flash_swd.py` решает это, собирая образ перед записью:
 
 ```bash
-0x60000000  w25q128_fdcb.bin  (512 байт)  — FCB: параметры W25Q128, Quad SPI
-0x60000200  0xFF × 3584 байт             — padding (значение стёртой ячейки)
-0x60001000  firmware_test_hab.bin         — IVT + DCD + код (ivtOffset = 0x1000)
+0x60000000  w25q128_fdcb.bin  (512 байт)  — FCB
+0x60000200  0xFF × 3584 байт             — padding
+0x60001000  firmware_test_hab.bin         — IVT + DCD + код
 ```
 
-Весь диапазон `0x60000000–0x6000FFFF` умещается в один 64KB-сектор Flash, поэтому стирается и записывается за одну транзакцию — FCB и HAB не перезаписывают друг друга.
+Весь диапазон `0x60000000–0x6000FFFF` — один 64KB сектор: стирается и
+записывается за одну транзакцию.
 
 ---
 
 ## RTT-логи
 
-SEGGER RTT включён только в Debug-сборках (`SEGGER_RTT_ENABLED=ON` в `CMakePresets.json`). В Release-сборках RTT отключён и символ `_SEGGER_RTT` в ELF отсутствует.
-
-После старта отладки вкладка `TERMINAL → RTT` в VSCode принимает вывод из RTT-буфера канала 0. `cortex-debug` находит адрес буфера автоматически по символу `_SEGGER_RTT` из ELF (`address: auto` в `launch.json`).
-
-Использование в коде:
+SEGGER RTT включён только в Debug-сборках (`SEGGER_RTT_ENABLED=ON`).
+После старта отладки вкладка `TERMINAL → RTT` принимает вывод канала 0.
+`cortex-debug` находит адрес буфера по символу `_SEGGER_RTT` из ELF.
 
 ```c
 #include "SEGGER_RTT.h"
-
 SEGGER_RTT_printf(0, "value = %d\n", value);
 ```
 
@@ -162,46 +165,47 @@ SEGGER_RTT_printf(0, "value = %d\n", value);
 
 ## FreeRTOS task view
 
-Конфигурация `🐛 Debug: tft_app (FreeRTOS)` включает `"rtos": "FreeRTOS"` — cortex-debug разбирает внутренние структуры планировщика и показывает вкладку `RTOS` с таблицей задач: имя, состояние (`Running` / `Ready` / `Blocked` / `Suspended`), использование стека, приоритет. При паузе можно переключиться в контекст любой задачи и просмотреть её стек вызовов.
+Конфигурация `🐛 Debug: tft_app (FreeRTOS)` включает `"rtos": "FreeRTOS"` —
+cortex-debug разбирает структуры планировщика и показывает вкладку `RTOS`
+с таблицей задач: имя, состояние, использование стека, приоритет.
 
 ---
 
 ## Просмотр регистров периферии
 
-Вкладка `Peripherals` в панели отладки показывает все периферийные блоки MIMXRT1052 по SVD-файлу `bsp/generated/startup/MIMXRT1052.xml`. Значения регистров обновляются при каждой паузе. Можно раскрыть любой блок (GPIO, LPUART, USB, FlexSPI и т.д.) и просматривать поля побитово.
+Вкладка `Peripherals` показывает все блоки MIMXRT1052 по SVD-файлу
+`bsp/generated/startup/MIMXRT1052.xml`. Значения обновляются при каждой паузе.
 
 ---
 
-## Ограничения и важные замечания
+## Ограничения
 
-**MCU-Link монопольный ресурс.** `debug-server` и `flash-swd` не могут работать одновременно — оба занимают пробник. Перед `flash-swd` остановите сервер (Ctrl+C), и наоборот.
+**MCU-Link монопольный ресурс.** `debug-server` и `flash-swd` не могут
+работать одновременно. Перед `flash-swd` остановите сервер (Ctrl+C).
 
-**HIL-тесты vs отладка.** pyOCD также используется для HIL (загрузка ELF в RAM через `pyocd.yaml`). Перед запуском HIL-тестов (`just host::hil-run`) остановите GDB-сервер.
+**HIL-тесты vs отладка.** pyOCD также используется для HIL. Перед
+`just host::hil-run` остановите GDB-сервер.
 
-**Power cycle после flash-swd обязателен.** pyOCD завершает запись командой VECTRESET, которая не реинициализирует FlexSPI контроллер. Boot ROM при таком сбросе не может прочитать FCB и не стартует из Flash. Только полное отключение питания гарантирует корректный cold-start.
+**Power cycle после flash-swd обязателен.** VECTRESET не реинициализирует
+FlexSPI — только полное отключение питания гарантирует корректный cold-start.
 
-**Только Debug-сборки.** Отладка с символами возможна только для `Debug` CMake-пресета. Release-сборки компилируются с `-O2` без DWARF-символов.
+**Только Debug-сборки.** Release компилируется с `-O2` без DWARF-символов.
 
 ---
 
 ## Быстрый старт (первый запуск)
 
 ```bash
-# 1. Убедиться что cortex-debug установлен в devcontainer
-#    .devcontainer/devcontainer.json → extensions: ["marus25.cortex-debug"]
-
-# 2. Убедиться что в .devcontainer/devcontainer.json есть (для Linux-хостов):
+# 1. Убедиться что в .devcontainer/devcontainer.json есть (для Linux):
 #    "runArgs": ["--add-host=host.docker.internal:host-gateway"]
 
-# 3. Залить прошивку любым способом (один раз)
-just host::flash-test-debug          # USB SDP
-# или
-just host::flash-swd-test-debug      # SWD (после just build::hab-firmware-test-debug)
+# 2. Залить прошивку
+just host::flash-test-debug
 
-# 4. Запустить GDB-сервер на хосте
+# 3. Хост — запустить GDB-сервер
 just host::debug-server
 
-# 5. В VSCode (devcontainer)
+# 4. DevContainer — VSCode
 #    Ctrl+Shift+D → 🐛 Debug: firmware_test → F5
 ```
 
@@ -213,7 +217,7 @@ just host::debug-server
 .
 ├── .env                                  # GDB_PORT, PYOCD_TARGET, PYOCD_FREQUENCY, FCB_PATH
 ├── .vscode/
-│   ├── launch.json                       # Конфигурации cortex-debug (3 проекта)
+│   ├── launch.json                       # cortex-debug конфигурации (3 проекта)
 │   └── tasks.json                        # preLaunchTask: build:*-debug
 ├── bsp/generated/startup/
 │   └── MIMXRT1052.xml                    # SVD — регистры периферии
