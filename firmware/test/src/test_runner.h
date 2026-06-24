@@ -17,6 +17,7 @@
 #include "test_module.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 
 /**
  * @brief Инициализировать runner. Сбрасывает состояние в IDLE и обнуляет счётчики.
@@ -85,5 +86,26 @@ bool test_runner_is_busy(void);
  * @return true если оператор подтвердил, false при отказе или таймауте.
  */
 bool test_runner_wait_confirm(const confirm_params_t *p_params);
+
+/**
+ * @brief Запустить выбранное подмножество тестов по списку ID.
+ *
+ * Порядок выполнения — по реестру таргета, не по порядку в pp_ids.
+ * Если хотя бы один ID не найден в реестре — отправляет UNKNOWN_TEST и не запускает ничего.
+ * Если runner занят — отправляет BUSY.
+ * После завершения всех выбранных тестов отправляет summary.
+ *
+ * @param[in] pp_ids  Массив C-строк с идентификаторами тестов.
+ * @param[in] count   Количество элементов в pp_ids.
+ */
+void test_runner_run_selected(const char *const *p_pp_ids, size_t count);
+
+/**
+ * @brief Отправить список всех зарегистрированных тестов хосту.
+ *
+ * Вызывается из cli.c при получении команды list_tests.
+ * Проксирует реестр в protocol_send_test_list().
+ */
+void test_runner_send_list(void);
 
 #endif /* TEST_RUNNER_H_ */

@@ -21,8 +21,8 @@
 #include "test_module.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
-
 /** @brief Строка версии прошивки, вставляемая в session_start. */
 #define FIRMWARE_TEST_VERSION "0.1.4"
 
@@ -73,6 +73,16 @@ void protocol_send_confirm_request(const confirm_params_t *p_params);
  * @brief Отправить pong — ответ на ping.
  */
 void protocol_send_pong(void);
+
+/**
+ * @brief Отправить список тестов из реестра (ответ на команду list_tests).
+ *
+ * Формат: {"type":"test_list","tests":[{"id":"...","name":"...","critical":...,"requires_hil":...},...]}
+ *
+ * @param[in] pp_registry  Указатель на массив указателей на дескрипторы тестов.
+ * @param[in] count        Размер реестра.
+ */
+void protocol_send_test_list(const test_module_t *const *p_pp_registry, size_t count);
 
 /**
  * @brief Отправить событие error.

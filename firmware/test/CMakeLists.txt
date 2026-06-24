@@ -11,7 +11,9 @@ add_executable(
   src/cli.c
   src/protocol.c
   src/test_runner.c
+  src/tests/test_opto.c
   src/tests/test_sdram.c
+  src/tests/test_can.c
   src/tests/test_qspi.c
   src/tests/test_usd.c
   src/tests/test_display.c
@@ -38,6 +40,7 @@ target_compile_definitions(
 target_link_libraries(
   ${TARGET_NAME}
   PRIVATE bsp_board
+          bsp_can
           bsp_led
           bsp_button
           bsp_display
@@ -46,6 +49,7 @@ target_link_libraries(
           bsp_usb_cdc
           bsp_sdram
           bsp_qspi_flash
+          bsp_opto
           bsp_sd
           firmware_test_fatfs)
 

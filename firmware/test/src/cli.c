@@ -36,7 +36,7 @@ static const char K_FIELD_TYPE[]      = "\"type\"";
 static const char K_FIELD_CMD[]       = "\"cmd\"";
 static const char K_FIELD_ID[]        = "\"id\"";
 static const char K_FIELD_CONFIRMED[] = "\"confirmed\"";
-
+static const char K_FIELD_TESTS[]     = "\"tests\"";
 /** @brief Буфер непрочитанного остатка chunk после вызова process_line(). */
 static uint8_t g_s_chunk_buf[CLI_LINE_BUF_SIZE];
 static size_t g_s_chunk_len = 0U;
@@ -172,6 +172,63 @@ static bool parse_confirmed_field(const char *p_line, bool *p_out)
     return false;
 }
 
+/**
+ * @brief Извлечь массив строковых значений из JSON-массива ["a","b","c"].
+ *
+ * @param[in]  p_array_start  Указатель на символ '[' в строке.
+ * @param[out] pp_out         Массив указателей на статические буферы.
+ * @param[out] p_out_bufs     Двумерный буфер под строки.
+ * @param[in]  max_items      Максимальное число элементов.
+ * @param[in]  item_max_len   Максимальная длина каждого элемента (с NUL).
+ * @return Количество извлечённых элементов, или 0 при ошибке.
+ */
+static size_t parse_string_array(const char *p_array_start, char (*p_out_bufs)[TEST_ID_MAX_SIZE],
+                                 size_t max_items)
+{
+    const char *p = strchr(p_array_start, '[');
+    if (p == NULL)
+    {
+        return 0U;
+    }
+    p++; /* пропустить '[' */
+
+    size_t count = 0U;
+    while (count < max_items)
+    {
+        const char *open_q = strchr(p, '"');
+        if (open_q == NULL)
+        {
+            break;
+        }
+        open_q++;
+        const char *close_q = strchr(open_q, '"');
+        if (close_q == NULL)
+        {
+            break;
+        }
+
+        size_t len = (size_t) (close_q - open_q);
+        if (len == 0U || len >= TEST_ID_MAX_SIZE)
+        {
+            return 0U; /* невалидный ID */
+        }
+
+        memcpy(p_out_bufs[count], open_q, len);
+        p_out_bufs[count][len] = '\0';
+        count++;
+
+        p = close_q + 1U;
+        /* Проверить конец массива */
+        const char *bracket = strchr(p, ']');
+        const char *next_q  = strchr(p, '"');
+        if (bracket != NULL && (next_q == NULL || bracket < next_q))
+        {
+            break;
+        }
+    }
+    return count;
+}
+
 /* ── Обработчики входящих сообщений ────────────────────────────────────── */
 
 /**
@@ -189,6 +246,40 @@ static void handle_cmd_run(const char *p_line)
     }
 
     test_runner_run_single(test_id);
+}
+
+/**
+ * @brief Обработать команду "run_selected": распарсить массив ids и передать в test_runner.
+ */
+static void handle_cmd_run_selected(const char *p_line)
+{
+    /* Максимальный размер реестра — не более 16 тестов */
+    const size_t MAX_SELECTED = 16U;
+    char id_bufs[16][TEST_ID_MAX_SIZE];
+    const char *id_ptrs[16];
+
+    const char *tests_key = strstr(p_line, K_FIELD_TESTS);
+    if (tests_key == NULL)
+    {
+        protocol_send_error("PARSE_ERR");
+        return;
+    }
+
+    size_t count =
+        parse_string_array(tests_key + sizeof(K_FIELD_TESTS) - 1U, id_bufs, MAX_SELECTED);
+
+    if (count == 0U)
+    {
+        protocol_send_error("PARSE_ERR");
+        return;
+    }
+
+    for (size_t i = 0U; i < count; i++)
+    {
+        id_ptrs[i] = id_bufs[i];
+    }
+
+    test_runner_run_selected(id_ptrs, count);
 }
 
 /**
@@ -222,6 +313,18 @@ static void handle_cmd(const char *p_line)
     if (strcmp(cmd_name, "run") == 0)
     {
         handle_cmd_run(p_line);
+        return;
+    }
+
+    if (strcmp(cmd_name, "list_tests") == 0)
+    {
+        test_runner_send_list();
+        return;
+    }
+
+    if (strcmp(cmd_name, "run_selected") == 0)
+    {
+        handle_cmd_run_selected(p_line);
         return;
     }
 

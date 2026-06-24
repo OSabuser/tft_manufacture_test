@@ -133,6 +133,48 @@ sequenceDiagram
 ← {"type":"summary","passed":7,"failed":0,"skipped":1,"overall":"pass"}
 ```
 
+### `list_tests` — получить список тестов
+
+Таргет возвращает реестр тестов с метаданными. TUI строит список
+динамически на основе этого ответа, не хардкодит тесты.
+
+```json
+→ {"type":"cmd","cmd":"list_tests"}
+← {"type":"test_list","tests":[
+     {"id":"sdram","name":"SDRAM 32 MB","critical":true,"requires_hil":false},
+     {"id":"qspi","name":"QSPI Flash W25Qxx","critical":true,"requires_hil":false},
+     {"id":"usd","name":"microSD (SDIO)","critical":false,"requires_hil":false},
+     {"id":"display","name":"TFT Display RGB888","critical":false,"requires_hil":false},
+     {"id":"buttons","name":"Test Buttons","critical":false,"requires_hil":false},
+     {"id":"mqs","name":"MQS Audio Out","critical":false,"requires_hil":false},
+     {"id":"can","name":"CAN loopback","critical":false,"requires_hil":true},
+     {"id":"opto","name":"Opto Inputs","critical":false,"requires_hil":true}
+   ]}
+```
+
+### `run_selected` — запуск подмножества тестов
+
+Запускает тесты по списку ID. Порядок выполнения — по реестру таргета,
+не по порядку в запросе. Таргет не фильтрует по `requires_hil` —
+ответственность за фильтрацию HIL-тестов лежит на TUI.
+
+```json
+→ {"type":"cmd","cmd":"run_selected","tests":["sdram","qspi","display"]}
+← {"type":"test_begin","id":"sdram","name":"SDRAM 32 MB","critical":true}
+← {"type":"test_result","id":"sdram","status":"pass","ms":312,"detail":""}
+← {"type":"test_begin","id":"qspi",...}
+← {"type":"test_result","id":"qspi",...}
+← {"type":"test_begin","id":"display",...}
+← {"type":"test_result","id":"display",...}
+← {"type":"summary","passed":3,"failed":0,"skipped":0,"overall":"pass"}
+```
+
+Если хотя бы один ID не найден в реестре — ни один тест не запускается:
+
+```json
+← {"ok":false,"error":"UNKNOWN_TEST"}
+```
+
 ---
 
 ## События таргета → хост
@@ -204,13 +246,13 @@ sequenceDiagram
 
 ### Ошибки протокола
 
-| Код             | Причина                                         |
-| --------------- | ----------------------------------------------- |
-| `PARSE_ERR`     | Строка не является валидным JSON-lines запросом |
-| `UNKNOWN_CMD`   | Поле `"cmd"` содержит неизвестное значение      |
-| `UNKNOWN_TEST`  | Поле `"id"` в `run` не найдено в реестре        |
-| `LINE_TOO_LONG` | Входящая строка превысила 128 байт              |
-| `BUSY`          | Таргет выполняет тест, новая команда отклонена  |
+| Код             | Причина                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| `PARSE_ERR`     | Строка не является валидным JSON-lines запросом                            |
+| `UNKNOWN_CMD`   | Поле `"cmd"` содержит неизвестное значение                                 |
+| `UNKNOWN_TEST`  | Поле `"id"` в `run` или `"tests"` в `run_selected` содержит неизвестный ID |
+| `LINE_TOO_LONG` | Входящая строка превысила 128 байт                                         |
+| `BUSY`          | Таргет выполняет тест, новая команда отклонена                             |
 
 ---
 
@@ -358,8 +400,8 @@ const test_module_t k_test_foo = {
 };
 ```
 
-3. Добавить `&k_test_foo` в реестр `test_runner.c`.
-4. Добавить `tests/test_foo.c` в `CMakeLists.txt` таргета.
+1. Добавить `&k_test_foo` в реестр `test_runner.c`.
+2. Добавить `tests/test_foo.c` в `CMakeLists.txt` таргета.
 
 ---
 

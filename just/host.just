@@ -370,6 +370,21 @@ hil-usb-cdc:
     HIL_BUILD_DIR={{ _hil_build }} \
         uv run --directory {{ HIL_DIR }} pytest 05_test_usb_cdc.py -v
 
+[doc('Запустить HIL-тест оптовходов через firmware_test CDC (протокол v2)')]
+[group('hil')]
+hil-firmware-opto:
+    uv run --directory {{ HIL_DIR }} pytest 06_test_firmware_opto.py -v
+
+[doc('Запустить HIL-тест CAN через firmware_test CDC (протокол v2)')]
+[group('hil')]
+hil-firmware-can:
+    uv run --directory {{ HIL_DIR }} pytest 06_test_firmware_can.py -v
+
+[doc('Запустить все firmware_test CDC HIL-тесты (opto + can)')]
+[group('hil')]
+hil-firmware:
+    uv run --directory {{ HIL_DIR }} pytest 06_test_firmware_opto.py 06_test_firmware_can.py -v
+
 # =============================================================================
 # ГРУППА: debug — GDB-сервер для отладки из VSCode (devcontainer)
 #
@@ -476,6 +491,7 @@ m5-deploy:
     echo "  📤  Копируем агент на M5Stack..."
     uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" \
         cp "{{ _m5_agent }}" :main.py
+    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" reset
     echo "  ✅  m5_agent.py → /main.py"
     echo "  ✅  M5Stack перезапущен"
 

@@ -11,7 +11,6 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
-
 /* ── Константы ─────────────────────────────────────────────────────────── */
 
 /**
@@ -112,6 +111,28 @@ void protocol_send_confirm_request(const confirm_params_t *p_params)
                     "\"timeout_ms\":%" PRIu32 "}\n",
                     p_params->id, p_params->prompt, EFFECTIVE_TIMEOUT);
     cli_send(buf);
+}
+
+void protocol_send_test_list(const test_module_t *const *p_pp_registry, size_t count)
+{
+    /* Заголовок массива */
+    cli_send("{\"type\":\"test_list\",\"tests\":[");
+
+    for (size_t i = 0U; i < count; i++)
+    {
+        const test_module_t *mod = p_pp_registry[i];
+        char buf[PROTO_BUF_SIZE];
+        (void) snprintf(buf, sizeof(buf),
+                        "{\"id\":\"%s\","
+                        "\"name\":\"%s\","
+                        "\"critical\":%s,"
+                        "\"requires_hil\":%s}%s",
+                        mod->id, mod->name, mod->critical ? "true" : "false",
+                        mod->requires_hil ? "true" : "false", (i + 1U < count) ? "," : "");
+        cli_send(buf);
+    }
+
+    cli_send("]}\n");
 }
 
 void protocol_send_pong(void)

@@ -348,3 +348,184 @@ def uart_cmd(ser: serial.Serial, cmd: str) -> str:
     if not resp:
         raise TimeoutError(f"Нет ответа на команду '{cmd}'")
     return resp.decode("ascii", errors="replace").strip()
+
+
+# ---------------------------------------------------------------------------
+# firmware_test CDC — фикстура для тестирования firmware_test через протокол v2
+# ---------------------------------------------------------------------------
+
+class FirmwareCdc:
+    """
+    Драйвер firmware_test протокола v2 (JSON-lines через USB CDC).
+
+    Открывает CDC-порт, ждёт session_start, предоставляет методы:
+      - run_test(test_id)  → запустить тест, дождаться test_result
+      - send_confirm(confirm_id, confirmed)  → ответить на confirm_request
+      - wait_event(type, timeout_s)  → ждать событие нужного типа
+    """
+
+    def __init__(self, ser: serial.Serial) -> None:
+        self._ser = ser
+
+    def _readline(self, timeout_s: float = 5.0) -> dict:
+        """Читать строки до получения валидного JSON. TimeoutError если истёк таймаут."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            raw = self._ser.readline()
+            if not raw:
+                continue
+            text = raw.decode("ascii", errors="replace").strip()
+            if not text:
+                continue
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                log.debug("firmware_cdc: не JSON: %r", text)
+                continue
+        raise TimeoutError(f"firmware_cdc: нет ответа за {timeout_s} с")
+
+    def wait_event(self, event_type: str, timeout_s: float = 5.0) -> dict:
+        """
+        Ждать событие с заданным полем type.
+        Пропускает промежуточные события (progress и т.п.).
+        """
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            msg = self._readline(timeout_s=max(remaining, 0.1))
+            if msg.get("type") == event_type:
+                return msg
+            log.debug("firmware_cdc: пропускаем %r (ждём %r)", msg.get("type"), event_type)
+        raise TimeoutError(
+            f"firmware_cdc: событие {event_type!r} не получено за {timeout_s} с"
+        )
+
+    def send(self, payload: dict) -> None:
+        """Отправить JSON-команду на таргет."""
+        line = json.dumps(payload, separators=(",", ":")) + "\n"
+        self._ser.write(line.encode("ascii"))
+        self._ser.flush()
+
+    def ping(self) -> None:
+        """Проверка связи: ping → pong."""
+        self.send({"type": "cmd", "cmd": "ping"})
+        self.wait_event("pong")
+
+    def send_confirm(self, confirm_id: str, confirmed: bool) -> None:
+        """Ответить на confirm_request."""
+        self.send({"type": "confirm", "id": confirm_id, "confirmed": confirmed})
+
+    def run_test(self, test_id: str, timeout_s: float = 60.0) -> dict:
+        """
+        Запустить тест по id, вернуть dict test_result.
+
+        Промежуточные confirm_request игнорируются — их нужно обрабатывать
+        отдельно через wait_event("confirm_request") до вызова run_test,
+        или через on_confirm callback в специализированных тестах.
+
+        Для HIL-тестов (opto, can) используй run_hil_test().
+        """
+        self.send({"type": "cmd", "cmd": "run", "id": test_id})
+        self.wait_event("test_begin", timeout_s=5.0)
+        return self.wait_event("test_result", timeout_s=timeout_s)
+
+    def run_hil_test(
+        self,
+        test_id: str,
+        on_confirm,
+        timeout_s: float = 30.0,
+    ) -> dict:
+        """
+        Запустить HIL-тест с обработкой confirm_request.
+
+        on_confirm(confirm_id: str) → bool вызывается для каждого confirm_request.
+        Возвращает True → отправляет confirmed:true, False → confirmed:false.
+
+        Цикл завершается при получении test_result.
+
+        Args:
+            test_id:    идентификатор теста в реестре таргета
+            on_confirm: callable(confirm_id: str) → bool
+            timeout_s:  общий таймаут на весь тест
+        """
+        self.send({"type": "cmd", "cmd": "run", "id": test_id})
+        self.wait_event("test_begin", timeout_s=5.0)
+
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            msg = self._readline(timeout_s=max(remaining, 0.1))
+            msg_type = msg.get("type")
+
+            if msg_type == "test_result":
+                return msg
+
+            if msg_type == "confirm_request":
+                confirm_id = msg.get("id", "")
+                log.info("firmware_cdc: confirm_request %r", confirm_id)
+                confirmed = on_confirm(confirm_id)
+                self.send_confirm(confirm_id, confirmed)
+                continue
+
+            log.debug("firmware_cdc: промежуточное событие %r", msg_type)
+
+        raise TimeoutError(
+            f"firmware_cdc: test_result для {test_id!r} не получен за {timeout_s} с"
+        )
+
+
+@pytest.fixture(scope="module")
+def firmware_cdc(m5: M5Agent) -> Generator[FirmwareCdc, None, None]:
+    """
+    Открыть USB CDC порт firmware_test, дождаться session_start.
+
+    Зависит от m5 — питание таргета уже включено.
+    firmware_test должна быть прошита в Flash (via SDP) и запущена.
+
+    Порт берётся из TARGET_VCOM_PORT (HIL_USB_CDC_PORT в .env).
+    """
+    if not cfg.TARGET_VCOM_PORT:
+        pytest.skip("HIL_USB_CDC_PORT не задан — пропускаем firmware_cdc тесты")
+
+    # Ждём появления CDC порта после включения питания
+    deadline = time.monotonic() + cfg.TARGET_VCOM_TIMEOUT
+    ser = None
+    while time.monotonic() < deadline:
+        try:
+            ser = serial.Serial(
+                port=cfg.TARGET_VCOM_PORT,
+                baudrate=cfg.TARGET_VCOM_BAUD,
+                timeout=1.0,
+                write_timeout=1.0,
+            )
+            break
+        except serial.SerialException:
+            time.sleep(0.2)
+
+    if ser is None:
+        pytest.fail(
+            f"CDC порт {cfg.TARGET_VCOM_PORT} недоступен "
+            f"за {cfg.TARGET_VCOM_TIMEOUT} с"
+        )
+
+    try:
+        ser.dtr = True
+        time.sleep(0.3)
+        ser.reset_input_buffer()
+
+        cdc = FirmwareCdc(ser)
+
+        # session_start — одноразовое событие при старте, может быть уже пропущено.
+        # Проверяем живость через ping → pong.
+        try:
+            cdc.ping()
+            log.info("firmware_test: ping OK, прошивка активна")
+        except (TimeoutError, Exception) as exc:
+            pytest.fail(
+                f"firmware_test не отвечает на ping — "
+                f"прошивка запущена? Порт верный? ({exc})"
+            )
+
+        yield cdc
+    finally:
+        ser.close()

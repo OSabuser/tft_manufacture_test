@@ -30,10 +30,13 @@ extern const test_module_t K_TEST_QSPI;
 extern const test_module_t K_TEST_USD;
 extern const test_module_t K_TEST_DISPLAY;
 extern const test_module_t K_TEST_BUTTONS;
+extern const test_module_t K_TEST_OPTO;
+extern const test_module_t K_TEST_CAN;
 
 static const test_module_t *const k_registry[] = {
 
-    &K_TEST_SDRAM, &K_TEST_QSPI, &K_TEST_USD, &K_TEST_DISPLAY, &K_TEST_BUTTONS,
+    &K_TEST_SDRAM,   &K_TEST_QSPI, &K_TEST_USD, &K_TEST_DISPLAY,
+    &K_TEST_BUTTONS, &K_TEST_OPTO, &K_TEST_CAN,
 };
 
 #define REGISTRY_SIZE (sizeof(k_registry) / sizeof(k_registry[0]))
@@ -67,6 +70,7 @@ typedef enum runner_mode_e
 {
     RUNNER_MODE_SINGLE,
     RUNNER_MODE_ALL,
+    RUNNER_MODE_SELECTED,
 } runner_mode_t;
 
 /* ── Статическое состояние ─────────────────────────────────────────────── */
@@ -85,6 +89,9 @@ static uint8_t g_s_passed;
 static uint8_t g_s_failed;
 static uint8_t g_s_skipped;
 static bool g_s_critical_failed;
+
+/* Маска выбранных тестов для RUNNER_MODE_SELECTED */
+static bool g_s_selected[REGISTRY_SIZE];
 
 /* ── Forward declaration ───────────────────────────────────────────────── */
 
@@ -199,6 +206,10 @@ static void skip_from(size_t from_idx)
 {
     for (size_t i = from_idx; i < REGISTRY_SIZE; i++)
     {
+        if (g_s_mode == RUNNER_MODE_SELECTED && !g_s_selected[i])
+        {
+            continue;
+        }
         const test_module_t *mod = k_registry[i];
         test_result_t result     = make_skip_result("critical test failed");
         protocol_send_test_begin(mod);
@@ -222,7 +233,18 @@ static void advance_after_current(void)
         return;
     }
 
-    g_s_current_idx++;
+    /* Найти следующий активный индекс */
+    size_t next_idx = g_s_current_idx + 1U;
+
+    if (g_s_mode == RUNNER_MODE_SELECTED)
+    {
+        while (next_idx < REGISTRY_SIZE && !g_s_selected[next_idx])
+        {
+            next_idx++;
+        }
+    }
+
+    g_s_current_idx = next_idx;
 
     if (g_s_current_idx >= REGISTRY_SIZE)
     {
@@ -413,4 +435,63 @@ bool test_runner_wait_confirm(const confirm_params_t *p_params)
     }
 
     return g_s_confirm_value;
+}
+
+void test_runner_send_list(void)
+{
+    protocol_send_test_list(k_registry, REGISTRY_SIZE);
+}
+
+void test_runner_run_selected(const char *const *p_pp_ids, size_t count)
+{
+    if (g_s_state != RUNNER_STATE_IDLE)
+    {
+        protocol_send_error("BUSY");
+        return;
+    }
+
+    /* Проверить все ID до начала выполнения */
+    for (size_t i = 0U; i < count; i++)
+    {
+        if (find_test_by_id(p_pp_ids[i]) >= REGISTRY_SIZE)
+        {
+            protocol_send_error("UNKNOWN_TEST");
+            return;
+        }
+    }
+
+    /* Сбросить маску выбора */
+    for (size_t i = 0U; i < REGISTRY_SIZE; i++)
+    {
+        g_s_selected[i] = false;
+    }
+
+    /* Заполнить маску */
+    for (size_t i = 0U; i < count; i++)
+    {
+        size_t idx        = find_test_by_id(p_pp_ids[i]);
+        g_s_selected[idx] = true;
+    }
+
+    g_s_passed          = 0U;
+    g_s_failed          = 0U;
+    g_s_skipped         = 0U;
+    g_s_critical_failed = false;
+    g_s_mode            = RUNNER_MODE_SELECTED;
+
+    /* Найти первый выбранный тест */
+    size_t first_idx = 0U;
+    while (first_idx < REGISTRY_SIZE && !g_s_selected[first_idx])
+    {
+        first_idx++;
+    }
+
+    if (first_idx >= REGISTRY_SIZE)
+    {
+        /* Пустой список — summary с нулями */
+        protocol_send_summary(0U, 0U, 0U, true);
+        return;
+    }
+
+    start_test_at(first_idx);
 }
