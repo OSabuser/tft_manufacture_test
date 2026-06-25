@@ -20,6 +20,7 @@ add_subdirectory(usb_cdc)
 add_subdirectory(sdram)
 add_subdirectory(qspi_flash)
 add_subdirectory(sd)
+add_subdirectory(mqs)
 
 # Подавляем предупреждения при компиляции собственных .c файлов библиотеки
 target_compile_options(bsp_board PRIVATE -w)

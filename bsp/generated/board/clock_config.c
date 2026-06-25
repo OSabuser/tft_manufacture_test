@@ -74,7 +74,7 @@ outputs:
 - {id: LPI2C_CLK_ROOT.outFreq, value: 60 MHz}
 - {id: LPSPI_CLK_ROOT.outFreq, value: 105.6 MHz}
 - {id: LVDS1_CLK.outFreq, value: 1.2 GHz}
-- {id: MQS_MCLK.outFreq, value: 1080/17 MHz}
+- {id: MQS_MCLK.outFreq, value: 2.8224 MHz}
 - {id: PERCLK_CLK_ROOT.outFreq, value: 75 MHz}
 - {id: PLL7_MAIN_CLK.outFreq, value: 24 MHz}
 - {id: SAI1_CLK_ROOT.outFreq, value: 1080/17 MHz}
@@ -84,8 +84,8 @@ outputs:
 - {id: SAI2_CLK_ROOT.outFreq, value: 1080/17 MHz}
 - {id: SAI2_MCLK1.outFreq, value: 1080/17 MHz}
 - {id: SAI2_MCLK3.outFreq, value: 30 MHz}
-- {id: SAI3_CLK_ROOT.outFreq, value: 1080/17 MHz}
-- {id: SAI3_MCLK1.outFreq, value: 1080/17 MHz}
+- {id: SAI3_CLK_ROOT.outFreq, value: 11.2896 MHz}
+- {id: SAI3_MCLK1.outFreq, value: 11.2896 MHz}
 - {id: SAI3_MCLK3.outFreq, value: 30 MHz}
 - {id: SEMC_CLK_ROOT.outFreq, value: 120 MHz}
 - {id: SPDIF0_CLK_ROOT.outFreq, value: 30 MHz}
@@ -102,6 +102,9 @@ settings:
 - {id: CCM.LPSPI_PODF.scale, value: '5'}
 - {id: CCM.PERCLK_PODF.scale, value: '2', locked: true}
 - {id: CCM.PERIPH_CLK2_SEL.sel, value: XTALOSC24M.OSC_CLK}
+- {id: CCM.SAI3_CLK_PODF.scale, value: '8', locked: true}
+- {id: CCM.SAI3_CLK_PRED.scale, value: '8', locked: true}
+- {id: CCM.SAI3_CLK_SEL.sel, value: CCM_ANALOG.PLL4_MAIN_CLK}
 - {id: CCM.SEMC_PODF.scale, value: '5', locked: true}
 - {id: CCM.USDHC1_CLK_SEL.sel, value: CCM_ANALOG.PLL2_PFD0_CLK}
 - {id: CCM.USDHC1_PODF.scale, value: '2', locked: true}
@@ -123,9 +126,17 @@ settings:
 - {id: CCM_ANALOG.PLL3_PFD1_BYPASS.sel, value: CCM_ANALOG.PLL3_PFD1}
 - {id: CCM_ANALOG.PLL3_PFD2_BYPASS.sel, value: CCM_ANALOG.PLL3_PFD2}
 - {id: CCM_ANALOG.PLL3_PFD3_BYPASS.sel, value: CCM_ANALOG.PLL3_PFD3}
+- {id: CCM_ANALOG.PLL4.denom, value: '625', locked: true}
+- {id: CCM_ANALOG.PLL4.div, value: '30', locked: true}
+- {id: CCM_ANALOG.PLL4.num, value: '66', locked: true}
+- {id: CCM_ANALOG.PLL4_BYPASS.sel, value: CCM_ANALOG.PLL4_POST_DIV}
+- {id: CCM_ANALOG.PLL4_POST_DIV.scale, value: '1', locked: true}
+- {id: CCM_ANALOG_PLL_AUDIO_POWERDOWN_CFG, value: 'No'}
 - {id: CCM_ANALOG_PLL_USB1_EN_USB_CLKS_CFG, value: Enabled}
 - {id: CCM_ANALOG_PLL_USB1_EN_USB_CLKS_OUT_CFG, value: Enabled}
 - {id: CCM_ANALOG_PLL_USB1_POWER_CFG, value: 'Yes'}
+- {id: IOMUXC_GPR.MQS_CLK_DIV.scale, value: '4', locked: true}
+- {id: IOMUXC_GPR_GPR2_MQS_OVERSAMPLE, value: OverSampleRate64}
 sources:
 - {id: XTALOSC24M.RTC_OSC.outFreq, value: 32.768 kHz, enabled: true}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS **********/
@@ -148,6 +159,14 @@ const clock_sys_pll_config_t sysPllConfig_BOARD_BootClockRUN =
 const clock_usb_pll_config_t usb1PllConfig_BOARD_BootClockRUN =
     {
         .loopDivider = 0,                         /* PLL loop divider, Fout = Fin * 20 */
+        .src = 0,                                 /* Bypass clock source, 0 - OSC 24M, 1 - CLK1_P and CLK1_N */
+    };
+const clock_audio_pll_config_t audioPllConfig_BOARD_BootClockRUN =
+    {
+        .loopDivider = 30,                        /* PLL loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
+        .postDivider = 1,                         /* Divider after PLL */
+        .numerator = 66,                          /* 30 bit numerator of fractional loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
+        .denominator = 625,                       /* 30 bit denominator of fractional loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
         .src = 0,                                 /* Bypass clock source, 0 - OSC 24M, 1 - CLK1_P and CLK1_N */
     };
 const clock_enet_pll_config_t enetPllConfig_BOARD_BootClockRUN =
@@ -285,11 +304,11 @@ void BOARD_BootClockRUN(void)
     /* Disable SAI3 clock gate. */
     CLOCK_DisableClock(kCLOCK_Sai3);
     /* Set SAI3_CLK_PRED. */
-    CLOCK_SetDiv(kCLOCK_Sai3PreDiv, 3);
+    CLOCK_SetDiv(kCLOCK_Sai3PreDiv, 7);
     /* Set SAI3_CLK_PODF. */
-    CLOCK_SetDiv(kCLOCK_Sai3Div, 1);
+    CLOCK_SetDiv(kCLOCK_Sai3Div, 7);
     /* Set Sai3 clock source. */
-    CLOCK_SetMux(kCLOCK_Sai3Mux, 0);
+    CLOCK_SetMux(kCLOCK_Sai3Mux, 2);
     /* Disable Lpi2c clock gate. */
     CLOCK_DisableClock(kCLOCK_Lpi2c1);
     CLOCK_DisableClock(kCLOCK_Lpi2c2);
@@ -389,15 +408,26 @@ void BOARD_BootClockRUN(void)
     /* Init Usb1 pfd3. */
     CLOCK_InitUsb1Pfd(kCLOCK_Pfd3, 19);
 #endif
-    /* DeInit Audio PLL. */
-    CLOCK_DeinitAudioPll();
-    /* Bypass Audio PLL. */
-    CLOCK_SetPllBypass(CCM_ANALOG, kCLOCK_PllAudio, 1);
-    /* Set divider for Audio PLL. */
+    /* Init Audio PLL. */
+    uint32_t pllAudio;
+    /* Disable Audio PLL output before initial Audio PLL. */
+    CCM_ANALOG->PLL_AUDIO &= ~CCM_ANALOG_PLL_AUDIO_ENABLE_MASK;
+    /* Bypass PLL first */
+    CCM_ANALOG->PLL_AUDIO = (CCM_ANALOG->PLL_AUDIO & (~CCM_ANALOG_PLL_AUDIO_BYPASS_CLK_SRC_MASK)) |
+                            CCM_ANALOG_PLL_AUDIO_BYPASS_MASK | CCM_ANALOG_PLL_AUDIO_BYPASS_CLK_SRC(0);
+    CCM_ANALOG->PLL_AUDIO_NUM = CCM_ANALOG_PLL_AUDIO_NUM_A(66);
+    CCM_ANALOG->PLL_AUDIO_DENOM = CCM_ANALOG_PLL_AUDIO_DENOM_B(625);
+    pllAudio = (CCM_ANALOG->PLL_AUDIO & (~(CCM_ANALOG_PLL_AUDIO_DIV_SELECT_MASK | CCM_ANALOG_PLL_AUDIO_POWERDOWN_MASK))) |
+               CCM_ANALOG_PLL_AUDIO_ENABLE_MASK | CCM_ANALOG_PLL_AUDIO_DIV_SELECT(30);
+    pllAudio |= CCM_ANALOG_PLL_AUDIO_POST_DIV_SELECT(2);
     CCM_ANALOG->MISC2 &= ~CCM_ANALOG_MISC2_AUDIO_DIV_LSB_MASK;
     CCM_ANALOG->MISC2 &= ~CCM_ANALOG_MISC2_AUDIO_DIV_MSB_MASK;
-    /* Enable Audio PLL output. */
-    CCM_ANALOG->PLL_AUDIO |= CCM_ANALOG_PLL_AUDIO_ENABLE_MASK;
+    CCM_ANALOG->PLL_AUDIO = pllAudio;
+    while ((CCM_ANALOG->PLL_AUDIO & CCM_ANALOG_PLL_AUDIO_LOCK_MASK) == 0)
+    {
+    }
+    /* Disable bypass for Audio PLL. */
+    CLOCK_SetPllBypass(CCM_ANALOG, kCLOCK_PllAudio, 0);
     /* DeInit Video PLL. */
     CLOCK_DeinitVideoPll();
     /* Bypass Video PLL. */
@@ -451,7 +481,7 @@ void BOARD_BootClockRUN(void)
     /* Set SAI3 MCLK3 clock source. */
     IOMUXC_SetSaiMClkClockSource(IOMUXC_GPR, kIOMUXC_GPR_SAI3MClk3Sel, 0);
     /* Set MQS configuration. */
-    IOMUXC_MQSConfig(IOMUXC_GPR,kIOMUXC_MqsPwmOverSampleRate32, 0);
+    IOMUXC_MQSConfig(IOMUXC_GPR,kIOMUXC_MqsPwmOverSampleRate64, 3);
     /* Set ENET Ref clock source. */
 #if defined(IOMUXC_GPR_GPR1_ENET_REF_CLK_DIR_MASK)
     IOMUXC_GPR->GPR1 &= ~IOMUXC_GPR_GPR1_ENET_REF_CLK_DIR_MASK;

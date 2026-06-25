@@ -22,6 +22,7 @@
 
 #include "bsp/tick.h"
 #include "clock_config.h"
+#include "fsl_clock.h"
 #include "fsl_flexcan.h"
 #include "ring_buffer/ring_buffer.h"
 

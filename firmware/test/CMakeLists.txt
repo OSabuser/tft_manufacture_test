@@ -14,6 +14,7 @@ add_executable(
   src/tests/test_opto.c
   src/tests/test_sdram.c
   src/tests/test_can.c
+  src/tests/test_mqs.c
   src/tests/test_qspi.c
   src/tests/test_usd.c
   src/tests/test_display.c
@@ -49,7 +50,9 @@ target_link_libraries(
           bsp_usb_cdc
           bsp_sdram
           bsp_qspi_flash
+          bsp_uart_host
           bsp_opto
+          bsp_mqs
           bsp_sd
           firmware_test_fatfs)
 

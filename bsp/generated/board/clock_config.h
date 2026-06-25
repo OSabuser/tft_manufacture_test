@@ -65,7 +65,7 @@ void BOARD_InitBootClocks(void);
 #define BOARD_BOOTCLOCKRUN_LPI2C_CLK_ROOT             60000000UL     /* Clock consumers of LPI2C_CLK_ROOT output : LPI2C1, LPI2C2, LPI2C3, LPI2C4 */
 #define BOARD_BOOTCLOCKRUN_LPSPI_CLK_ROOT             105600000UL    /* Clock consumers of LPSPI_CLK_ROOT output : LPSPI1, LPSPI2, LPSPI3, LPSPI4 */
 #define BOARD_BOOTCLOCKRUN_LVDS1_CLK                  1200000000UL   /* Clock consumers of LVDS1_CLK output : N/A */
-#define BOARD_BOOTCLOCKRUN_MQS_MCLK                   63529411UL     /* Clock consumers of MQS_MCLK output : N/A */
+#define BOARD_BOOTCLOCKRUN_MQS_MCLK                   2822400UL      /* Clock consumers of MQS_MCLK output : N/A */
 #define BOARD_BOOTCLOCKRUN_PERCLK_CLK_ROOT            75000000UL     /* Clock consumers of PERCLK_CLK_ROOT output : GPT1, GPT2, PIT */
 #define BOARD_BOOTCLOCKRUN_PLL7_MAIN_CLK              24000000UL     /* Clock consumers of PLL7_MAIN_CLK output : N/A */
 #define BOARD_BOOTCLOCKRUN_SAI1_CLK_ROOT              63529411UL     /* Clock consumers of SAI1_CLK_ROOT output : N/A */
@@ -76,8 +76,8 @@ void BOARD_InitBootClocks(void);
 #define BOARD_BOOTCLOCKRUN_SAI2_MCLK1                 63529411UL     /* Clock consumers of SAI2_MCLK1 output : SAI2 */
 #define BOARD_BOOTCLOCKRUN_SAI2_MCLK2                 0UL            /* Clock consumers of SAI2_MCLK2 output : SAI2 */
 #define BOARD_BOOTCLOCKRUN_SAI2_MCLK3                 30000000UL     /* Clock consumers of SAI2_MCLK3 output : SAI2 */
-#define BOARD_BOOTCLOCKRUN_SAI3_CLK_ROOT              63529411UL     /* Clock consumers of SAI3_CLK_ROOT output : N/A */
-#define BOARD_BOOTCLOCKRUN_SAI3_MCLK1                 63529411UL     /* Clock consumers of SAI3_MCLK1 output : SAI3 */
+#define BOARD_BOOTCLOCKRUN_SAI3_CLK_ROOT              11289600UL     /* Clock consumers of SAI3_CLK_ROOT output : N/A */
+#define BOARD_BOOTCLOCKRUN_SAI3_MCLK1                 11289600UL     /* Clock consumers of SAI3_MCLK1 output : SAI3 */
 #define BOARD_BOOTCLOCKRUN_SAI3_MCLK2                 0UL            /* Clock consumers of SAI3_MCLK2 output : SAI3 */
 #define BOARD_BOOTCLOCKRUN_SAI3_MCLK3                 30000000UL     /* Clock consumers of SAI3_MCLK3 output : SAI3 */
 #define BOARD_BOOTCLOCKRUN_SEMC_CLK_ROOT              120000000UL    /* Clock consumers of SEMC_CLK_ROOT output : SEMC */
@@ -99,6 +99,9 @@ extern const clock_usb_pll_config_t usb1PllConfig_BOARD_BootClockRUN;
 /*! @brief Sys PLL for BOARD_BootClockRUN configuration.
  */
 extern const clock_sys_pll_config_t sysPllConfig_BOARD_BootClockRUN;
+/*! @brief Audio PLL set for BOARD_BootClockRUN configuration.
+ */
+extern const clock_audio_pll_config_t audioPllConfig_BOARD_BootClockRUN;
 /*! @brief Enet PLL set for BOARD_BootClockRUN configuration.
  */
 extern const clock_enet_pll_config_t enetPllConfig_BOARD_BootClockRUN;

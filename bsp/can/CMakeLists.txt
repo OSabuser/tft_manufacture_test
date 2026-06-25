@@ -15,4 +15,5 @@ target_include_directories(
 target_link_libraries(
   bsp_can
   PUBLIC bsp_status
-  PRIVATE bsp_tick utils sdk_flexcan $<$<BOOL:${BUILD_TESTS_HOST}>:fff>)
+  PRIVATE bsp_tick utils sdk_clock sdk_flexcan
+          $<$<BOOL:${BUILD_TESTS_HOST}>:fff>)

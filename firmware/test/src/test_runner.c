@@ -32,11 +32,12 @@ extern const test_module_t K_TEST_DISPLAY;
 extern const test_module_t K_TEST_BUTTONS;
 extern const test_module_t K_TEST_OPTO;
 extern const test_module_t K_TEST_CAN;
+extern const test_module_t K_TEST_MQS;
 
 static const test_module_t *const k_registry[] = {
 
     &K_TEST_SDRAM,   &K_TEST_QSPI, &K_TEST_USD, &K_TEST_DISPLAY,
-    &K_TEST_BUTTONS, &K_TEST_OPTO, &K_TEST_CAN,
+    &K_TEST_BUTTONS, &K_TEST_OPTO, &K_TEST_CAN, &K_TEST_MQS,
 };
 
 #define REGISTRY_SIZE (sizeof(k_registry) / sizeof(k_registry[0]))

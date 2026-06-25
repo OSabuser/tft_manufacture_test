@@ -57,6 +57,12 @@ add_sdk_driver(pwm fsl_pwm.c)
 add_sdk_driver(adc fsl_adc.c)
 add_sdk_driver(elcdif fsl_elcdif.c)
 add_sdk_driver(cache fsl_cache.c)
+add_sdk_driver(sai fsl_sai.c)
+add_sdk_driver(sai_edma fsl_sai_edma.c)
+add_sdk_driver(edma fsl_edma.c)
+add_sdk_driver(dmamux fsl_dmamux.c)
+add_sdk_driver(xbara fsl_xbara.c)
+add_sdk_driver(xbarb fsl_xbarb.c)
 
 # Драйверы которые зависят от clock
 target_link_libraries(sdk_lpuart PUBLIC sdk_clock)
@@ -66,7 +72,10 @@ target_link_libraries(sdk_lpi2c PUBLIC sdk_clock)
 target_link_libraries(sdk_pwm PUBLIC sdk_clock)
 target_link_libraries(sdk_adc PUBLIC sdk_clock)
 target_link_libraries(sdk_elcdif PUBLIC sdk_clock)
-
+target_link_libraries(sdk_sai PUBLIC sdk_clock)
+target_link_libraries(sdk_sai_edma PUBLIC sdk_sai sdk_edma)
+target_link_libraries(sdk_edma PUBLIC sdk_common)
+target_link_libraries(sdk_xbara PUBLIC sdk_clock)
 # -----------------------------------------------------------------------------
 # SEMC и FlexSPI — инициализируются через DCD и FDCB, драйверы нужны только если
 # обращаешься к ним явно из кода
