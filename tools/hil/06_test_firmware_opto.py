@@ -25,8 +25,8 @@ import pytest
 from conftest import FirmwareCdc, M5Agent
 
 
-RELAY_ON_S  = 0.15   # реле замыкается быстро
-RELAY_OFF_S = 0.5    # размыкание + дебаунс прошивки с запасом
+RELAY_ON_S  = 0.1   # реле замыкается быстро
+RELAY_OFF_S = 0.25    # размыкание + дебаунс прошивки с запасом
 
 
 # Маппинг confirm_id → (opto_ch, state)
@@ -64,6 +64,14 @@ class TestFirmwareOpto:
     def test_ping(self) -> None:
         """Базовая проверка CDC-канала."""
         self.cdc.ping()
+
+    def test_list_tests(self) -> None:
+        """Проверить что 'can' есть в реестре таргета."""
+        self.cdc.send({"type": "cmd", "cmd": "list_tests"})
+        msg = self.cdc.wait_event("test_list", timeout_s=5.0)
+        ids = [t["id"] for t in msg.get("tests", [])]
+        print(f"\nЗарегистрированные тесты: {ids}")
+        assert "can" in ids, f"'can' не найден в реестре: {ids}"
 
     def test_opto_pass(self) -> None:
         """

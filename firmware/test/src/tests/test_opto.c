@@ -10,7 +10,6 @@
 #include "bsp/opto.h"
 #include "bsp/tick.h"
 #include "bsp/usb_cdc.h"
-#include "protocol.h"
 #include "test_module.h"
 #include "test_runner.h"
 
@@ -161,7 +160,7 @@ static test_result_t opto_run(void)
         }
 
         /* 4. Верификация */
-        bsp_opto_state_t got = bsp_opto_read(p_step->channel);
+        bsp_opto_state_t got = bsp_opto_force_read(p_step->channel);
         if (got != p_step->expected_state)
         {
             const char *p_exp_str =

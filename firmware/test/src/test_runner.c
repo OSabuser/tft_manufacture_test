@@ -430,6 +430,7 @@ bool test_runner_wait_confirm(const confirm_params_t *p_params)
         {
             return false; /* таймаут */
         }
+
         bsp_usb_cdc_poll();
         cli_process();
     }

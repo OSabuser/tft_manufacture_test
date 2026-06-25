@@ -214,6 +214,16 @@ extern "C"
      */
     void bsp_opto_proto_arm(bsp_opto_ch_t ch);
 
+    /**
+    * @brief Прочитать мгновенное состояние пина канала напрямую (без дебаунса).
+    *
+    * Используется после гарантированной стабилизации сигнала для синхронного
+    * чтения в тестах. Обновляет confirmed_state.
+    *
+    * @param ch  канал (MODE_LEVEL)
+    * @return    текущее состояние пина
+    */
+    bsp_opto_state_t bsp_opto_force_read(bsp_opto_ch_t ch);
 #ifdef __cplusplus
 }
 #endif

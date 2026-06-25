@@ -63,10 +63,15 @@ bsp_status_t     bsp_opto_init(const bsp_opto_config_t *p_cfg);
 void             bsp_opto_process(void);   /* вызывать из main loop */
 bsp_opto_state_t bsp_opto_read(bsp_opto_ch_t ch);
 bsp_status_t     bsp_opto_proto_arm(bsp_opto_ch_t ch);
+bsp_opto_state_t bsp_opto_force_read(bsp_opto_ch_t ch);
 ```
 
-`bsp_opto_read()` всегда возвращает `BSP_OPTO_STATE_INACTIVE` для каналов
+- `bsp_opto_read()` всегда возвращает `BSP_OPTO_STATE_INACTIVE` для каналов
 в `MODE_PROTO` — используй `GPIO_PinRead` напрямую при побитовом сэмплировании.
+- `bsp_opto_force_read()` синхронно читает пин напрямую, обновляет
+`confirmed_state` и сбрасывает `pending`. Используется в тестах после
+гарантированной стабилизации сигнала — когда дебаунс уже отработал,
+но `confirmed_state` мог не обновиться из-за чётного числа ISR при дребезге реле.
 
 ---
 

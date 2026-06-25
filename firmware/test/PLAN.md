@@ -1,6 +1,6 @@
 # firmware_test — План разработки
 
-> Версия: 0.6 | Обновлён после завершения Этапа 5 (display + buttons) и архитектурных решений по Этапам 6–8.
+> Версия: 0.7 | Обновлён после завершения Этапов 6а–6д, 6е, 6ж (протокол, test_opto, test_can, HIL pytest firmware_cdc).
 
 ---
 
@@ -19,24 +19,26 @@
 
 ## Текущий статус
 
-| Компонент                      | Статус | Примечание                                   |
-| ------------------------------ | ------ | -------------------------------------------- |
-| `bsp_usb_cdc`                  | ✅      | HIL тест пройден                             |
-| firmware_test скелет           | ✅      | `main.c` + `cli.c`                           |
-| Протокол v2 + test_runner      | ✅      | JSON-lines event-driven                      |
-| `bsp_sdram` + `test_sdram`     | ✅      | 4 фазы: addr/data/seq/retention              |
-| `bsp_qspi_flash` + `test_qspi` | ✅      | JEDEC + erase + rw + addr range              |
-| `bsp_sd` + `test_usd`          | ✅      | bsp_sd + FatFS, pre_confirm, 4 шага          |
-| `bsp_display` + `test_display` | ✅      | 4 цвета + ротация, hardware-verified         |
-| `bsp_button` + `test_buttons`  | ✅      | 2 кнопки, physical detect, hardware-verified |
-| Протокол: `list_tests`         | ⬜      | Этап 6а                                      |
-| Протокол: `run_selected`       | ⬜      | Этап 6а                                      |
-| `test_opto`                    | ⬜      | Этап 6б (bsp_opto ✅)                         |
-| `test_can`                     | ⬜      | Этап 6в (bsp_can ✅)                          |
-| `bsp_mqs` + `test_mqs`         | ⬜      | Этап 6г                                      |
-| HIL pytest firmware_cdc        | ⬜      | Этап 6д                                      |
-| Provisioning                   | ⬜      | Этап 7                                       |
-| TUI сервисного инженера        | ⬜      | Этап 8                                       |
+| Компонент                      | Статус | Примечание                                       |
+| ------------------------------ | ------ | ------------------------------------------------ |
+| `bsp_usb_cdc`                  | ✅      | HIL тест пройден                                 |
+| firmware_test скелет           | ✅      | `main.c` + `cli.c`                               |
+| Протокол v2 + test_runner      | ✅      | JSON-lines event-driven                          |
+| `bsp_sdram` + `test_sdram`     | ✅      | 4 фазы: addr/data/seq/retention                  |
+| `bsp_qspi_flash` + `test_qspi` | ✅      | JEDEC + erase + rw + addr range                  |
+| `bsp_sd` + `test_usd`          | ✅      | bsp_sd + FatFS, pre_confirm, 4 шага              |
+| `bsp_display` + `test_display` | ✅      | 4 цвета + ротация, hardware-verified             |
+| `bsp_button` + `test_buttons`  | ✅      | 2 кнопки, physical detect, hardware-verified     |
+| Протокол: `list_tests`         | ✅      | Этап 6а, hardware-verified                       |
+| Протокол: `run_selected`       | ✅      | Этап 6а, hardware-verified                       |
+| `test_opto`                    | ✅      | Этап 6б, hardware-verified                       |
+| `test_can`                     | ✅      | Этап 6в, hardware-verified                       |
+| HIL pytest firmware_cdc        | ✅      | Этап 6д, `FirmwareCdc` + `firmware_cdc` фикстура |
+| HIL pytest firmware_opto       | ✅      | Этап 6е, `06_test_firmware_opto.py`              |
+| HIL pytest firmware_can        | ✅      | Этап 6ж, `06_test_firmware_can.py`               |
+| `bsp_mqs` + `test_mqs`         | ⬜      | Этап 6г                                          |
+| Provisioning                   | ⬜      | Этап 7                                           |
+| TUI сервисного инженера        | ⬜      | Этап 8                                           |
 
 ---
 
@@ -50,8 +52,8 @@
 | `display` | TFT Display RGB888 | ❌        | ❌   | interactive | `bsp_display` ✅     | ✅      |
 | `buttons` | Test Buttons 1/2   | ❌        | ❌   | interactive | `bsp_button` ✅      | ✅      |
 | `mqs`     | MQS Audio Out      | ❌        | ❌   | interactive | `bsp_mqs` (⬜ новый) | ⬜      |
-| `can`     | CAN loopback       | ❌        | ✅   | HIL         | `bsp_can` ✅         | ⬜      |
-| `opto`    | Оптовходы IN1/2+RS | ❌        | ✅   | HIL         | `bsp_opto` ✅        | ⬜      |
+| `can`     | CAN loopback       | ❌        | ✅   | HIL         | `bsp_can` ✅         | ✅      |
+| `opto`    | Оптовходы IN1/2+RS | ❌        | ✅   | HIL         | `bsp_opto` ✅        | ✅      |
 
 **Убранные тесты (закрытые решения):**
 
@@ -93,6 +95,23 @@
   один канал. Буфер всегда стерео (L+R идентичны).
 - **MQS тест:** захардкоженная мелодия 3–5 с, `confirm_request("mqs_tone")`,
   оператор слышит → OK/FAIL. `critical=false`, `requires_hil=false`.
+- **ERRATA 50235 (FlexCAN + USB):** `FLEXCAN_Init()` содержит assert на
+  `CCM_CCGR5_CG12` (LPUART clock gate). После `bsp_usb_cdc_init()` gate
+  может быть закрыт → assert → HardFault. Workaround: `CLOCK_EnableClock(kCLOCK_Lpuart1)`
+  перед `FLEXCAN_Init()` внутри `bsp_can_init()`. Gate оставляется открытым —
+  закрывать не нужно, LPUART1 тактируется с минимальным потреблением.
+  `bsp_can_init()` вызывается из `main()` после `bsp_usb_cdc_init()`.
+- **`firmware_cdc` фикстура:** не ждёт `session_start` (одноразовое событие при
+  старте, может быть пропущено). Проверяет живость через `ping → pong`.
+- **`bsp_opto_force_read()`:** добавлен в BSP API для синхронного чтения пина
+  без дебаунса. Обновляет `confirmed_state`, сбрасывает `pending`. Используется
+  в `test_opto.c` после settle — обходит race condition когда чётное число ISR
+  при дребезге реле оставляет `pending=false` с устаревшим `confirmed_state`.
+- **`bsp_opto_process()` в `test_opto.c`:** вызывается в settle loop после confirm,
+  но не в `test_runner_wait_confirm()`. Финальное чтение — через `bsp_opto_force_read()`.
+- **Оркестратор оpto:** `RELAY_ON_S=0.15`, `RELAY_OFF_S=0.5` в `06_test_firmware_opto.py`.
+  Фиксированный sleep достаточен — реле переключается до отправки `confirmed:true`,
+  `bsp_opto_force_read()` читает финальное состояние пина напрямую.
 
 ### Этап 8 (TUI решения)
 
@@ -431,14 +450,14 @@ just host::service-flash <bin>   # прошить без TUI (для автом�
 ✅ Этап 3  bsp_qspi_flash + test_qspi
 ✅ Этап 4  bsp_sd + test_usd
 ✅ Этап 5  display + buttons
+✅ Этап 6а  протокол: list_tests + run_selected
+✅ Этап 6б  test_opto.c + hardware верификация
+✅ Этап 6в  test_can.c + hardware верификация
+✅ Этап 6д  HIL pytest: firmware_cdc фикстура (FirmwareCdc + firmware_cdc)
+✅ Этап 6е  HIL pytest: 06_test_firmware_opto.py
+✅ Этап 6ж  HIL pytest: 06_test_firmware_can.py
 
-⬜ Этап 6а  протокол: list_tests + run_selected           ← СЛЕДУЮЩИЙ ШАГ
-⬜ Этап 6б  test_opto.c + hardware верификация
-⬜ Этап 6в  test_can.c + hardware верификация
-⬜ Этап 6г  bsp_mqs + test_mqs.c (после получения наработок)
-⬜ Этап 6д  HIL pytest: firmware_cdc фикстура
-⬜ Этап 6е  HIL pytest: 06_test_firmware_opto.py
-⬜ Этап 6ж  HIL pytest: 06_test_firmware_can.py
+⬜ Этап 6г  bsp_mqs + test_mqs.c                              ← СЛЕДУЮЩИЙ ШАГ
 
 ⬜ Этап 7   Provisioning (OCOTP UID + Flash-флаг)
 
@@ -456,11 +475,11 @@ just host::service-flash <bin>   # прошить без TUI (для автом�
 ## Зависимости между этапами
 
 ```bash
-6а (протокол) → 6б (opto) → 6в (can) → 6г (mqs)
-                                       ↓
-                              6д (conftest) → 6е (opto pytest) → 6ж (can pytest)
-                                                                        ↓
-                                                               7 (provisioning)
-                                                                        ↓
-                                                               8 (TUI)
+✅ 6а (протокол) → ✅ 6б (opto) → ✅ 6в (can) → ⬜ 6г (mqs)
+                                                ↓
+                                   ✅ 6д (conftest) → ✅ 6е (opto pytest) → ✅ 6ж (can pytest)
+                                                                                    ↓
+                                                                           ⬜ 7 (provisioning)
+                                                                                    ↓
+                                                                           ⬜ 8 (TUI)
 ```

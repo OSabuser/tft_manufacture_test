@@ -22,8 +22,6 @@
 
 #include "bsp/can.h"
 #include "bsp/tick.h"
-#include "bsp/usb_cdc.h"
-#include "protocol.h"
 #include "test_module.h"
 #include "test_runner.h"
 
@@ -65,8 +63,8 @@ static const uint8_t K_TX_DATA[] = { 0xCAU, 0xFEU, 0xBAU, 0xBEU };
  */
 static void can_init(void)
 {
-    const bsp_can_config_t k_cfg = { .bitrate = CAN_BITRATE };
-    (void) bsp_can_init(&k_cfg);
+    const bsp_can_config_t K_CFG = { .bitrate = CAN_BITRATE };
+    (void) bsp_can_init(&K_CFG);
     (void) bsp_can_accept_all();
 }
 
@@ -90,13 +88,13 @@ static test_result_t can_run(void)
      * M5 отправляет фрейм ДО того как подтвердить confirm(true).
      * После confirm таргет вызывает bsp_can_receive().
      */
-    const confirm_params_t k_rx_params = {
+    const confirm_params_t K_RX_PARAMS = {
         .id         = "can_rx_ready",
         .prompt     = "M5: can_send id=0x100 data=[DE AD BE EF]",
         .timeout_ms = 0U,
     };
 
-    bool confirmed = test_runner_wait_confirm(&k_rx_params);
+    bool confirmed = test_runner_wait_confirm(&K_RX_PARAMS);
 
     if (!confirmed)
     {
@@ -175,13 +173,13 @@ static test_result_t can_run(void)
      * Запросить верификацию у TUI: M5 должен был принять наш фрейм.
      * TUI проверяет id+data и шлёт confirmed(true) или confirmed(false).
      */
-    const confirm_params_t k_tx_params = {
+    const confirm_params_t K_TX_PARAMS = {
         .id         = "can_tx_verify",
         .prompt     = "M5: verify can_recv id=0x200 data=[CA FE BA BE]",
         .timeout_ms = 0U,
     };
 
-    confirmed = test_runner_wait_confirm(&k_tx_params);
+    confirmed = test_runner_wait_confirm(&K_TX_PARAMS);
 
     if (!confirmed)
     {

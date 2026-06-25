@@ -259,6 +259,12 @@ bsp_status_t bsp_can_init(const bsp_can_config_t *p_config)
 
     (void) memcpy(&flexcan_cfg.timingConfig, &timing_cfg, sizeof(timing_cfg));
 
+    /* Workaround ERRATA 50235: FLEXCAN_Init() содержит assert который проверяет
+     * что CCM_CCGR5_CG12 (LPUART clock gate) открыт когда CAN тактируется
+     * от осциллятора. Открываем gate и оставляем открытым — закрывать не нужно,
+     * LPUART1 тактируется с минимальным потреблением. */
+    CLOCK_EnableClock(kCLOCK_Lpuart1);
+
     FLEXCAN_Init(BSP_CAN_BASE, &flexcan_cfg, BSP_CAN_CLK_FREQ_HZ);
 
     /* MB1 — рабочий TX. */

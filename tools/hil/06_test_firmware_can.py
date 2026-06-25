@@ -37,6 +37,7 @@ class TestFirmwareCan:
         self.cdc = firmware_cdc
         self.m5 = m5
 
+    
     def _on_confirm(self, confirm_id: str) -> bool:
         """
         Оркестратор CAN-теста.
@@ -49,9 +50,7 @@ class TestFirmwareCan:
           Таргет уже отправил фрейм ДО confirm_request.
           M5 принимает фрейм, проверяет id+data, возвращает результат.
         """
-        import logging
-        logging.getLogger(__name__).info("on_confirm called: %r", confirm_id)
-
+  
         if confirm_id == "can_rx_ready":
             self.m5.can_send(CAN_RX_ID, CAN_RX_DATA)
             # Небольшая пауза чтобы фрейм успел уйти на шину
@@ -80,9 +79,18 @@ class TestFirmwareCan:
 
         return False
 
+    def test_list_tests(self) -> None:
+        """Проверить что 'can' есть в реестре таргета."""
+        self.cdc.send({"type": "cmd", "cmd": "list_tests"})
+        msg = self.cdc.wait_event("test_list", timeout_s=5.0)
+        ids = [t["id"] for t in msg.get("tests", [])]
+        print(f"\nЗарегистрированные тесты: {ids}")
+        assert "can" in ids, f"'can' не найден в реестре: {ids}"
+
     def test_ping(self) -> None:
         """Базовая проверка CDC-канала."""
         self.cdc.ping()
+        
 
     def test_can_pass(self) -> None:
         """
@@ -92,7 +100,7 @@ class TestFirmwareCan:
         result = self.cdc.run_hil_test(
             test_id="can",
             on_confirm=self._on_confirm,
-            timeout_s=60.0,
+            timeout_s=10.0,
         )
 
         assert result.get("status") == "pass", (

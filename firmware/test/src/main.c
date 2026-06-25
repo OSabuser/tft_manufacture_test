@@ -18,6 +18,7 @@
  *   8. Главный цикл       — poll + cli_process
  */
 #include "board.h"
+#include "bsp/can.h"
 #include "bsp/led.h"
 #include "bsp/tick.h"
 #include "bsp/usb_cdc.h"
@@ -29,8 +30,10 @@
 
 int main(void)
 {
-    const uint32_t CONNECT_BLINK_MS = 200U;
-    const uint32_t ERROR_BLINK_MS   = 250;
+    const uint32_t CONNECT_BLINK_MS         = 200U;
+    const uint32_t ERROR_BLINK_MS           = 250;
+    static const bsp_can_config_t K_CAN_CFG = { .bitrate = 125000U };
+
     board_hw_init();
 
     bsp_led_init();

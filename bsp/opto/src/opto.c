@@ -314,3 +314,18 @@ void bsp_opto_process(void)
         }
     }
 }
+
+bsp_opto_state_t bsp_opto_force_read(bsp_opto_ch_t ch)
+{
+    if (ch >= BSP_OPTO_CH_COUNT || !g_s_opto.channels[ch].enabled ||
+        g_s_opto.channels[ch].mode == BSP_OPTO_MODE_PROTO)
+    {
+        return BSP_OPTO_STATE_INACTIVE;
+    }
+
+    /* Принудительно перечитать пин и обновить confirmed_state. */
+    bsp_opto_state_t state                = OPTO_PIN_TO_STATE(read_pin(g_s_opto.channels[ch].pin));
+    g_s_opto.channels[ch].confirmed_state = state;
+    g_s_opto.channels[ch].pending         = false;
+    return state;
+}
