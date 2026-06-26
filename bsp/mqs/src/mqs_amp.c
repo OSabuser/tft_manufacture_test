@@ -27,7 +27,6 @@
 
 #include "bsp/mqs.h"
 #include "clock_config.h"
-#include "fsl_clock.h"
 #include "fsl_pwm.h"
 #include "fsl_xbara.h"
 
@@ -39,7 +38,7 @@
 #define AMP_PWM_SUBMODULE kPWM_Module_0
 #define AMP_PWM_CHANNEL   kPWM_PwmA
 #define AMP_PWM_MODE      kPWM_SignedCenterAligned
-#define AMP_PWM_FREQ_HZ   (16000U)
+#define AMP_PWM_FREQ_HZ   (12000U)
 
 /** Номинальный duty cycle при bsp_mqs_amp_init() — 50%. */
 #define AMP_DEFAULT_DUTY (50U)
@@ -104,6 +103,7 @@ bsp_status_t bsp_mqs_amp_init(void)
         .level            = kPWM_HighTrue,
         .faultState       = kPWM_PwmFaultState0,
         .deadtimeValue    = 0U,
+        .pwmchannelenable = true,
     };
 
     if (PWM_SetupPwm(AMP_PWM_BASE, AMP_PWM_SUBMODULE, &PWM_SIGNAL, 1U, AMP_PWM_MODE,

@@ -108,6 +108,11 @@ static void mqs_edma_callback(I2S_Type *p_base, sai_edma_handle_t *p_handle, sta
 /* --------------------------------------------------------------------------
  * Публичный API
  * ----------------------------------------------------------------------- */
+/*
+ * AUDIO PLL setting: Frequency = Fref * (DIV_SELECT + NUM / DENOM)
+ *                              = 24 * (32 + 768/1000)
+ *                              = 786.432 MHz
+ */
 
 bsp_status_t bsp_mqs_init(void)
 {
@@ -119,13 +124,10 @@ bsp_status_t bsp_mqs_init(void)
     /* --- Тактирование SAI1 --- */
     CLOCK_EnableClock(MQS_SAI_CLOCK_GATE);
 
-    /* --- Тактирование MQS (CCGR0[CG2]) — без него MQS не забирает данные из
-     *  SAI FIFO и SAI_WriteBlocking зависает навсегда. --- */
+    /* --- Тактирование MQS (CCGR0[CG2]) --- */
     CLOCK_EnableClock(kCLOCK_Mqs);
 
-    /* --- MQS: сброс → включение.
-     *  Oversample ×32 уже выставлен в BOARD_BootClockRUN(),
-     *  повторный вызов IOMUXC_MQSConfig() не нужен. --- */
+    /* --- MQS: сброс → включение --- */
     IOMUXC_MQSEnterSoftwareReset(IOMUXC_GPR, true);
     IOMUXC_MQSEnterSoftwareReset(IOMUXC_GPR, false);
     IOMUXC_MQSEnable(IOMUXC_GPR, true);
@@ -133,20 +135,14 @@ bsp_status_t bsp_mqs_init(void)
     /* --- SAI1: базовая инициализация (снимает reset, включает clock gate) --- */
     SAI_Init(MQS_SAI_BASE);
 
-    /* --- SAI1 TX: классический I2S, master, 16 бит, стерео, канал 0.
-     *  SAI_GetClassicI2SConfig() заполняет sai_transceiver_t значениями по
-     *  умолчанию для стандартного I2S. Затем корректируем watermark и
-     *  sync mode (async — TX не зависит от RX). --- */
+    /* --- SAI1 TX: классический I2S, master, 16 бит, стерео, канал 0. --- */
     sai_transceiver_t sai_cfg;
 
     SAI_GetLeftJustifiedConfig(&sai_cfg, kSAI_WordWidth16bits, kSAI_Stereo,
                                (uint32_t) kSAI_Channel0Mask);
-    sai_cfg.syncMode           = kSAI_ModeAsync;
-    sai_cfg.fifo.fifoWatermark = MQS_SAI_FIFO_WATERMARK;
-    sai_cfg.startChannel       = 0;
-
-    /* Явно задать источник bit clock — SAI1_CLK_ROOT (Mux делитель).
-     * Default после SAI_GetClassicI2SConfig может быть BusClock (IPG). */
+    sai_cfg.syncMode            = kSAI_ModeAsync;
+    sai_cfg.fifo.fifoWatermark  = MQS_SAI_FIFO_WATERMARK;
+    sai_cfg.startChannel        = 0;
     sai_cfg.bitClock.bclkSource = kSAI_BclkSourceMclkDiv;
 
     SAI_TxSetConfig(MQS_SAI_BASE, &sai_cfg);
@@ -168,16 +164,11 @@ bsp_status_t bsp_mqs_init(void)
     DMAMUX_SetSource(DMAMUX, MQS_DMA_CHANNEL, (uint8_t) MQS_DMAMUX_SOURCE);
     DMAMUX_EnableChannel(DMAMUX, MQS_DMA_CHANNEL);
 
-    /* --- SAI eDMA handle + конфигурация.
-     *  SAI_TransferTxSetConfigEDMA() — void, настраивает DMA-дескрипторы
-     *  (размер minor loop, адрес FIFO) на основе sai_transceiver_t. --- */
+    /* --- SAI eDMA handle + конфигурация --- */
     SAI_TransferTxCreateHandleEDMA(MQS_SAI_BASE, &s_sai_tx_handle, mqs_edma_callback, NULL,
                                    &s_dma_handle);
     SAI_TransferTxSetConfigEDMA(MQS_SAI_BASE, &s_sai_tx_handle, &sai_cfg);
 
-    /* Включить SAI TX — без этого FIFO не дренируется даже в polling-режиме.
-     * SAI_TransferSendEDMA() включает его снова если MCUX_SDK_SAI_EDMA_TX_ENABLE_INTERNAL=1,
-     * но для корректной работы FIFO TX должен быть активен сразу после init. */
     SAI_TxEnable(MQS_SAI_BASE, true);
 
     NVIC_SetPriority(DMA0_DMA16_IRQn, MQS_DMA_IRQ_PRIORITY);

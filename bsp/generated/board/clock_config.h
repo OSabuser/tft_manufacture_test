@@ -65,7 +65,7 @@ void BOARD_InitBootClocks(void);
 #define BOARD_BOOTCLOCKRUN_LPI2C_CLK_ROOT             60000000UL     /* Clock consumers of LPI2C_CLK_ROOT output : LPI2C1, LPI2C2, LPI2C3, LPI2C4 */
 #define BOARD_BOOTCLOCKRUN_LPSPI_CLK_ROOT             105600000UL    /* Clock consumers of LPSPI_CLK_ROOT output : LPSPI1, LPSPI2, LPSPI3, LPSPI4 */
 #define BOARD_BOOTCLOCKRUN_LVDS1_CLK                  1200000000UL   /* Clock consumers of LVDS1_CLK output : N/A */
-#define BOARD_BOOTCLOCKRUN_MQS_MCLK                   2822400UL      /* Clock consumers of MQS_MCLK output : N/A */
+#define BOARD_BOOTCLOCKRUN_MQS_MCLK                   11289600UL     /* Clock consumers of MQS_MCLK output : N/A */
 #define BOARD_BOOTCLOCKRUN_PERCLK_CLK_ROOT            75000000UL     /* Clock consumers of PERCLK_CLK_ROOT output : GPT1, GPT2, PIT */
 #define BOARD_BOOTCLOCKRUN_PLL7_MAIN_CLK              24000000UL     /* Clock consumers of PLL7_MAIN_CLK output : N/A */
 #define BOARD_BOOTCLOCKRUN_SAI1_CLK_ROOT              63529411UL     /* Clock consumers of SAI1_CLK_ROOT output : N/A */
