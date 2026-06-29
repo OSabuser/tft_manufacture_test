@@ -1,7 +1,16 @@
 # firmware/test/CMakeLists.txt Тестовая прошивка — входной контроль платы на
 # производстве
+cmake_minimum_required(VERSION 3.20)
+project(
+  firmware_test
+  VERSION 0.0.1
+  LANGUAGES C ASM)
 
 set(TARGET_NAME firmware_test)
+
+# Генерация version.h из шаблона
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/generated/version.h" @ONLY)
 
 add_subdirectory(fatfs)
 
@@ -25,6 +34,8 @@ add_executable(
 
 target_include_directories(firmware_test PRIVATE src/)
 
+target_include_directories(firmware_test
+                           PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 # __STARTUP_INITIALIZE_RAMFUNCTION - очистка секции .ram_function и копирование
 # туда данных из __ram_function_flash_start; __STARTUP_INITIALIZE_NONCACHEDATA -
 # инициализация некешируемое секции нулями

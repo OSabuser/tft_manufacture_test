@@ -87,7 +87,7 @@ class M5Client:
 
     async def connect(self) -> None:
         """Открыть порт и проверить связь через ping."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._open)
         ok = await self.ping()
         if not ok:
@@ -103,7 +103,7 @@ class M5Client:
         self._ser.reset_input_buffer()
 
     async def disconnect(self) -> None:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._close)
 
     def _close(self) -> None:
@@ -133,7 +133,7 @@ class M5Client:
 
     async def _cmd(self, cmd: dict) -> Optional[dict]:
         """Async wrapper над _send_recv."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         async with self._lock:
             return await loop.run_in_executor(None, self._send_recv, cmd)
 

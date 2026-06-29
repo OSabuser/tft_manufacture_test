@@ -1,0 +1,25 @@
+/**
+ * @file  version.h
+ * @brief Версия firmware_test — генерируется CMake из CMakeLists.txt.
+ *
+ * НЕ редактировать вручную. Версию менять в firmware/test/CMakeLists.txt:
+ *   project(firmware_test VERSION X.Y.Z)
+ */
+
+#ifndef VERSION_H_
+#define VERSION_H_
+
+/** @brief Мажорная версия. */
+#define FIRMWARE_TEST_VERSION_MAJOR @firmware_test_VERSION_MAJOR@
+
+/** @brief Минорная версия. */
+#define FIRMWARE_TEST_VERSION_MINOR @firmware_test_VERSION_MINOR@
+
+/** @brief Патч-версия. */
+#define FIRMWARE_TEST_VERSION_PATCH @firmware_test_VERSION_PATCH@
+
+/** @brief Версия строкой для протокола: "X.Y.Z". */
+#define FIRMWARE_TEST_VERSION_STR \
+    "@firmware_test_VERSION_MAJOR@.@firmware_test_VERSION_MINOR@.@firmware_test_VERSION_PATCH@"
+
+#endif /* VERSION_H_ */

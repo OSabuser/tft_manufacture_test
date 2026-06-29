@@ -158,3 +158,12 @@ void protocol_send_uid_response(const uint8_t *p_uid)
                     (unsigned int) p_uid[6U], (unsigned int) p_uid[7U]);
     cli_send(buf);
 }
+
+void protocol_send_version_response(void)
+{
+    char buf[PROTO_BUF_SIZE];
+    (void) snprintf(buf, sizeof(buf),
+                    "{\"type\":\"version_response\","
+                    "\"fw\":\"" FIRMWARE_TEST_VERSION "\"}\n");
+    cli_send(buf);
+}

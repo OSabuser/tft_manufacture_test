@@ -19,8 +19,8 @@
 #define USB_DEVICE_DEMO_BCD_VERSION     (0x0101U)
 
 /* ---- VID / PID --------------------------------------------------------- */
-#define USB_DEVICE_VID (0x1996U) /* TODO: заменить на свой */
-#define USB_DEVICE_PID (0x00ADU) /* TODO: заменить на свой */
+#define USB_DEVICE_VID (0x1996U)
+#define USB_DEVICE_PID (0x00ADU)
 
 /* ---- CDC коды классов -------------------------------------------------- */
 #define CDC_COMM_CLASS (0x02U)

@@ -1,0 +1,283 @@
+/* ── WaitingScreen ───────────────────────────────────────────────────────── */
+
+WaitingScreen {
+    align: center middle;
+    layout: vertical;
+}
+
+WaitingScreen > Static {
+    content-align: center middle;
+    width: 100%;
+}
+
+#waiting-logo {
+    width: 52;
+    height: 7;
+    border: round $primary;
+    padding: 1 2;
+    content-align: center middle;
+    text-style: bold;
+    color: $primary;
+    margin-bottom: 0;
+}
+
+#waiting-hint {
+    margin-top: 2;
+    color: $text-muted;
+    content-align: center middle;
+}
+
+#waiting-spinner {
+    margin-top: 1;
+    color: $accent;
+    content-align: center middle;
+}
+
+/* ── FlashScreen ─────────────────────────────────────────────────────────── */
+
+FlashScreen {
+    padding: 1 2;
+}
+
+#flash-title {
+    text-style: bold;
+    color: $warning;
+    margin-bottom: 1;
+}
+
+#flash-target-group {
+    border: round $panel;
+    padding: 1 2;
+    margin-bottom: 1;
+    height: auto;
+}
+
+
+#flash-custom-path {
+    margin-top: 1;
+    height: auto;
+}
+
+#flash-custom-path.hidden {
+    display: none;
+}
+
+#flash-custom-input {
+    width: 1fr;
+}
+
+#flash-btn-row {
+    height: auto;
+    margin-top: 1;
+    align: left middle;
+}
+
+#flash-btn-flash {
+    margin-right: 2;
+}
+
+#flash-btn-flash:disabled,
+#flash-btn-erase:disabled {
+    background: $panel;
+    color: $text-muted;
+}
+
+#flash-progress-bar {
+    margin-top: 1;
+}
+
+#flash-progress-label {
+    color: $text-muted;
+}
+
+#flash-log {
+    height: 1fr;
+    margin-top: 1;
+    border: round $panel;
+    background: $surface-darken-1;
+    overflow-y: auto;
+}
+
+/* ── DiagScreen ──────────────────────────────────────────────────────────── */
+
+DiagScreen {
+    layout: grid;
+    grid-size: 1;
+    grid-rows: 3 1fr 1 1 3 auto;
+}
+
+/* Шапка */
+#diag-header {
+    height: 3;
+    background: $panel;
+    padding: 0 2;
+    align: left middle;
+}
+
+#diag-header-fw {
+    color: $text-muted;
+    margin-right: 3;
+}
+
+#diag-header-uid {
+    color: $text-muted;
+    margin-right: 3;
+}
+
+#diag-header-m5 {
+    color: $success;
+}
+
+#diag-header-m5.m5-absent {
+    color: $text-muted;
+}
+
+/* Рабочая зона */
+#diag-main {
+    height: 1fr;
+}
+
+/* Прогресс */
+#diag-progress-bar {
+    height: 1;
+    margin: 0 2;
+}
+
+#diag-progress-label {
+    height: 1;
+    color: $text-muted;
+    padding: 0 2;
+}
+
+/* Кнопки запуска */
+#diag-btn-row {
+    height: 3;
+    align: left middle;
+    padding: 0 2;
+    background: $panel;
+}
+
+#diag-btn-run-selected {
+    margin-right: 2;
+}
+
+#diag-btn-run-selected:disabled,
+#diag-btn-run-all:disabled {
+    background: $panel;
+    color: $text-muted;
+}
+
+/* ── TestListPanel ───────────────────────────────────────────────────────── */
+
+TestListPanel {
+    width: 38;
+    border-right: solid $panel;
+    padding: 1 1;
+    overflow-y: auto;
+}
+
+TestListPanel .section-title {
+    text-style: bold;
+    color: $text-muted;
+    padding: 0 0 1 0;
+}
+
+.test-row {
+    align: left middle;
+    height: auto;    
+}
+
+.test-row-hil-badge {
+    width: 6;
+    color: $accent;
+}
+
+.test-row-hil-badge.hil-disabled {
+    color: $text-muted;
+}
+
+/* ── ResultsPanel ────────────────────────────────────────────────────────── */
+
+ResultsPanel {
+    width: 1fr;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+ResultsPanel .section-title {
+    text-style: bold;
+    color: $text-muted;
+    padding: 0 0 1 0;
+}
+
+.result-row {
+    height: 1;
+    align: left middle;
+}
+
+.result-id {
+    color: $text-muted;
+    width: 12;
+}
+
+.result-status-pass {
+    color: $success;
+    width: 8;
+    text-style: bold;
+}
+
+.result-status-fail {
+    color: $error;
+    width: 8;
+    text-style: bold;
+}
+
+.result-status-running {
+    color: $warning;
+    width: 8;
+}
+
+.result-status-skip {
+    color: $text-muted;
+    width: 8;
+}
+
+.result-detail {
+    color: $text-muted;
+    width: 1fr;
+    overflow: hidden;
+}
+
+/* ── ConfirmPanel ────────────────────────────────────────────────────────── */
+
+ConfirmPanel {
+    height: auto;
+    background: $warning 15%;
+    border-top: solid $warning;
+    padding: 1 2;
+    align: left middle;
+}
+
+ConfirmPanel.hidden {
+    display: none;
+}
+
+#confirm-prompt {
+    width: 1fr;
+    color: $warning;
+    text-style: bold;
+}
+
+#confirm-countdown {
+    color: $text-muted;
+    margin-right: 2;
+}
+
+#confirm-btn-ok {
+    margin-right: 1;
+}
+
+#confirm-btn-ok.hidden,
+#confirm-btn-fail.hidden {
+    display: none;
+}

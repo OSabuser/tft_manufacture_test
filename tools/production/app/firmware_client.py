@@ -28,7 +28,7 @@ from typing import AsyncGenerator, Optional
 import serial
 import serial.tools.list_ports
 
-from .models import ConfirmRequest, TestInfo, TestResult, TestStatus
+from .models import TestInfo, TestStatus
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class FirmwareClient:
 
     async def connect(self) -> None:
         """Открыть порт и проверить связь через ping→pong."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._open)
         ok = await self.ping()
         if not ok:
@@ -110,7 +110,7 @@ class FirmwareClient:
 
     async def disconnect(self) -> None:
         """Закрыть порт."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._close)
 
     def _close(self) -> None:
@@ -119,7 +119,9 @@ class FirmwareClient:
         self._ser = None
 
     @classmethod
-    async def auto_connect(cls, vid: int, pid: int, baudrate: int = 115200) -> "FirmwareClient":
+    async def auto_connect(
+        cls, vid: int, pid: int, baudrate: int = 115200
+    ) -> "FirmwareClient":
         """
         Найти CDC-порт по VID/PID и подключиться.
 
@@ -152,7 +154,7 @@ class FirmwareClient:
 
     async def _send(self, obj: dict) -> None:
         """Отправить JSON-команду (async wrapper)."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         async with self._lock:
             await loop.run_in_executor(None, self._write_line, obj)
 
@@ -165,7 +167,7 @@ class FirmwareClient:
         Читать события до получения одного из stop_types или таймаута.
         Генератор — yield каждого полученного события.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s
         while loop.time() < deadline:
             event = await loop.run_in_executor(None, self._read_line)
@@ -182,7 +184,7 @@ class FirmwareClient:
     async def ping(self) -> bool:
         """Отправить ping, ждать pong. Вернуть True при успехе."""
         await self._send({"type": "cmd", "cmd": "ping"})
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         deadline = loop.time() + _PING_TIMEOUT_S
         while loop.time() < deadline:
             event = await loop.run_in_executor(None, self._read_line)
@@ -190,6 +192,14 @@ class FirmwareClient:
                 return True
             await asyncio.sleep(0)
         return False
+
+    async def get_version(self) -> str:
+        """Запросить версию firmware_test. Вернуть строку X.Y.Z или ''."""
+        await self._send({"type": "cmd", "cmd": "get_version"})
+        async for event in self._recv_until({"version_response"}, timeout_s=3.0):
+            if event.get("type") == "version_response":
+                return event.get("fw", "")
+        return ""
 
     async def list_tests(self) -> list[TestInfo]:
         """Запросить список тестов. Вернуть list[TestInfo]."""
@@ -207,9 +217,7 @@ class FirmwareClient:
                 ]
         return []
 
-    async def run_selected(
-        self, test_ids: list[str]
-    ) -> AsyncGenerator[dict, None]:
+    async def run_selected(self, test_ids: list[str]) -> AsyncGenerator[dict, None]:
         """
         Запустить выбранные тесты. Возвращает async generator событий:
         test_begin, test_result, confirm_request, summary, error.
@@ -218,7 +226,9 @@ class FirmwareClient:
         send_confirm() не дожидаясь следующего события.
         """
         await self._send({"type": "cmd", "cmd": "run_selected", "tests": test_ids})
-        async for event in self._recv_until({"summary"}, timeout_s=_TEST_EVENT_TIMEOUT_S):
+        async for event in self._recv_until(
+            {"summary"}, timeout_s=_TEST_EVENT_TIMEOUT_S
+        ):
             yield event
 
     async def send_confirm(self, confirm_id: str, confirmed: bool) -> None:

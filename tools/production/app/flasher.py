@@ -40,12 +40,32 @@ _HOST_TOOLS_DIR = _FLASH_USB_SCRIPT.parent
 _RE_PERCENT = re.compile(r"(\d{1,3})\s*%")
 _RE_PHASE = re.compile(r"(sdphost|blhost|Writing|Erasing|Verifying)", re.IGNORECASE)
 
+_FIRMWARE_BUILD_TYPE = os.environ.get("FIRMWARE_BUILD_TYPE", "Debug")
 
 ProgressCallback = Callable[[FlashProgress], Awaitable[None]]
 
 
 def _detect_usb(vid: int, pid: int) -> bool:
-    """Проверить наличие USB-устройства по VID/PID (синхронно)."""
+    """
+    Проверить наличие USB-устройства по VID/PID (синхронно).
+
+    Два метода детекта:
+    1. pyusb (usb.core) — видит все USB-устройства включая SDP bulk/HID
+       (на macOS SDP не создаёт serial-порт и невидим через list_ports).
+    2. serial.tools.list_ports — fallback для CDC ACM устройств
+       если pyusb недоступен.
+    """
+    # Метод 1: pyusb — работает для SDP и CDC
+    try:
+        import usb.core
+
+        dev = usb.core.find(idVendor=vid, idProduct=pid)
+        if dev is not None:
+            return True
+    except Exception:
+        pass
+
+    # Метод 2: serial list_ports — fallback для CDC ACM
     try:
         import serial.tools.list_ports
 
@@ -54,6 +74,7 @@ def _detect_usb(vid: int, pid: int) -> bool:
                 return True
     except Exception:
         pass
+
     return False
 
 
@@ -127,11 +148,11 @@ class Flasher:
         if target == FlashTarget.FIRMWARE_TEST:
             if bin_path is not None:
                 return await self._run_flash_bin(bin_path, progress_cb)
-            return await self._run_flash("firmware_test", "Release", progress_cb)
+            return await self._run_flash("firmware_test", progress_cb)
         elif target == FlashTarget.PRODUCTION:
-            ok = await self._run_flash("bootloader", "Release", progress_cb)
+            ok = await self._run_flash("bootloader", progress_cb)
             if ok:
-                ok = await self._run_flash("app", "Release", progress_cb)
+                ok = await self._run_flash("app", progress_cb)
             return ok
         elif target == FlashTarget.CUSTOM:
             if bin_path is None:
@@ -142,7 +163,6 @@ class Flasher:
     async def _run_flash(  # прошивка стандартного firmware по имени
         self,
         firmware: str,
-        build_type: str,
         progress_cb: Optional[ProgressCallback],
     ) -> bool:
         """Запустить flash_usb.py для одного бинаря."""
@@ -156,7 +176,7 @@ class Flasher:
             "--firmware",
             firmware,
             "--build-type",
-            build_type,
+            _FIRMWARE_BUILD_TYPE,
         ]
         return await self._run_cmd(cmd, firmware, progress_cb)
 
