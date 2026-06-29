@@ -58,6 +58,66 @@
 - Следить за развитием BSP: MQS, RGB, bootloader или `tft_app`.
 - Отслеживать локальные патчи поверх vendor SDK, которые нужно вести отдельным patch log.
 
+## [2026-06-29] — Этапы 6г–7: MQS, HIL pytest firmware_test, Provisioning
+
+### Кратко
+
+- `firmware_test` получил MQS audio-тест, полный HIL pytest-стек для firmware_test
+  (opto + CAN через CDC) и команду `get_uid` для чтения OCOTP UID.
+- Завершён Этап 6 целиком. Этап 7 (Provisioning draft) реализован.
+
+### Добавлено
+
+- `bsp/mqs/` + `bsp_mqs` — SAI3 + eDMA + MQS периферия, управление громкостью
+  через PWM4 SM0 + LM4875M. API: `bsp_mqs_init/deinit`, `bsp_mqs_play`,
+  `bsp_mqs_is_busy`, `bsp_mqs_amp_init/deinit`, `bsp_mqs_amp_set_volume`.
+- `firmware/test/src/tests/test_mqs.c` — интерактивный тест: мелодия ~4 с
+  (A4 + E5, целочисленная LUT-синусоида), async-воспроизведение с USB keepalive,
+  `confirm_request("mqs_tone")` → PASS/FAIL оператором.
+- `tools/hil/conftest.py` — класс `FirmwareCdcClient` и фикстура `firmware_cdc`:
+  подключение к firmware_test по USB CDC ACM, проверка живости через `ping→pong`.
+- `tools/hil/06_test_firmware_opto.py` — HIL pytest для opto-теста через CDC:
+  автоматический оркестратор M5 реле → confirm, без участия оператора.
+- `tools/hil/06_test_firmware_can.py` — HIL pytest для CAN-теста через CDC:
+  RX (M5→таргет) и TX (таргет→M5) направления независимо.
+- `bsp/provisioning/` + `bsp_provisioning` — чтение OCOTP UID (8 байт)
+  через прямой доступ к `OCOTP->CFG0/CFG1` (паттерн `fsl_silicon_id_soc.c`).
+- Команда `get_uid` в протоколе v2: `{"type":"cmd","cmd":"get_uid"}` →
+  `{"type":"uid_response","uid":"<16 hex символов>"}`.
+
+### Изменено
+
+- `protocol.h/c` — добавлена `protocol_send_uid_response()`.
+- `cli.c` — добавлена ветка `strcmp(cmd_name, "get_uid")` в `handle_cmd()`;
+  исправлен порядок: `strstr` заменён на `strcmp` по аналогии с остальными командами.
+- `bsp/README.md` — добавлены `bsp_mqs` и `bsp_provisioning` в таблицу и дерево.
+
+### Исправлено
+
+- MQS: отсутствие `.pwmchannelenable = true` в `pwm_signal_param_t` (NXP SDK ≥ 2.13)
+  приводило к тому что `PWM_SetupPwm()` не выставлял `OUTEN` → ШИМ не выходил на пин.
+  Маскировалось отладчиком (оставлял `OUTEN` от прошлой сессии), воспроизводилось
+  только при cold reset.
+- OCOTP: `OCOTP_Init()` вызывал зависание при чтении UID (контроллер занят после
+  USB CDC init). Исправлено переходом на прямое чтение `OCOTP->CFG0/CFG1`
+  без инициализации контроллера — shadow registers доступны сразу после сброса.
+
+### Тесты
+
+- `06_test_firmware_opto.py` hardware-verified: тайминги `RELAY_ON_S=0.15`,
+  `RELAY_OFF_S=0.5`; финальное чтение через `bsp_opto_force_read()` обходит
+  race condition чётного числа ISR при дребезге реле.
+- `06_test_firmware_can.py` hardware-verified: два направления (RX + TX),
+  `disableSelfReception=true` на таргете.
+- `test_mqs` hardware-verified: async-воспроизведение + USB keepalive работает
+  корректно; blocking-вариант голодал USB за ~4 с.
+
+### Документация
+
+- `bsp/provisioning/README.md` — новый компонент: API, аппаратура, особенности
+  прямого чтения OCOTP.
+- `PROTOCOL.md` — добавлена команда `get_uid` / событие `uid_response`.
+
 ## [2026-06-23] — Buttons/display test modules и полный рефакторинг документации
 
 Диапазон: `22f98c311a4564d8f18ed72d11635bf908046b1e..<NEW_SHA>`  

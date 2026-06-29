@@ -205,12 +205,10 @@ flowchart LR
 │       ├── 01_test_uart.py       ← HIL тест bsp_uart_host (без M5)
 │       ├── 02_test_opto.py       ← HIL тест bsp_opto (через M5StampPLC)
 │       ├── 03_test_can.py        ← HIL тест bsp_can
-│       ├── 04_test_button.py     ← HIL тест bsp_button
-│       ├── 05_test_usb_cdc.py    ← HIL тест USB CDC
+│       ├── 05_test_usb_cdc.py    ← HIL тест USB CDC (bsp_usb_cdc, UART CLI)
+│       ├── 06_test_firmware_opto.py ← HIL тест opto через firmware_test CDC
+│       ├── 06_test_firmware_can.py  ← HIL тест CAN через firmware_test CDC
 │       ├── m5/
-│       │   ├── agent.py          ← MicroPython агент на M5StampPLC
-│       │   ├── cli.py            ← интерактивный CLI для ручного тестирования стенда
-│       │   └── power.py          ← управление питанием таргета из командной строки
 │       └── uv.lock
 │
 ├── CMakePresets.json             ← Debug · Release · host-debug · target-debug
@@ -484,6 +482,30 @@ sequenceDiagram
     ML-->>PT: "ACTIVE"
 ```
 
+### Через firmware_test CDC — `06_test_firmware_*.py`
+
+Новый класс HIL-тестов: firmware_test прошит во Flash (не загружается pyOCD),
+общение идёт по USB CDC ACM через `FirmwareCdcClient`. M5StampPLC управляет
+сигналами, TUI/pytest оркестрирует `confirm_request` автоматически.
+
+```mermaid
+sequenceDiagram
+    participant PT as pytest
+    participant M5 as M5StampPLC
+    participant FW as firmware_test (CDC)
+
+    PT->>FW: run_selected(["opto"])
+    FW-->>PT: test_begin
+    FW-->>PT: confirm_request("opto_in1_active")
+    PT->>M5: relay_set(RLY3, ON)
+    PT->>FW: confirm("opto_in1_active", true)
+    FW-->>PT: test_result(pass/fail)
+    FW-->>PT: summary
+```
+
+Фикстура `firmware_cdc` не ждёт `session_start` (одноразовое событие, может быть
+пропущено при подключении) — проверяет живость через `ping → pong`.
+
 Перед каждой тест-сессией фикстура `m5` автоматически включает питание таргета (RLY1), ждёт стабилизации, затем `loaded_<n>` загружает ELF через pyOCD.
 
 ### Команды
@@ -522,15 +544,33 @@ timeout-паттерн.
 
 ### 10.2 HIL target-тесты
 
+Два класса HIL-тестов с разными транспортами:
+
+**Класс A — ELF-in-RAM (UART CLI):** pyOCD загружает прошивку в RAM, общение через
+LPUART1 (MCU-Link VCOM). Тесты BSP-уровня, независимы от firmware_test.
+
 ```bash
 Инструменты: pyOCD (SWD) + pyserial (UART) + pytest + M5StampPLC (реле)
 Пресет:      target-debug → ram.ld → ITCM/DTCM
-Запуск:      just host::hil-run   (на хосте)
+Запуск:      just host::hil-run
 ```
 
-Текущие тесты: `01_test_uart.py` (PING/ECHO/BUF_SIZE), `02_test_opto.py`
-(оптовходы IN1/IN2/RS через M5), `03_test_can.py` (CAN-шина), `04_test_button.py`
-(кнопочные входы), `05_test_usb_cdc.py` (USB CDC).
+Тесты: `01_test_uart.py` (PING/ECHO/BUF_SIZE), `02_test_opto.py`
+(оптовходы IN1/IN2/RS), `03_test_can.py` (CAN-шина), `04_test_button.py`
+(кнопки), `05_test_usb_cdc.py` (USB CDC ACM).
+
+**Класс B — firmware_test во Flash (CDC):** firmware_test прошит штатно,
+общение через USB CDC ACM (`FirmwareCdcClient`). M5StampPLC оркестрирует
+`confirm_request` автоматически без участия оператора.
+
+```bash
+Инструменты: pyserial (CDC) + pytest + M5StampPLC (реле)
+firmware_test: прошит в Flash через USB SDP заранее
+Запуск:      just host::hil-firmware-opto / hil-firmware-can
+```
+
+Тесты: `06_test_firmware_opto.py` (opto IN1/IN2/RS, 6 шагов),
+`06_test_firmware_can.py` (CAN RX + TX).
 
 ---
 
