@@ -21,6 +21,7 @@ add_subdirectory(sdram)
 add_subdirectory(qspi_flash)
 add_subdirectory(sd)
 add_subdirectory(mqs)
+add_subdirectory(provisioning)
 
 # Подавляем предупреждения при компиляции собственных .c файлов библиотеки
 target_compile_options(bsp_board PRIVATE -w)

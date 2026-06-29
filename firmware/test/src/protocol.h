@@ -91,4 +91,13 @@ void protocol_send_test_list(const test_module_t *const *p_pp_registry, size_t c
  */
 void protocol_send_error(const char *p_code);
 
+/**
+ * @brief Отправить ответ на команду get_uid.
+ *
+ * Формат: {"type":"uid_response","uid":"AABBCCDDEEFF0011"}
+ * uid — 16 hex-символов (8 байт big-endian, без разделителей).+ *
+ * @param[in] p_uid  Буфер с UID длиной BSP_PROV_UID_LEN байт.
+ */
+void protocol_send_uid_response(const uint8_t *p_uid);
+
 #endif /* PROTOCOL_H_ */

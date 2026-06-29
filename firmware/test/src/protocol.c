@@ -146,3 +146,15 @@ void protocol_send_error(const char *p_code)
     (void) snprintf(buf, sizeof(buf), "{\"ok\":false,\"error\":\"%s\"}\n", p_code);
     cli_send(buf);
 }
+
+void protocol_send_uid_response(const uint8_t *p_uid)
+{
+    char buf[PROTO_BUF_SIZE];
+    (void) snprintf(buf, sizeof(buf),
+                    "{\"type\":\"uid_response\","
+                    "\"uid\":\"%02X%02X%02X%02X%02X%02X%02X%02X\"}\n",
+                    (unsigned int) p_uid[0U], (unsigned int) p_uid[1U], (unsigned int) p_uid[2U],
+                    (unsigned int) p_uid[3U], (unsigned int) p_uid[4U], (unsigned int) p_uid[5U],
+                    (unsigned int) p_uid[6U], (unsigned int) p_uid[7U]);
+    cli_send(buf);
+}

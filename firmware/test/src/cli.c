@@ -22,6 +22,7 @@
 
 #include "cli.h"
 
+#include "bsp/provisioning.h"
 #include "bsp/usb_cdc.h"
 #include "protocol.h"
 #include "test_runner.h"
@@ -313,6 +314,20 @@ static void handle_cmd(const char *p_line)
     if (strcmp(cmd_name, "run") == 0)
     {
         handle_cmd_run(p_line);
+        return;
+    }
+
+    if (strcmp(cmd_name, "get_uid") == 0)
+    {
+        uint8_t uid[BSP_PROV_UID_LEN];
+        if (bsp_prov_read_uid(uid, sizeof(uid)) == BSP_OK)
+        {
+            protocol_send_uid_response(uid);
+        }
+        else
+        {
+            protocol_send_error("UID_READ_ERR");
+        }
         return;
     }
 

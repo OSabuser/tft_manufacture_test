@@ -215,7 +215,7 @@ sequenceDiagram
 
 **SKIP — оператор нажал Cancel:**
 
-```
+```bash
 → {"type":"confirm","id":"usd","confirmed":false}
 ← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"operator declined"}
 ```
@@ -369,6 +369,59 @@ sequenceDiagram
 
 ---
 
+## MQS аудио-выход — слуховая проверка
+
+| Параметр         | Значение                                  |
+| ---------------- | ----------------------------------------- |
+| ID               | `mqs`                                     |
+| Критичный        | ❌ Нет                                     |
+| HIL              | ❌ Нет                                     |
+| Тип              | Interactive (in-run confirm)              |
+| Время выполнения | ~4 с воспроизведение + до 15 с на confirm |
+
+Тест воспроизводит мелодию (~4 с: нота A4 затем E5) через MQS-выход
+(`MQS_RIGHT`, `GPIO_AD_B0_04`) и усилитель LM4875M.
+Оператор подтверждает слышимость тона.
+
+```mermaid
+sequenceDiagram
+    participant H as HOST
+    participant T as TARGET
+    H->>T: run("mqs")
+    T->>H: test_begin
+    Note over T: ~4 с воспроизведение A4 + E5
+    T->>H: confirm_request("mqs_tone", timeout=15s)
+    Note over H: оператор слышит тон
+    H->>T: confirm("mqs_tone", true)
+    T->>H: test_result: pass/fail
+```
+
+**PASS:**
+
+```bash
+→ {"type":"cmd","cmd":"run","id":"mqs"}
+← {"type":"test_begin","id":"mqs","name":"MQS Audio Out","critical":false}
+← {"type":"confirm_request","id":"mqs_tone","prompt":"Do you hear a tone?","timeout_ms":15000}
+→ {"type":"confirm","id":"mqs_tone","confirmed":true}
+← {"type":"test_result","id":"mqs","status":"pass","ms":19240,"detail":""}
+```
+
+**FAIL — оператор не слышит или истёк таймаут:**
+
+```bash
+← {"type":"test_result","id":"mqs","status":"fail","ms":15001,
+   "detail":"operator: no sound"}
+```
+
+**FAIL — ошибка воспроизведения (DMA/SAI):**
+
+```bash
+← {"type":"test_result","id":"mqs","status":"fail","ms":1,
+   "detail":"mqs play error"}
+```
+
+---
+
 ## Запуск всего набора (run_all)
 
 Тесты запускаются строго в порядке реестра. При провале критичного теста
@@ -392,7 +445,17 @@ sequenceDiagram
 ← {"type":"confirm_request","id":"btn1_press","prompt":"Press Test_But_1","timeout_ms":10000}
   ...
 ← {"type":"test_result","id":"buttons","status":"pass","ms":6200,"detail":""}
-← {"type":"summary","passed":5,"failed":0,"skipped":0,"overall":"pass"}
+← {"type":"test_begin","id":"mqs","name":"MQS Audio Out","critical":false}
+← {"type":"confirm_request","id":"mqs_tone","prompt":"Do you hear a tone?","timeout_ms":15000}
+  ... оператор слышит и подтверждает ...
+← {"type":"test_result","id":"mqs","status":"pass","ms":19240,"detail":""}
+← {"type":"test_begin","id":"opto","name":"Opto Inputs","critical":false}
+  ...confirm цикл 6 HIL шагов...
+← {"type":"test_result","id":"opto","status":"pass","ms":3210,"detail":""}
+← {"type":"test_begin","id":"can","name":"CAN loopback","critical":false}
+  ...confirm цикл 2 HIL шагов...
+← {"type":"test_result","id":"can","status":"pass","ms":1240,"detail":""}
+← {"type":"summary","passed":8,"failed":0,"skipped":0,"overall":"pass"}
 ```
 
 **SKIP-каскад при critical fail:**
@@ -404,7 +467,7 @@ sequenceDiagram
 ← {"type":"test_begin","id":"usd",...}
 ← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"critical test failed"}
   ...
-← {"type":"summary","passed":0,"failed":1,"skipped":4,"overall":"fail"}
+← {"type":"summary","passed":0,"failed":1,"skipped":7,"overall":"fail"}
 ```
 
 ---
@@ -418,8 +481,9 @@ sequenceDiagram
 | 3   | `usd`     | microSD (SDIO)     | ❌        | ❌   | Interactive (pre-confirm)    |
 | 4   | `display` | TFT Display RGB888 | ❌        | ❌   | Interactive (in-run confirm) |
 | 5   | `buttons` | Test Buttons       | ❌        | ❌   | Interactive (physical)       |
-| 6   | `opto`    | Opto Inputs        | ❌        | ✅   | HIL (M5StampPLC RLY2/3/4)    |
-| 7   | `can`     | CAN loopback       | ❌        | ✅   | HIL (M5StampPLC CAN)         |
+| 6   | `mqs`     | MQS Audio Out      | ❌        | ❌   | Interactive (in-run confirm) |
+| 7   | `opto`    | Opto Inputs        | ❌        | ✅   | HIL (M5StampPLC RLY2/3/4)    |
+| 8   | `can`     | CAN loopback       | ❌        | ✅   | HIL (M5StampPLC CAN)         |
 
 ---
 
@@ -442,6 +506,8 @@ sequenceDiagram
 | `display` | `<id> not confirmed`                            | Оператор не подтвердил / истёк таймаут 15 с |
 | `buttons` | `btn1_press timeout`                            | Test_But_1 не нажата за 10 с                |
 | `buttons` | `btn2_press timeout`                            | Test_But_2 не нажата за 10 с                |
+| `mqs`     | `mqs play error`                                | SAI3/DMA не запустился                      |
+| `mqs`     | `operator: no sound`                            | Нет звука / усилитель не работает           |
 | `opto`    | `<id> mismatch: expected ACTIVE got INACTIVE`   | Реле не переключило оптовход                |
 | `can`     | `can_rx_ready: no frame received`               | M5 не отправил фрейм / CAN не подключён     |
 | `can`     | `rx id mismatch: expected 0x100 got 0x...`      | Неверный ID принятого фрейма                |
@@ -464,6 +530,7 @@ sequenceDiagram
      {"id":"usd","name":"microSD (SDIO)","critical":false,"requires_hil":false},
      {"id":"display","name":"TFT Display RGB888","critical":false,"requires_hil":false},
      {"id":"buttons","name":"Test Buttons","critical":false,"requires_hil":false},
+     {"id":"mqs","name":"MQS Audio Out","critical":false,"requires_hil":false},
      {"id":"opto","name":"Opto Inputs","critical":false,"requires_hil":true},
      {"id":"can","name":"CAN loopback","critical":false,"requires_hil":true}
    ]}

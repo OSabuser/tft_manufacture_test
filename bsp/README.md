@@ -45,12 +45,15 @@ bsp/
 │   └── mocks/              # fff-заглушки для host-тестов
 ├── opto/                   # bsp_opto         — оптоизолированные входы PS2801-4
 ├── can/                    # bsp_can          — FlexCAN2 (трансивер SN65HVD230D)
+│   └── mocks/              # fff-заглушки для host-тестов
 ├── button/                 # bsp_button       — тактовые кнопки SWT6x6 с debounce
 ├── display/                # bsp_display      — TFT-дисплей
 ├── usb_cdc/                # bsp_usb_cdc      — USB CDC ACM
 ├── sdram/                  # bsp_sdram        — внешний SDRAM через SEMC
 ├── qspi_flash/             # bsp_qspi_flash   — QSPI Flash W25Q64/128/256/512
-└── sd/                     # bsp_sd           — SD host-контроллер (USDHC1)
+├── sd/                     # bsp_sd           — SD host-контроллер (USDHC1)
+├── mqs/                    # bsp_mqs          — MQS аудио-выход (SAI3, MQS, eDMA + управление громкостью)
+└── provisioning/           # bsp_provisioning — OCOTP UID (уникальный идентификатор чипа)
 ```
 
 ---
@@ -84,19 +87,21 @@ target_link_libraries(test_hil_opto PRIVATE bsp_board bsp_boot_ram ...)
 
 ### Компоненты периферии
 
-| Библиотека       | Модуль        | README                                       |
-| ---------------- | ------------- | -------------------------------------------- |
-| `bsp_led`        | `led/`        | [led/README.md](led/README.md)               |
-| `bsp_tick`       | `tick/`       | [tick/README.md](tick/README.md)             |
-| `bsp_uart_host`  | `uart_host/`  | [uart_host/README.md](uart_host/README.md)   |
-| `bsp_opto`       | `opto/`       | [opto/README.md](opto/README.md)             |
-| `bsp_can`        | `can/`        | [can/README.md](can/README.md)               |
-| `bsp_button`     | `button/`     | [button/README.md](button/README.md)         |
-| `bsp_display`    | `display/`    | [display/README.md](display/README.md)       |
-| `bsp_usb_cdc`    | `usb_cdc/`    | [usb_cdc/README.md](usb_cdc/README.md)       |
-| `bsp_sdram`      | `sdram/`      | [sdram/README.md](sdram/README.md)           |
-| `bsp_qspi_flash` | `qspi_flash/` | [qspi_flash/README.md](qspi_flash/README.md) |
-| `bsp_sd`         | `sd/`         | [sd/README.md](sd/README.md)                 |
+| Библиотека         | Модуль          | README                                           |
+| ------------------ | --------------- | ------------------------------------------------ |
+| `bsp_led`          | `led/`          | [led/README.md](led/README.md)                   |
+| `bsp_tick`         | `tick/`         | [tick/README.md](tick/README.md)                 |
+| `bsp_uart_host`    | `uart_host/`    | [uart_host/README.md](uart_host/README.md)       |
+| `bsp_opto`         | `opto/`         | [opto/README.md](opto/README.md)                 |
+| `bsp_can`          | `can/`          | [can/README.md](can/README.md)                   |
+| `bsp_button`       | `button/`       | [button/README.md](button/README.md)             |
+| `bsp_display`      | `display/`      | [display/README.md](display/README.md)           |
+| `bsp_usb_cdc`      | `usb_cdc/`      | [usb_cdc/README.md](usb_cdc/README.md)           |
+| `bsp_sdram`        | `sdram/`        | [sdram/README.md](sdram/README.md)               |
+| `bsp_qspi_flash`   | `qspi_flash/`   | [qspi_flash/README.md](qspi_flash/README.md)     |
+| `bsp_sd`           | `sd/`           | [sd/README.md](sd/README.md)                     |
+| `bsp_mqs`          | `mqs/`          | [mqs/README.md](mqs/README.md)                   |
+| `bsp_provisioning` | `provisioning/` | [provisioning/README.md](provisioning/README.md) |
 
 ---
 

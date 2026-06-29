@@ -1,19 +1,20 @@
 /**
  * @file  test_mqs.c
- * @brief Тест MQS: воспроизведение тестового тона через SAI1 + eDMA + MQS.
+ * @brief Тест MQS: воспроизведение тестового тона через SAI3 + eDMA + MQS.
  *
  * Алгоритм:
- *   1. init()   — bsp_mqs_init(), генерация мелодии в s_melody_buf.
+ *   1. init()   — bsp_mqs_amp_init(), задержка 300 мс, bsp_mqs_init(),
+ *                 генерация мелодии в s_melody_buf.
  *   2. run()    — воспроизвести мелодию (~4 с) с USB keepalive в цикле,
  *                 затем confirm_request("mqs_tone") — оператор подтверждает.
- *   3. deinit() — bsp_mqs_stop(), bsp_mqs_deinit().
+ *   3. deinit() — bsp_mqs_stop(), bsp_mqs_amp_deinit(), bsp_mqs_deinit().
  *
  * Мелодия: стерео PCM16 44100 Гц, две ноты (A4/E5) по 2 с каждая.
  * Буфер — статический глобальный в некэшируемой секции (OCRAM NonCacheable).
  * L == R (монофонический выход на плате).
  *
  * Протокол:
- *   ← confirm_request("mqs_tone", "Слышен звуковой сигнал?", 15000)
+ *   ← confirm_request("mqs_tone", "Do you hear a tone?", 15000)
  *   → confirm("mqs_tone", true/false)
  *   ← test_result pass/fail/skip
  */
@@ -159,9 +160,17 @@ static bsp_status_t mqs_play_with_poll(void)
 
 static void test_mqs_init(void)
 {
-    mqs_build_melody();
-    (void) bsp_mqs_init();
+    /*
+     * Порядок инициализации критичен (см. bsp/mqs/README.md):
+     *   1. amp_init — запускает PWM4, начинает заряд C103/C105 LM4875M.
+     *   2. bsp_delay(300) — ждём заряда фильтрующих конденсаторов усилителя.
+     *   3. mqs_init — запускает SAI3 + DMA.
+     *   4. mqs_build_melody — генерация буфера (однократно, флаг g_s_melody_ready).
+     */
     (void) bsp_mqs_amp_init();
+    bsp_delay(300U);
+    (void) bsp_mqs_init();
+    mqs_build_melody();
 }
 
 static test_result_t test_mqs_run(void)
@@ -175,22 +184,20 @@ static test_result_t test_mqs_run(void)
         };
     }
 
-    /* Запрашиваем подтверждение оператора.
-     * API: bool test_runner_wait_confirm(const confirm_params_t *p_params)
-     * Возвращает true если оператор подтвердил, false при отказе или таймауте.
-     * Таймаут детектируется отдельно через флаг в confirm_params_t. */
-    const confirm_params_t PARAMS = {
+    /*
+     * Запрашиваем подтверждение оператора.
+     * Таймаут 15 с — аналогично display-тесту (закрытое решение, Этап 5).
+     */
+    const confirm_params_t K_PARAMS = {
         .id         = "mqs_tone",
-        .prompt     = "Have you heard a tone?",
+        .prompt     = "Do you hear a tone?",
         .timeout_ms = 15000U,
     };
 
-    bool confirmed = test_runner_wait_confirm(&PARAMS);
+    bool confirmed = test_runner_wait_confirm(&K_PARAMS);
 
     if (!confirmed)
     {
-        /* Различаем таймаут и явный отказ через поле last_confirm_timed_out
-         * если оно есть в API, иначе унифицируем как fail. */
         return (test_result_t){
             .status = TEST_STATUS_FAIL,
             .detail = "operator: no sound",

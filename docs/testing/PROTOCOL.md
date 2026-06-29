@@ -152,6 +152,23 @@ sequenceDiagram
    ]}
 ```
 
+### `get_uid` — чтение уникального идентификатора чипа
+
+Запрос UID из OCOTP. Может быть отправлен в любой момент когда runner не BUSY.
+
+```json
+→ {"type":"cmd","cmd":"get_uid"}
+← {"type":"uid_response","uid":"AABBCCDDEEFF0011"}
+```
+
+`uid` — 16 hex-символов (8 байт big-endian): CFG1[63:32] + CFG0[31:0].
+
+При ошибке чтения OCOTP:
+
+```json
+← {"ok":false,"error":"UID_READ_ERR"}
+```
+
 ### `run_selected` — запуск подмножества тестов
 
 Запускает тесты по списку ID. Порядок выполнения — по реестру таргета,

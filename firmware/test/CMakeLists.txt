@@ -48,6 +48,7 @@ target_link_libraries(
           bsp_tick
           bsp_boot_xip
           bsp_usb_cdc
+          bsp_provisioning
           bsp_sdram
           bsp_qspi_flash
           bsp_uart_host

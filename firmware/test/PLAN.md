@@ -1,6 +1,6 @@
 # firmware_test — План разработки
 
-> Версия: 0.7 | Обновлён после завершения Этапов 6а–6д, 6е, 6ж (протокол, test_opto, test_can, HIL pytest firmware_cdc).
+> Версия: 0.8 | Обновлён после завершения Этапа 6г (bsp_mqs + test_mqs, hardware-verified).
 
 ---
 
@@ -36,7 +36,7 @@
 | HIL pytest firmware_cdc        | ✅      | Этап 6д, `FirmwareCdc` + `firmware_cdc` фикстура |
 | HIL pytest firmware_opto       | ✅      | Этап 6е, `06_test_firmware_opto.py`              |
 | HIL pytest firmware_can        | ✅      | Этап 6ж, `06_test_firmware_can.py`               |
-| `bsp_mqs` + `test_mqs`         | ⬜      | Этап 6г                                          |
+| `bsp_mqs` + `test_mqs`         | ✅      | Этап 6г, hardware-verified                       |
 | Provisioning                   | ⬜      | Этап 7                                           |
 | TUI сервисного инженера        | ⬜      | Этап 8                                           |
 
@@ -44,16 +44,16 @@
 
 ## Матрица тестов — итоговая
 
-| ID        | Название           | Critical | HIL | Тип         | BSP                 | Статус |
-| --------- | ------------------ | -------- | --- | ----------- | ------------------- | ------ |
-| `sdram`   | SDRAM 32 MB        | ✅        | ❌   | self        | `bsp_sdram` ✅       | ✅      |
-| `qspi`    | QSPI Flash W25Qxx  | ✅        | ❌   | self        | `bsp_qspi_flash` ✅  | ✅      |
-| `usd`     | microSD (SDIO)     | ❌        | ❌   | interactive | `bsp_sd` ✅          | ✅      |
-| `display` | TFT Display RGB888 | ❌        | ❌   | interactive | `bsp_display` ✅     | ✅      |
-| `buttons` | Test Buttons 1/2   | ❌        | ❌   | interactive | `bsp_button` ✅      | ✅      |
-| `mqs`     | MQS Audio Out      | ❌        | ❌   | interactive | `bsp_mqs` (⬜ новый) | ⬜      |
-| `can`     | CAN loopback       | ❌        | ✅   | HIL         | `bsp_can` ✅         | ✅      |
-| `opto`    | Оптовходы IN1/2+RS | ❌        | ✅   | HIL         | `bsp_opto` ✅        | ✅      |
+| ID        | Название           | Critical | HIL | Тип         | BSP                | Статус |
+| --------- | ------------------ | -------- | --- | ----------- | ------------------ | ------ |
+| `sdram`   | SDRAM 32 MB        | ✅        | ❌   | self        | `bsp_sdram` ✅      | ✅      |
+| `qspi`    | QSPI Flash W25Qxx  | ✅        | ❌   | self        | `bsp_qspi_flash` ✅ | ✅      |
+| `usd`     | microSD (SDIO)     | ❌        | ❌   | interactive | `bsp_sd` ✅         | ✅      |
+| `display` | TFT Display RGB888 | ❌        | ❌   | interactive | `bsp_display` ✅    | ✅      |
+| `buttons` | Test Buttons 1/2   | ❌        | ❌   | interactive | `bsp_button` ✅     | ✅      |
+| `mqs`     | MQS Audio Out      | ❌        | ❌   | interactive | `bsp_mqs` ✅        | ✅      |
+| `can`     | CAN loopback       | ❌        | ✅   | HIL         | `bsp_can` ✅        | ✅      |
+| `opto`    | Оптовходы IN1/2+RS | ❌        | ✅   | HIL         | `bsp_opto` ✅       | ✅      |
 
 **Убранные тесты (закрытые решения):**
 
@@ -93,8 +93,19 @@
 - **Фильтрация HIL на стороне TUI:** таргет не фильтрует по `requires_hil`.
 - **MQS стерео:** MQS MIMXRT1052 требует стерео PCM-буфер. На плате выведен
   один канал. Буфер всегда стерео (L+R идентичны).
-- **MQS тест:** захардкоженная мелодия 3–5 с, `confirm_request("mqs_tone")`,
-  оператор слышит → OK/FAIL. `critical=false`, `requires_hil=false`.
+- **MQS тест:** захардкоженная мелодия ~4 с (A4 + E5, по 2 с каждая),
+  `confirm_request("mqs_tone")`, оператор слышит → PASS/FAIL.
+  `critical=false`, `requires_hil=false`, `pre_confirm_prompt=NULL`.
+- **MQS порядок init:** `bsp_mqs_amp_init()` → `bsp_delay(300)` → `bsp_mqs_init()`.
+  Усилитель запускается первым, чтобы успели зарядиться конденсаторы C103/C105 LM4875M.
+  Нарушение порядка приводит к щелчку при старте или отсутствию звука.
+- **MQS USB keepalive:** воспроизведение через `bsp_mqs_play()` (async, не blocking),
+  параллельно крутится `bsp_usb_cdc_poll()`. Blocking-вариант голодает USB за ~4 с.
+- **`pwmchannelenable` (NXP SDK ≥ 2.13):** поле в `pwm_signal_param_t` обязательно
+  выставлять в `true`. При инициализации через designated initializers без явного
+  указания равно `false` → `PWM_SetupPwm()` не выставляет `OUTEN` → ШИМ не выходит
+  на пин. Маскируется после отладочной сессии (отладчик оставляет `OUTEN` от прошлого
+  прогона). Воспроизводится только при cold reset.
 - **ERRATA 50235 (FlexCAN + USB):** `FLEXCAN_Init()` содержит assert на
   `CCM_CCGR5_CG12` (LPUART clock gate). После `bsp_usb_cdc_init()` gate
   может быть закрыт → assert → HardFault. Workaround: `CLOCK_EnableClock(kCLOCK_Lpuart1)`
@@ -126,9 +137,9 @@
 
 ---
 
-## Этап 6 — test_can + test_opto + test_mqs + протокол ← ТЕКУЩИЙ
+## Этап 6 — test_can + test_opto + test_mqs + протокол ✅ ЗАВЕРШЁН
 
-### 6а — Расширение протокола
+### 6а — Расширение протокола ✅
 
 **Файлы:** `protocol.h`, `protocol.c`, `cli.c`, `test_runner.c`, `PROTOCOL.md`
 
@@ -173,7 +184,7 @@
 - Статический bool-массив `g_s_selected[REGISTRY_SIZE]` — без malloc
 - `test_runner_run_selected(const char **pp_ids, size_t count)` — новая публичная функция
 
-### 6б — test_opto.c
+### 6б — test_opto.c ✅
 
 **Файл:** `firmware/test/src/tests/test_opto.c`
 
@@ -193,7 +204,7 @@
 - FAIL при несоответствии: `detail = "<id> state mismatch: expected ACTIVE got INACTIVE"`
 - Таймаут: `PROTOCOL_CONFIRM_TIMEOUT_MS` (30 с) на каждый шаг
 
-### 6в — test_can.c
+### 6в — test_can.c ✅
 
 **Файл:** `firmware/test/src/tests/test_can.c`
 
@@ -223,28 +234,32 @@ confirm_request("can_tx_verify")
 - `disableSelfReception=true` — таргет не слышит свой TX, только M5 верифицирует
 - Init: `bsp_can_init(&cfg)` + `bsp_can_accept_all()`
 
-### 6г — bsp_mqs + test_mqs.c
+### 6г — bsp_mqs + test_mqs.c ✅
 
-**Файлы:** `bsp/mqs/` (новый BSP-модуль) + `firmware/test/src/tests/test_mqs.c`
+**Файлы:** `bsp/mqs/` + `firmware/test/src/tests/test_mqs.c`
 
 **bsp_mqs:**
 
-- MQS требует стерео PCM (L+R), на плате один физический канал
-- Буфер: всегда стерео (L == R, оба канала идентичны)
-- API минимальный: `bsp_mqs_init()`, `bsp_mqs_play(buf, len)`, `bsp_mqs_stop()`, `bsp_mqs_deinit()`
-- Реализация — на основе наработок (предоставит разработчик)
+- SAI3 + eDMA (DMA0 канал 0) + MQS периферия
+- Стерео PCM16 буфер (L+R идентичны), один физический выход `MQS_RIGHT`
+- Усилитель LM4875M управляется PWM4 SM0 через RC-фильтр и буферный ОУ LM358
+- API: `bsp_mqs_init/deinit`, `bsp_mqs_play/play_blocking`, `bsp_mqs_stop`,
+  `bsp_mqs_is_busy`, `bsp_mqs_amp_init/deinit`, `bsp_mqs_amp_set_volume`
 
 **test_mqs:**
-- Захардкоженная мелодия, 3–5 секунд
-- `confirm_request("mqs_tone")` → оператор слышит → OK/FAIL
-- Таймаут: 15 с (аналогично display)
+
+- Мелодия ~4 с: A4 (440 Гц) + E5 (659 Гц), по 2 с каждая, целочисленная LUT-синусоида
+- Воспроизведение через `bsp_mqs_play()` (async) с `bsp_usb_cdc_poll()` в цикле
+- `confirm_request("mqs_tone", "Do you hear a tone?", 15000)` → PASS/FAIL
+- Порядок init: amp → delay 300 мс → mqs → build_melody (однократно, флаг)
 - `critical=false`, `requires_hil=false`, `pre_confirm_prompt=NULL`
 
-### 6д — HIL pytest для firmware_test
+### 6д — HIL pytest для firmware_test ✅
 
 **Файлы:**
+
 ```
-tools/hil/conftest.py              ← новая фикстура firmware_cdc
+tools/hil/conftest.py              ← фикстура firmware_cdc
 tools/hil/06_test_firmware_opto.py
 tools/hil/06_test_firmware_can.py
 ```
@@ -257,7 +272,7 @@ def firmware_cdc(m5):
     """
     Открывает USB CDC порт firmware_test.
     firmware_test уже прошит в Flash (не загружается pyOCD).
-    Ждёт session_start, возвращает FirmwareCdcClient.
+    Проверяет живость через ping → pong.
     """
 ```
 
@@ -267,19 +282,6 @@ def firmware_cdc(m5):
 - `wait_event(type, timeout_s)` — ждать события нужного типа
 - `confirm(id, ok)` — отправить `{"type":"confirm","id":"...","confirmed":true/false}`
 - `run_test(id)` — запустить тест, вернуть test_result dict
-
-**Сценарий `06_test_firmware_can.py`:**
-
-```python
-def test_can_rx(firmware_cdc, m5):
-    # Запустить тест can через firmware_test
-    # При confirm_request("can_rx_ready") — M5 шлёт фрейм, затем confirm
-    ...
-
-def test_can_tx(firmware_cdc, m5):
-    # При confirm_request("can_tx_verify") — M5 принимает фрейм, верифицирует
-    ...
-```
 
 **Justfile:**
 
@@ -348,7 +350,7 @@ tools/shared/
 
 **Режим A — Прошивка** (триггер: VID/PID 1FC9:0130 обнаружен — BootROM SDP)
 
-```bash
+```
 ┌─ Прошивка платы ─────────────────────────────────┐
 │  Обнаружен BootROM (SDP режим)                     │
 │                                                    │
@@ -366,7 +368,7 @@ tools/shared/
 
 **Режим B — Диагностика** (триггер: session_start получен по CDC)
 
-```bash
+```
 ┌─ Диагностика платы  fw:0.1.0 ─────────────────────┐
 │  M5StampPLC: ✓ подключён   │  Плата: IMXRT1052     │
 ├────────────────────────────────────────────────────┤
@@ -377,8 +379,8 @@ tools/shared/
 │  ☑ TFT Display              │    mount failed: 5    │
 │  ☑ Кнопки                   │  display  ✓ PASS      │
 │  ☑ MQS Audio                │  buttons  ✓ PASS      │
-│  ☑ CAN loopback  [HIL]      │  ...                  │
-│  ☑ Оптовходы     [HIL]      │                       │
+│  ☑ CAN loopback  [HIL]      │  mqs      ✓ PASS      │
+│  ☑ Оптовходы     [HIL]      │  ...                  │
 ├────────────────────────────────────────────────────┤
 │  [ Запустить выбранные ]    [ Все тесты ]          │
 │  ████████████████░░░░  80%  Тест: display          │
@@ -393,6 +395,7 @@ tools/shared/
 | Тип теста            | Источник confirm   | Действие TUI                                  |
 | -------------------- | ------------------ | --------------------------------------------- |
 | standalone (display) | оператор           | показать prompt, кнопки OK/FAIL, countdown    |
+| standalone (mqs)     | оператор           | показать prompt, кнопки OK/FAIL, countdown    |
 | standalone (buttons) | физическое нажатие | показать инструкцию, ждать test_result        |
 | HIL (opto, can)      | оркестратор        | auto: M5 action → confirm (оператор не видит) |
 
@@ -432,7 +435,8 @@ just host::service-flash <bin>   # прошить без TUI (для автом�
 ```
 
 **Перепрошивка (нужна новая версия firmware_test или production):**
-```
+
+```bash
 1. Перемычка BOOT_MOD_1 → 3V3
 2. Reset, подключить USB
 3. TUI обнаружил 1FC9:0130  →  Режим A
@@ -456,10 +460,9 @@ just host::service-flash <bin>   # прошить без TUI (для автом�
 ✅ Этап 6д  HIL pytest: firmware_cdc фикстура (FirmwareCdc + firmware_cdc)
 ✅ Этап 6е  HIL pytest: 06_test_firmware_opto.py
 ✅ Этап 6ж  HIL pytest: 06_test_firmware_can.py
+✅ Этап 6г  bsp_mqs + test_mqs.c + hardware верификация
 
-⬜ Этап 6г  bsp_mqs + test_mqs.c                              ← СЛЕДУЮЩИЙ ШАГ
-
-⬜ Этап 7   Provisioning (OCOTP UID + Flash-флаг)
+⬜ Этап 7   Provisioning (OCOTP UID + Flash-флаг)          ← СЛЕДУЮЩИЙ ШАГ
 
 ⬜ Этап 8а  tools/production/ скелет + models + clients
 ⬜ Этап 8б  orchestrator + базовый Textual UI (список тестов, запуск, результаты)
@@ -474,8 +477,8 @@ just host::service-flash <bin>   # прошить без TUI (для автом�
 
 ## Зависимости между этапами
 
-```bash
-✅ 6а (протокол) → ✅ 6б (opto) → ✅ 6в (can) → ⬜ 6г (mqs)
+```
+✅ 6а (протокол) → ✅ 6б (opto) → ✅ 6в (can) → ✅ 6г (mqs)
                                                 ↓
                                    ✅ 6д (conftest) → ✅ 6е (opto pytest) → ✅ 6ж (can pytest)
                                                                                     ↓
