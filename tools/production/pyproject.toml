@@ -1,0 +1,21 @@
+[project]
+name = "service-tui"
+version = "0.1.0"
+description = "TUI сервисного инженера для диагностики платы MIMXRT1052"
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=0.80.0",
+    "pyserial>=3.5",
+    "python-dotenv>=1.0.0",
+    "pyinstaller>=6.0.0",
+]
+
+[project.scripts]
+service-tui = "main:main"
+
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
