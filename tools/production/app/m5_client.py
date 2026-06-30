@@ -121,13 +121,13 @@ class M5Client:
         """Отправить команду, прочитать ответ (blocking)."""
         assert self._ser is not None
         line = json.dumps(cmd, separators=(",", ":")) + "\n"
-        self._ser.write(line.encode("ascii"))
+        self._ser.write(line.encode("utf-8"))
         self._ser.flush()
         raw = self._ser.readline()
         if not raw:
             return None
         try:
-            return json.loads(raw.decode("ascii", errors="replace").strip())
+            return json.loads(raw.decode("utf-8", errors="replace").strip())
         except json.JSONDecodeError:
             return None
 

@@ -1843,3 +1843,25 @@
 2026-06-30 15:08:26,321  INFO      app.m5_client  M5StampPLC не найден
 2026-06-30 15:08:55,013  DEBUG     asyncio  Using selector: KqueueSelector
 2026-06-30 15:08:56,561  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:09:59,613  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:10:01,161  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:12:33,081  WARNING   app.firmware_client  _recv_until timeout after 120.0 s
+2026-06-30 15:14:40,777  WARNING   app.firmware_client  _recv_until timeout after 120.0 s
+2026-06-30 15:33:29,207  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:33:54,602  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:33:56,280  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:37:25,364  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:37:27,091  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:42:36,030  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:42:37,715  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:43:19,205  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 15:43:22,852  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 15:43:23,345  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 15:43:23,701  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 15:43:28,104  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:43:29,654  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 16:19:09,052  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 16:19:10,697  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 16:20:10,951  ERROR     app.orchestrator  HIL confirm без M5: opto_in1_active
+2026-06-30 16:27:42,558  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 16:27:44,211  INFO      app.m5_client  M5StampPLC не найден

@@ -287,6 +287,10 @@ ResultsPanel .section-title {
     width: 100%;
 }
 
+#results-empty.hidden {
+    display: none;
+}
+
 #results-empty-text {
     color: $text-muted;
     text-align: center;

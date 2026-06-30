@@ -143,14 +143,14 @@ static void buttons_test_init(void)
  */
 static test_result_t buttons_test_run(void)
 {
-    if (!wait_button_press(BSP_BUTTON_1, "btn1_press", "Press Test_But_1", BTN_PRESS_TIMEOUT_MS))
+    if (!wait_button_press(BSP_BUTTON_1, "btn1_press", "Нажмите кнопку 1", BTN_PRESS_TIMEOUT_MS))
     {
-        return make_skip("btn1_press timeout");
+        return make_skip("Кнопка 1 - таймаут");
     }
 
-    if (!wait_button_press(BSP_BUTTON_2, "btn2_press", "Press Test_But_2", BTN_PRESS_TIMEOUT_MS))
+    if (!wait_button_press(BSP_BUTTON_2, "btn2_press", "Нажмите кнопку 2", BTN_PRESS_TIMEOUT_MS))
     {
-        return make_skip("btn2_press timeout");
+        return make_skip("Кнопка 2 - таймаут");
     }
 
     return (test_result_t){
@@ -165,7 +165,7 @@ static test_result_t buttons_test_run(void)
 /** @brief Дескриптор тест-модуля кнопок для реестра test_runner. */
 const test_module_t K_TEST_BUTTONS = {
     .id                 = "buttons",
-    .name               = "Buttons",
+    .name               = "Тактовые кнопки",
     .critical           = false,
     .requires_hil       = false,
     .pre_confirm_prompt = NULL,

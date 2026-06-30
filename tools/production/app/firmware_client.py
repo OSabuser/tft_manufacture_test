@@ -134,7 +134,7 @@ class FirmwareClient:
         """Сериализовать dict в JSON и отправить строку (blocking)."""
         assert self._ser is not None
         line = json.dumps(obj, separators=(",", ":")) + "\n"
-        self._ser.write(line.encode("ascii"))
+        self._ser.write(line.encode("utf-8"))
         self._ser.flush()
 
     def _read_line(self) -> Optional[dict]:
@@ -143,7 +143,7 @@ class FirmwareClient:
         raw = self._ser.readline()
         if not raw:
             return None
-        return _parse_event(raw.decode("ascii", errors="replace"))
+        return _parse_event(raw.decode("utf-8", errors="replace"))
 
     async def _send(self, obj: dict) -> None:
         """Отправить JSON-команду (async wrapper)."""
