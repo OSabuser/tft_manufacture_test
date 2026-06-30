@@ -8,6 +8,10 @@ DataTable с колонками: Тест | HIL | Статус | Время | Д
 внутри групп статусов — исходный порядок реестра firmware_test.
 Строка с FAIL дополнительно подсвечивается красным фоном целиком.
 
+Колонка "Детали" переносит длинный текст на несколько строк внутри ячейки
+(а не обрезает) — высота строки для FAIL вычисляется по длине detail
+относительно ширины колонки. Остальные статусы всегда однострочные.
+
 Публичный API:
     ResultsPanel.populate(tests)          — показать пустую таблицу (PENDING)
     ResultsPanel.set_running(test_id)     — пометить тест как выполняющийся
@@ -16,6 +20,8 @@ DataTable с колонками: Тест | HIL | Статус | Время | Д
 """
 
 from __future__ import annotations
+
+import math
 
 from rich.style import Style
 from rich.text import Text
@@ -47,6 +53,12 @@ _STATUS_DISPLAY: dict[TestStatus, tuple[str, str]] = {
 
 _FAIL_BG = "dark_red"
 
+# Ширина колонки "Детали" в символах — должна совпадать с шириной,
+# заданной явно в on_mount() через table.add_column("Детали", width=...).
+# Используется для расчёта высоты строки под перенос текста.
+_DETAIL_COL_WIDTH = 21
+_MAX_ROW_HEIGHT = 4  # не даём одной FAIL-строке занять весь экран
+
 
 class ResultsPanel(Widget):
     """Правая колонка DiagScreen — таблица результатов тестов."""
@@ -70,7 +82,16 @@ class ResultsPanel(Widget):
 
     def on_mount(self) -> None:
         table = self.query_one("#results-table", DataTable)
-        table.add_columns("Тест", "M5", "Статус", "Время", "Детали")
+        # add_columns() (множественное число) не принимает width — без явной
+        # ширины колонка "Детали" сжимается до длины заголовка ("Детали" = 6
+        # символов) и обрезает любой более длинный текст, даже однострочный.
+        # Используем add_column() по одной с явной шириной под каждую,
+        # рассчитанной под ResultsPanel { width: 70 } (см. app.tcss).
+        table.add_column("Тест", width=22)
+        table.add_column("M5 Bench", width=8)
+        table.add_column("Статус", width=8)
+        table.add_column("Время", width=6)
+        table.add_column("Детали", width=21)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -124,12 +145,25 @@ class ResultsPanel(Widget):
 
     # ── Internal: строки таблицы ────────────────────────────────────────────
 
+    def _row_height(self, detail: str) -> int:
+        """
+        Сколько строк нужно ячейке "Детали" под перенос текста.
+        1 строка по умолчанию; растёт пропорционально длине detail,
+        ограничено _MAX_ROW_HEIGHT чтобы один FAIL не съел весь экран
+        (очень длинный detail в этом случае обрежется — лучше, чем
+        одна строка съедает половину видимой таблицы).
+        """
+        if not detail:
+            return 1
+        needed = math.ceil(len(detail) / _DETAIL_COL_WIDTH)
+        return max(1, min(needed, _MAX_ROW_HEIGHT))
+
     def _add_row(
         self, test: TestInfo, status: TestStatus, duration_ms: int, detail: str
     ) -> None:
         table = self.query_one("#results-table", DataTable)
         cells = self._row_cells(test, status, duration_ms, detail)
-        table.add_row(*cells, key=test.id)
+        table.add_row(*cells, key=test.id, height=self._row_height(detail))
 
     def _update_row(
         self, test_id: str, status: TestStatus, duration_ms: int, detail: str
@@ -141,16 +175,28 @@ class ResultsPanel(Widget):
 
         table = self.query_one("#results-table", DataTable)
         cells = self._row_cells(test, status, duration_ms, detail)
-        col_keys = [c.key for c in table.ordered_columns]
-        for col_key, value in zip(col_keys, cells):
-            table.update_cell(test_id, col_key, value)
+        new_height = self._row_height(detail)
+
+        # DataTable не предоставляет публичный API для изменения высоты
+        # уже добавленной строки (update_cell меняет только содержимое).
+        # Когда нужная высота отличается от текущей (например, тест перешёл
+        # в FAIL с многострочным detail) — пересоздаём строку: remove + add.
+        # Иначе — точечный update_cell, дешевле и не теряет курсор/scroll.
+        current_height = table.get_row_height(test_id)
+        if current_height != new_height:
+            table.remove_row(test_id)
+            table.add_row(*cells, key=test_id, height=new_height)
+        else:
+            col_keys = [c.key for c in table.ordered_columns]
+            for col_key, value in zip(col_keys, cells):
+                table.update_cell(test_id, col_key, value)
 
         self._resort(table)
 
     def _row_cells(
         self, test: TestInfo, status: TestStatus, duration_ms: int, detail: str
     ) -> tuple:
-        """Собрать пять ячеек строки с учётом подсветки FAIL."""
+        """Собрать пять ячеек строки с учётом подсветки FAIL и переноса текста."""
         status_text, status_color = _STATUS_DISPLAY[status]
         is_fail = status == TestStatus.FAIL
 
@@ -166,12 +212,17 @@ class ResultsPanel(Widget):
         time_text = f"{duration_ms / 1000:.1f}с" if duration_ms > 0 else ""
         hil_text = "[*]" if test.requires_hil else "[-]"
 
+        # overflow="fold" — перенос по символам на границе ячейки вместо
+        # обрезания с многоточием (Textual default), detail виден целиком
+        # на нескольких строках, если высота строки это позволяет.
+        detail_cell = Text(detail, style=detail_style, overflow="fold")
+
         return (
             Text(test.name, style=name_style),
             Text(hil_text, style=hil_style),
             Text(status_text, style=status_style),
             Text(time_text, style=time_style),
-            Text(detail, style=detail_style),
+            detail_cell,
         )
 
     def _resort(self, table: DataTable) -> None:

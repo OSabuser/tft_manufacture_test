@@ -28,6 +28,11 @@ orchestrator.py — оркестратор confirm_request для TUI.
     "btn*"          → buttons (нет confirm, ждём test_result)
     всё остальное   → operator (показать prompt)
 
+Помимо confirm_request, протокол v2 определяет "progress" — внутришаговые
+информационные события долгих тестов (сейчас только usd: card_detect,
+mount, write, read_compare — см. docs/testing/PROTOCOL.md). Эти события
+не требуют ответа, только отображаются как текущая фаза прогресса.
+
 Публичный API:
     Orchestrator.run_tests(test_ids)  — запустить тесты, yield OrchestratorEvent
 """
@@ -67,6 +72,9 @@ _CAN_RX_DATA = [0xDE, 0xAD, 0xBE, 0xEF]
 _CAN_TX_ID = 0x200
 _CAN_TX_DATA = [0xCA, 0xFE, 0xBA, 0xBE]
 
+# Тип события от FirmwareClient._recv_until() сигнализирующий таймаут чтения
+_TIMEOUT_EVENT_TYPE = "_timeout"
+
 
 # ── Типы событий оркестратора ────────────────────────────────────────────
 
@@ -74,11 +82,12 @@ _CAN_TX_DATA = [0xCA, 0xFE, 0xBA, 0xBE]
 class OrchestratorEventType(Enum):
     TEST_BEGIN = auto()  # тест начался
     TEST_RESULT = auto()  # тест завершился
+    TEST_PROGRESS = auto()  # внутришаговый прогресс долгого теста (usd и т.п.)
     CONFIRM_NEEDED = auto()  # нужен ответ оператора (standalone)
     CONFIRM_RESOLVED = auto()  # HIL confirm выполнен автоматически
     BUTTONS_PROMPT = auto()  # показать инструкцию для buttons (без confirm)
     SUMMARY = auto()  # итог всей сессии
-    ERROR = auto()  # ошибка протокола или M5
+    ERROR = auto()  # ошибка протокола, M5, или обрыв по таймауту
 
 
 @dataclass
@@ -137,14 +146,24 @@ class Orchestrator:
 
         Yields OrchestratorEvent в порядке поступления событий от firmware_test.
         Блокируется на CONFIRM_NEEDED до вызова resolve_operator_confirm().
+
+        Гарантия для вызывающего кода: генератор ВСЕГДА заканчивается событием
+        SUMMARY — либо настоящим (от firmware), либо синтетическим при обрыве
+        потока (таймаут чтения порта истёк раньше, чем пришёл summary).
+        Без этой гарантии TUI не может надёжно понять, что прогон завершился
+        (именно это вызывало зависание кнопок при таймауте — см. отчёт).
         """
+        current_test_id = ""
+        got_summary = False
+
         async for raw in self._fw.run_selected(test_ids):
             event_type = raw.get("type", "")
 
             if event_type == "test_begin":
+                current_test_id = raw.get("id", "")
                 yield OrchestratorEvent(
                     type=OrchestratorEventType.TEST_BEGIN,
-                    test_id=raw.get("id", ""),
+                    test_id=current_test_id,
                     test_name=raw.get("name", ""),
                 )
 
@@ -161,10 +180,22 @@ class Orchestrator:
                     duration_ms=raw.get("ms", 0),
                     detail=raw.get("detail", ""),
                 )
+                current_test_id = ""
                 yield OrchestratorEvent(
                     type=OrchestratorEventType.TEST_RESULT,
                     test_id=result.id,
                     result=result,
+                )
+
+            elif event_type == "progress":
+                # Внутришаговый прогресс долгого теста (сейчас только usd).
+                # Не ошибка — информационное событие, не требует ответа.
+                step = raw.get("step", "")
+                pstat = raw.get("status", "")
+                yield OrchestratorEvent(
+                    type=OrchestratorEventType.TEST_PROGRESS,
+                    test_id=raw.get("test", current_test_id),
+                    message=f"{step}: {pstat}" if step else "progress",
                 )
 
             elif event_type == "confirm_request":
@@ -177,16 +208,57 @@ class Orchestrator:
                     yield ev
 
             elif event_type == "summary":
+                got_summary = True
                 yield OrchestratorEvent(
                     type=OrchestratorEventType.SUMMARY,
                     summary=raw,
                 )
 
-            else:
+            elif event_type == _TIMEOUT_EVENT_TYPE:
+                # Чтение порта оборвалось по таймауту раньше, чем пришёл
+                # summary. Завершаем текущий тест (если он был в RUNNING)
+                # синтетическим FAIL, чтобы таблица результатов не осталась
+                # с тестом, навечно подвисшим в "выполняется".
+                timeout_s = raw.get("timeout_s", 0)
+                logger.error(
+                    "Test run aborted: read timeout after %.0fs, current_test=%r",
+                    timeout_s,
+                    current_test_id,
+                )
+                if current_test_id:
+                    yield OrchestratorEvent(
+                        type=OrchestratorEventType.TEST_RESULT,
+                        test_id=current_test_id,
+                        result=TestResult(
+                            id=current_test_id,
+                            status=TestStatus.FAIL,
+                            duration_ms=0,
+                            detail=f"таймаут связи ({timeout_s:.0f}с)",
+                        ),
+                    )
                 yield OrchestratorEvent(
                     type=OrchestratorEventType.ERROR,
-                    message=raw.get("error", f"unknown event: {event_type}"),
+                    message=f"Связь с платой прервана (таймаут {timeout_s:.0f}с)",
                 )
+                # break, не return — нужно дойти до synthetic summary ниже
+                break
+
+            else:
+                # Неизвестный, но не критичный тип события — логируем для
+                # разработчика, не показываем оператору как ошибку (см.
+                # отчёт замечание №2: ранее "progress" ошибочно считался
+                # неизвестным событием до того как протокол был сверен).
+                logger.debug("Unhandled protocol event: %r", raw)
+
+        if not got_summary:
+            # Поток событий оборвался (таймаут или обрыв соединения) без
+            # настоящего summary от firmware — синтезируем его, чтобы
+            # вызывающий код (DiagScreen._run_worker) гарантированно вышел
+            # из ожидания и разблокировал кнопки/чекбоксы.
+            yield OrchestratorEvent(
+                type=OrchestratorEventType.SUMMARY,
+                summary={"overall": "fail", "passed": 0, "failed": 0, "aborted": True},
+            )
 
     # ── Маршрутизация confirm ────────────────────────────────────────────
 

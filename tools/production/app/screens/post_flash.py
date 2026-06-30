@@ -60,7 +60,9 @@ class PostFlashScreen(Screen):
 
             with Horizontal(id="post-flash-btn-row"):
                 yield Button("✓ Готово", id="post-flash-btn-ok", variant="success")
-                yield Button("✕ Выйти", id="post-flash-btn-quit", variant="default")
+                yield Button(
+                    "✕ Выйти из приложения", id="post-flash-btn-quit", variant="default"
+                )
 
     def on_mount(self) -> None:
         self._update_countdown()

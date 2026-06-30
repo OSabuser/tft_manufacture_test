@@ -31,16 +31,24 @@ from textual.widgets import (
 from ..flasher import Flasher
 from ..models import FlashProgress, FlashTarget
 from ..widgets import AppFrame
+from .connection_watcher import ConnectionLost, ConnectionWatcherMixin
 
 logger = logging.getLogger(__name__)
 
 
-class FlashScreen(Screen):
+class FlashScreen(Screen, ConnectionWatcherMixin):
     """
     Экран прошивки.
 
     Messages:
         FlashDone(success, target)  — прошивка завершена
+
+    Мониторинг соединения: пока плата не прошивается (self._flashing
+    == False), каждые 1.5с проверяется наличие BootROM SDP на шине.
+    Если плата физически отключена в простое — сессия считается
+    недостоверной, экран сразу уходит на WaitingScreen (см. замечание
+    №4 отчёта). Во время самой прошивки/erase мониторинг приостановлен —
+    обрыв в этом случае обнаружит и обработает сам flash_usb.py subprocess.
     """
 
     BINDINGS = [
@@ -61,12 +69,12 @@ class FlashScreen(Screen):
     def compose(self) -> ComposeResult:
         with AppFrame(id="flash-frame"):
             yield Label(
-                "⚡ Загрузка прошивки на плату (BootROM SDP обнаружен)",
+                "⚡ Загрузка прошивки на плату индикатора (режим BootROM)",
                 id="flash-title",
             )
 
             with Vertical(id="flash-target-group"):
-                yield Label("Выберите файл для загрузки", classes="section-title")
+                yield Label("Выбор загружаемой прошивки", classes="section-title")
                 with RadioSet(id="flash-radio"):
                     yield RadioButton(
                         "Диагностическая прошивка (firmware_test)",
@@ -78,24 +86,46 @@ class FlashScreen(Screen):
                         id="radio-production",
                     )
                     yield RadioButton(
-                        "Другое (подготовленный бинарный файл)",
+                        "Другое",
                         id="radio-custom",
                     )
                 with Horizontal(id="flash-custom-path", classes="hidden"):
                     yield Input(
-                        placeholder="Путь к бинарному файлу (.bin)",
+                        placeholder="Имя бинарного файла в custom_binaries/ (.bin)",
                         id="flash-custom-input",
                     )
 
             with Horizontal(id="flash-btn-row"):
-                yield Button("▶ Загрузить ПО", id="flash-btn-flash", variant="warning")
+                yield Button("▶ Загрузить", id="flash-btn-flash", variant="warning")
                 yield Button("⚠ Очистить память", id="flash-btn-erase", variant="error")
                 yield Button(
-                    "✕ Выйти из программы", id="flash-btn-quit", variant="default"
+                    "✕ Выйти из приложения", id="flash-btn-quit", variant="default"
                 )
 
-            yield ProgressBar(id="flash-progress-bar", show_eta=False, classes="hidden")
+            yield ProgressBar(
+                id="flash-progress-bar",
+                show_eta=False,
+                show_percentage=False,
+                classes="hidden",
+            )
             yield Log(id="flash-log", auto_scroll=True)
+
+    def on_mount(self) -> None:
+        self._start_connection_watch(self._check_sdp_present)
+
+    def on_unmount(self) -> None:
+        self._stop_connection_watch()
+
+    def _check_sdp_present(self) -> bool:
+        # Не считаем потерей соединения, если идёт активная операция —
+        # flash_usb.py сам обработает реальный обрыв через subprocess.
+        if self._flashing:
+            return True
+        return Flasher.detect_sdp()
+
+    @on(ConnectionLost)
+    def _on_connection_lost(self) -> None:
+        self.post_message(self.FlashDone(success=False, target=None))
 
     # ── Обработчики ───────────────────────────────────────────────────────────
 
@@ -114,7 +144,7 @@ class FlashScreen(Screen):
             return
         target, bin_path = self._resolve_target()
         if target is None:
-            self._log("⚠ Укажите путь к бинарному файлу!")
+            self._log("⚠ Укажите корректное имя бинарного файла")
             return
         self._do_flash(target, bin_path)
 
@@ -153,15 +183,11 @@ class FlashScreen(Screen):
     async def _do_erase(self) -> None:
         self._set_busy(True)
         self._show_progress(True)
-        self._log("⚠ Очистка флеш памяти (~30 с)...")
+        self._log("⚠ Очистка памяти (~30 с)...")
         ok = await self._flasher.erase_chip(progress_cb=self._on_progress)
         self._set_busy(False)
         self._finish_progress(ok)
-        self._log(
-            "✅ Очистка флеш памяти завершена"
-            if ok
-            else "❌ Очистка флеш памяти: ошибка"
-        )
+        self._log("✅ Очистка памяти завершена" if ok else "❌ Очистка памяти: ошибка")
 
     # ── Вспомогательные ───────────────────────────────────────────────────────
 

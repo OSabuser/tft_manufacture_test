@@ -159,6 +159,12 @@ class FirmwareClient:
         """
         Читать события до получения одного из stop_types или таймаута.
         Генератор — yield каждого полученного события.
+
+        При таймауте yield-ит синтетическое событие
+        {"type": "_timeout", "timeout_s": ...} перед завершением — вызывающий
+        код (Orchestrator) должен явно обработать этот тип и не путать его
+        с обрывом связи без объяснения причины. Префикс "_" отличает это
+        от реальных событий протокола firmware_test.
         """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s
@@ -171,6 +177,7 @@ class FirmwareClient:
             if event.get("type") in stop_types:
                 return
         logger.warning("_recv_until timeout after %.1f s", timeout_s)
+        yield {"type": "_timeout", "timeout_s": timeout_s}
 
     # ── Public API ──────────────────────────────────────────────────────────
 

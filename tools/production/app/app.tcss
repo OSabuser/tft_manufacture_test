@@ -38,6 +38,19 @@ AppFrame {
     text-style: bold;
 }
 
+#waiting-reason {
+    margin-top: 1;
+    padding: 1 2;
+    border: round $warning;
+    color: $warning;
+    text-style: bold;
+    content-align: center middle;
+}
+
+#waiting-reason.hidden {
+    display: none;
+}
+
 #waiting-hint {
     margin-top: 2;
     color: $text-muted;

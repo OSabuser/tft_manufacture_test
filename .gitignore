@@ -59,6 +59,7 @@ build*
 Testing/
 !docs/testing
 !build.just
+service_tui.log
 
 # Файлы настройки среды разработки
 .project

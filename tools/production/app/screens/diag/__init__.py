@@ -7,6 +7,13 @@ DiagScreen координирует три виджета:
     ConfirmPanel    — confirm_request оператора (нижняя панель)
 
 и Orchestrator — маршрутизатор confirm_request.
+
+Мониторинг соединения (см. отчёт, замечание №4): пока тесты не запущены,
+каждые 1.5с проверяется наличие CDC-порта на шине. Во время активного
+прогона мониторинг приостановлен — таймаут чтения порта внутри Orchestrator
+уже детектирует обрыв связи надёжнее (видит реальную остановку потока
+данных, а не просто исчезновение устройства из списка портов) и сам
+формирует понятный результат для прерванного теста.
 """
 
 from __future__ import annotations
@@ -24,10 +31,12 @@ from textual.screen import Screen
 from textual.widgets import Button, Label, ProgressBar, Static
 
 from ...firmware_client import FirmwareClient
+from ...flasher import Flasher
 from ...m5_client import M5Client
 from ...models import SessionState
 from ...orchestrator import Orchestrator, OrchestratorEvent, OrchestratorEventType
 from ...widgets import AppFrame
+from ..connection_watcher import ConnectionLost, ConnectionWatcherMixin
 from .confirm_panel import ConfirmPanel
 from .results import ResultsPanel
 from .test_list import TestListPanel
@@ -35,7 +44,7 @@ from .test_list import TestListPanel
 logger = logging.getLogger(__name__)
 
 
-class DiagScreen(Screen):
+class DiagScreen(Screen, ConnectionWatcherMixin):
     """
     Экран диагностики.
 
@@ -51,6 +60,10 @@ class DiagScreen(Screen):
 
     class DiagDone(Message):
         """Сессия диагностики завершена."""
+
+        def __init__(self, reason: Optional[str] = None) -> None:
+            super().__init__()
+            self.reason = reason
 
     def __init__(
         self,
@@ -70,9 +83,9 @@ class DiagScreen(Screen):
         with AppFrame(id="diag-frame"):
             # Шапка — фиксированная высота 3
             with Horizontal(id="diag-header"):
-                yield Static("firmware_test: —\nFw: —", id="diag-header-fw")
+                yield Static("fw: —", id="diag-header-fw")
                 yield Static("MCU ID: —", id="diag-header-uid")
-                yield Static("M5: —", id="diag-header-m5")
+                yield Static("M5 Bench: —", id="diag-header-m5")
 
             # Рабочая зона: список тестов + результаты — занимает всё
             # оставшееся место (1fr), сама прокручивается при переполнении
@@ -84,30 +97,50 @@ class DiagScreen(Screen):
             # имеет classes="hidden" по умолчанию — height: auto + display:
             # none даёт нулевую высоту, не отнимая место у остального layout.
             with Vertical(id="diag-progress-row", classes="hidden"):
-                yield ProgressBar(id="diag-progress-bar", show_eta=False)
+                yield ProgressBar(
+                    id="diag-progress-bar", show_eta=False, show_percentage=False
+                )
                 yield Label("", id="diag-progress-label")
 
             # Кнопки запуска — фиксированная высота 3 (под border Button)
             with Horizontal(id="diag-btn-row"):
                 yield Button(
-                    "▶ Запустить выбранные",
+                    "▶ Запустить выбранные тесты",
                     id="diag-btn-run-selected",
                     variant="primary",
                     disabled=True,
                 )
                 yield Button(
-                    "▶▶ Все тесты",
+                    "▶▶ Запустить все тесты",
                     id="diag-btn-run-all",
                     variant="default",
                     disabled=True,
                 )
-                yield Button("✕ Выйти", id="diag-btn-quit", variant="default")
+                yield Button(
+                    "✕ Выйти из приложения", id="diag-btn-quit", variant="default"
+                )
 
             # Панель confirm — auto-высота, видна только когда есть запрос
             yield ConfirmPanel(id="diag-confirm", classes="hidden")
 
     def on_mount(self) -> None:
         self._init_session()
+        self._start_connection_watch(self._check_cdc_present)
+
+    def on_unmount(self) -> None:
+        self._stop_connection_watch()
+
+    def _check_cdc_present(self) -> bool:
+        # Не считаем потерей соединения во время активного прогона —
+        # Orchestrator сам детектирует обрыв через таймаут чтения порта
+        # (надёжнее: видит остановку потока данных, не просто список USB).
+        if self._tests_running:
+            return True
+        return Flasher.detect_cdc()
+
+    @on(ConnectionLost)
+    def _on_connection_lost(self) -> None:
+        self.post_message(self.DiagDone(reason="Соединение с платой потеряно"))
 
     # ── Инициализация сессии ─────────────────────────────────────────────────
 
@@ -118,7 +151,7 @@ class DiagScreen(Screen):
             uid = await self._fw.get_uid()
         except Exception as exc:
             logger.error("Session init failed: %s", exc)
-            self.post_message(self.DiagDone())
+            self.post_message(self.DiagDone(reason="Не удалось получить список тестов"))
             return
 
         self._session.tests = tests
@@ -135,17 +168,17 @@ class DiagScreen(Screen):
 
     def _update_header(self) -> None:
         self.query_one("#diag-header-fw", Static).update(
-            f"firmware_test: {self._session.fw_version or '?'}"
+            f"fw: {self._session.fw_version or '?'}"
         )
         uid = self._session.chip_uid or "—"
         self.query_one("#diag-header-uid", Static).update(f"MCU ID: {uid}")
 
         m5_widget = self.query_one("#diag-header-m5", Static)
         if self._session.m5_connected:
-            m5_widget.update("M5: ✓ подключён")
+            m5_widget.update("M5 Bench: ✓ подключён")
             m5_widget.remove_class("m5-absent")
         else:
-            m5_widget.update("M5: ✕ не подключен")
+            m5_widget.update("M5 Bench: ✕ нет связи")
             m5_widget.add_class("m5-absent")
 
     # ── Кнопки ───────────────────────────────────────────────────────────────
@@ -234,6 +267,13 @@ class DiagScreen(Screen):
             self._session.set_result(event.result)
             results.set_result(event.result)
 
+        elif event.type == OrchestratorEventType.TEST_PROGRESS:
+            # Внутришаговый прогресс долгого теста (сейчас только usd):
+            # card_detect, mount, write, read_compare — см. PROTOCOL.md.
+            self._update_progress(
+                done, total, f"Тест: {event.test_id} — {event.message}"
+            )
+
         elif event.type == OrchestratorEventType.CONFIRM_NEEDED:
             assert event.confirm is not None
             confirm.show_operator(
@@ -242,7 +282,7 @@ class DiagScreen(Screen):
             )
 
         elif event.type == OrchestratorEventType.CONFIRM_RESOLVED:
-            self._update_progress(done, total, f"HIL: {event.message}")
+            self._update_progress(done, total, f"M5 Bench: {event.message}")
 
         elif event.type == OrchestratorEventType.BUTTONS_PROMPT:
             assert event.confirm is not None
@@ -255,6 +295,13 @@ class DiagScreen(Screen):
             self._update_progress(done, total, f"⚠ {event.message}")
 
     def _on_summary(self, summary: dict) -> None:
+        aborted = summary.get("aborted", False)
+        if aborted:
+            self.query_one("#diag-progress-label", Label).update(
+                "⚠  Прогон прерван: связь с платой потеряна"
+            )
+            return
+
         overall = summary.get("overall", "fail")
         passed = summary.get("passed", 0)
         failed = summary.get("failed", 0)

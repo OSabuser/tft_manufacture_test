@@ -32,7 +32,7 @@ class TestListPanel(Widget):
         self._hil_unavailable: dict[str, bool] = {}
 
     def compose(self) -> ComposeResult:
-        yield Label("Тесты", classes="section-title")
+        yield Label("Доступные тесты", classes="section-title")
         with Horizontal(id="test-list-select-row"):
             yield Button(
                 "Выбрать все", id="test-list-select-all", classes="-textual-compact"

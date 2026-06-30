@@ -59,8 +59,16 @@ class ServiceApp(App):
         """
         После прошивки:
           - firmware_test + успех → PostFlashScreen (промпт смены BootMode)
-          - всё остальное (production/custom, либо ошибка) → сразу WaitingScreen
+          - всё остальное (production/custom, либо ошибка) → WaitingScreen
+          - target=None — маркер потери соединения (см. ConnectionWatcherMixin)
+            → WaitingScreen с явной причиной возврата
         """
+        if event.target is None and not event.success:
+            self.switch_screen(
+                WaitingScreen(disconnect_reason="Соединение с платой потеряно")
+            )
+            return
+
         if event.success and event.target == FlashTarget.FIRMWARE_TEST:
             self.switch_screen(PostFlashScreen())
         else:
@@ -72,10 +80,10 @@ class ServiceApp(App):
         self.switch_screen(WaitingScreen())
 
     @on(DiagScreen.DiagDone)
-    def _on_diag_done(self) -> None:
+    def _on_diag_done(self, event: DiagScreen.DiagDone) -> None:
         """После диагностики — отключиться, вернуться в Waiting."""
         self._disconnect()
-        self.switch_screen(WaitingScreen())
+        self.switch_screen(WaitingScreen(disconnect_reason=event.reason))
 
     # ── Подключение к firmware_test ───────────────────────────────────────────
 
