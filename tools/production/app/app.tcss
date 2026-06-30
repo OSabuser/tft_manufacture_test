@@ -1,13 +1,31 @@
-/* ── WaitingScreen ───────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   service-tui — единый файл стилей
+   Путь резолвится относительно app/app.py → app/app.tcss
+   ═══════════════════════════════════════════════════════════ */
 
-WaitingScreen {
+/* ── Общая рамка приложения (AppFrame) ──────────────────── */
+/* Все три экрана центрируют один AppFrame фиксированного    */
+/* размера — единообразный визуальный каркас независимо от   */
+/* размера окна терминала (как в ratatui-приложениях).       */
+
+Screen {
     align: center middle;
-    layout: vertical;
 }
 
-WaitingScreen > Static {
-    content-align: center middle;
+AppFrame {
     width: 100%;
+    height: 100%;
+    max-width: 160;
+    max-height: 50;
+    border: heavy $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+/* ── WaitingScreen ──────────────────────────────────────── */
+
+#waiting-frame {
+    align: center middle;
 }
 
 #waiting-logo {
@@ -16,9 +34,8 @@ WaitingScreen > Static {
     border: round $primary;
     padding: 1 2;
     content-align: center middle;
-    text-style: bold;
     color: $primary;
-    margin-bottom: 0;
+    text-style: bold;
 }
 
 #waiting-hint {
@@ -33,11 +50,7 @@ WaitingScreen > Static {
     content-align: center middle;
 }
 
-/* ── FlashScreen ─────────────────────────────────────────────────────────── */
-
-FlashScreen {
-    padding: 1 2;
-}
+/* ── FlashScreen ────────────────────────────────────────── */
 
 #flash-title {
     text-style: bold;
@@ -51,7 +64,6 @@ FlashScreen {
     margin-bottom: 1;
     height: auto;
 }
-
 
 #flash-custom-path {
     margin-top: 1;
@@ -72,12 +84,14 @@ FlashScreen {
     align: left middle;
 }
 
-#flash-btn-flash {
+#flash-btn-flash,
+#flash-btn-erase {
     margin-right: 2;
 }
 
 #flash-btn-flash:disabled,
-#flash-btn-erase:disabled {
+#flash-btn-erase:disabled,
+#flash-btn-quit:disabled {
     background: $panel;
     color: $text-muted;
 }
@@ -86,8 +100,8 @@ FlashScreen {
     margin-top: 1;
 }
 
-#flash-progress-label {
-    color: $text-muted;
+#flash-progress-bar.hidden {
+    display: none;
 }
 
 #flash-log {
@@ -98,15 +112,51 @@ FlashScreen {
     overflow-y: auto;
 }
 
-/* ── DiagScreen ──────────────────────────────────────────────────────────── */
+/* ── PostFlashScreen ────────────────────────────────────── */
 
-DiagScreen {
-    layout: grid;
-    grid-size: 1;
-    grid-rows: 3 1fr 1 1 3 auto;
+#post-flash-frame {
+    align: center middle;
 }
 
-/* Шапка */
+#post-flash-title {
+    text-style: bold;
+    color: $success;
+    content-align: center middle;
+    margin-bottom: 2;
+}
+
+#post-flash-instruction {
+    border: round $warning;
+    padding: 1 3;
+    color: $text;
+    text-style: bold;
+    content-align: center middle;
+    width: auto;
+}
+
+#post-flash-countdown {
+    margin-top: 2;
+    color: $text-muted;
+    content-align: center middle;
+}
+
+#post-flash-btn-row {
+    margin-top: 2;
+    height: auto;
+    align: center middle;
+}
+
+#post-flash-btn-ok {
+    margin-right: 2;
+}
+
+/* ── DiagScreen ─────────────────────────────────────────── */
+
+#diag-frame {
+    layout: vertical;
+    padding: 0;
+}
+
 #diag-header {
     height: 3;
     background: $panel;
@@ -115,16 +165,21 @@ DiagScreen {
 }
 
 #diag-header-fw {
+    width: auto;
+    min-width: 14;
     color: $text-muted;
     margin-right: 3;
 }
 
 #diag-header-uid {
+    width: auto;
+    min-width: 28;
     color: $text-muted;
     margin-right: 3;
 }
 
 #diag-header-m5 {
+    width: auto;
     color: $success;
 }
 
@@ -132,24 +187,30 @@ DiagScreen {
     color: $text-muted;
 }
 
-/* Рабочая зона */
 #diag-main {
     height: 1fr;
+    min-height: 10;
 }
 
-/* Прогресс */
+#diag-progress-row {
+    height: auto;
+    padding: 0 2;
+}
+
+#diag-progress-row.hidden {
+    display: none;
+}
+
 #diag-progress-bar {
     height: 1;
-    margin: 0 2;
+    margin-top: 1;
 }
 
 #diag-progress-label {
     height: 1;
     color: $text-muted;
-    padding: 0 2;
 }
 
-/* Кнопки запуска */
 #diag-btn-row {
     height: 3;
     align: left middle;
@@ -157,7 +218,8 @@ DiagScreen {
     background: $panel;
 }
 
-#diag-btn-run-selected {
+#diag-btn-run-selected,
+#diag-btn-run-all {
     margin-right: 2;
 }
 
@@ -167,7 +229,7 @@ DiagScreen {
     color: $text-muted;
 }
 
-/* ── TestListPanel ───────────────────────────────────────────────────────── */
+/* ── TestListPanel ──────────────────────────────────────── */
 
 TestListPanel {
     width: 38;
@@ -182,9 +244,19 @@ TestListPanel .section-title {
     padding: 0 0 1 0;
 }
 
+#test-list-select-row {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#test-list-select-row Button {
+    margin-right: 1;
+    min-width: 12;
+}
+
 .test-row {
+    height: auto;
     align: left middle;
-    height: auto;    
 }
 
 .test-row-hil-badge {
@@ -196,10 +268,10 @@ TestListPanel .section-title {
     color: $text-muted;
 }
 
-/* ── ResultsPanel ────────────────────────────────────────────────────────── */
+/* ── ResultsPanel ───────────────────────────────────────── */
 
 ResultsPanel {
-    width: 1fr;
+    width: 70;
     padding: 1 2;
     overflow-y: auto;
 }
@@ -210,45 +282,26 @@ ResultsPanel .section-title {
     padding: 0 0 1 0;
 }
 
-.result-row {
-    height: 1;
-    align: left middle;
+#results-empty {
+    height: 1fr;
+    width: 100%;
 }
 
-.result-id {
+#results-empty-text {
     color: $text-muted;
-    width: 12;
+    text-align: center;
 }
 
-.result-status-pass {
-    color: $success;
-    width: 8;
-    text-style: bold;
+#results-table {
+    height: auto;
+    max-height: 100%;
 }
 
-.result-status-fail {
-    color: $error;
-    width: 8;
-    text-style: bold;
+#results-table.hidden {
+    display: none;
 }
 
-.result-status-running {
-    color: $warning;
-    width: 8;
-}
-
-.result-status-skip {
-    color: $text-muted;
-    width: 8;
-}
-
-.result-detail {
-    color: $text-muted;
-    width: 1fr;
-    overflow: hidden;
-}
-
-/* ── ConfirmPanel ────────────────────────────────────────────────────────── */
+/* ── ConfirmPanel ───────────────────────────────────────── */
 
 ConfirmPanel {
     height: auto;

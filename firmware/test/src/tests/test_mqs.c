@@ -220,7 +220,7 @@ static void test_mqs_deinit(void)
 
 const test_module_t K_TEST_MQS = {
     .id                 = "mqs",
-    .name               = "MQS Audio Out",
+    .name               = "Audio Out",
     .critical           = false,
     .requires_hil       = false,
     .pre_confirm_prompt = NULL,

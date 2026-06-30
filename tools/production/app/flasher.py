@@ -8,6 +8,7 @@ flasher.py — обёртка над tools/host/flash_usb.py для TUI.
 
 Публичный API:
     Flasher.flash(target, bin_path, progress_cb) — async, прогресс через callback
+    Flasher.erase_chip(progress_cb)              — async chip erase
     Flasher.detect_sdp()                         — проверить наличие BootROM SDP
     Flasher.detect_cdc()                         — проверить наличие CDC firmware_test
 """
@@ -31,16 +32,17 @@ _BOOTROM_PID = int(os.environ.get("BOOTROM_PID", "0x0130"), 16)
 _CDC_VID = int(os.environ.get("SERVICE_CDC_VID", "0x1996"), 16)
 _CDC_PID = int(os.environ.get("SERVICE_CDC_PID", "0x00ad"), 16)
 
+# Тип сборки firmware_test для прошивки (Debug | Release).
+# Release временно нестабилен (см. отчёт о тестировании) — по умолчанию Debug.
+_FIRMWARE_BUILD_TYPE = os.environ.get("FIRMWARE_BUILD_TYPE", "Debug")
+
 # Путь до flash_usb.py относительно корня репозитория
 _FLASH_USB_SCRIPT = Path(__file__).parents[3] / "tools" / "host" / "flash_usb.py"
 _HOST_TOOLS_DIR = _FLASH_USB_SCRIPT.parent
 
-
 # Паттерны stdout flash_usb.py для извлечения прогресса
 _RE_PERCENT = re.compile(r"(\d{1,3})\s*%")
 _RE_PHASE = re.compile(r"(sdphost|blhost|Writing|Erasing|Verifying)", re.IGNORECASE)
-
-_FIRMWARE_BUILD_TYPE = os.environ.get("FIRMWARE_BUILD_TYPE", "Debug")
 
 ProgressCallback = Callable[[FlashProgress], Awaitable[None]]
 
@@ -50,10 +52,10 @@ def _detect_usb(vid: int, pid: int) -> bool:
     Проверить наличие USB-устройства по VID/PID (синхронно).
 
     Два метода детекта:
-    1. pyusb (usb.core) — видит все USB-устройства включая SDP bulk/HID
-       (на macOS SDP не создаёт serial-порт и невидим через list_ports).
-    2. serial.tools.list_ports — fallback для CDC ACM устройств
-       если pyusb недоступен.
+    1. pyusb (usb.core) — видит все USB-устройства включая SDP bulk/HID.
+       На macOS SDP-устройство (1FC9:0130) не создаёт serial-порт
+       и невидимо через serial.tools.list_ports.
+    2. serial.tools.list_ports — fallback для CDC ACM устройств.
     """
     # Метод 1: pyusb — работает для SDP и CDC
     try:
@@ -140,9 +142,9 @@ class Flasher:
         """
         Запустить прошивку через flash_usb.py.
 
-        :param target:      Что прошиваем (firmware_test или production).
+        :param target:      Что прошиваем (firmware_test, production или custom).
         :param progress_cb: Async callback с FlashProgress (может быть None).
-        :param bin_path:    Путь к бинарю (опционально, если overriding default).
+        :param bin_path:    Путь к бинарю (обязателен для CUSTOM).
         :return: True при успехе.
         """
         if target == FlashTarget.FIRMWARE_TEST:
@@ -160,12 +162,12 @@ class Flasher:
             return await self._run_flash_bin(bin_path, progress_cb)
         return False
 
-    async def _run_flash(  # прошивка стандартного firmware по имени
+    async def _run_flash(
         self,
         firmware: str,
         progress_cb: Optional[ProgressCallback],
     ) -> bool:
-        """Запустить flash_usb.py для одного бинаря."""
+        """Запустить flash_usb.py для одного бинаря (стандартный firmware)."""
         cmd = [
             "uv",
             "run",
@@ -180,11 +182,12 @@ class Flasher:
         ]
         return await self._run_cmd(cmd, firmware, progress_cb)
 
-    async def _run_flash_bin(  # прошивка произвольного бинаря
+    async def _run_flash_bin(
         self,
         bin_path: Path,
         progress_cb: Optional[ProgressCallback],
     ) -> bool:
+        """Запустить flash_usb.py для произвольного бинаря."""
         cmd = [
             "uv",
             "run",
@@ -197,12 +200,13 @@ class Flasher:
         ]
         return await self._run_cmd(cmd, bin_path.stem, progress_cb)
 
-    async def _run_cmd(  # общий subprocess runner
+    async def _run_cmd(
         self,
         cmd: list[str],
         label: str,
         progress_cb: Optional[ProgressCallback],
     ) -> bool:
+        """Общий subprocess runner для всех операций flash_usb.py."""
         logger.info("Running: %s", " ".join(cmd))
         try:
             self._proc = await asyncio.create_subprocess_exec(

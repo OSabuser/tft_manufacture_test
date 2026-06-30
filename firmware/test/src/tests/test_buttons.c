@@ -165,7 +165,7 @@ static test_result_t buttons_test_run(void)
 /** @brief Дескриптор тест-модуля кнопок для реестра test_runner. */
 const test_module_t K_TEST_BUTTONS = {
     .id                 = "buttons",
-    .name               = "Test Buttons",
+    .name               = "Buttons",
     .critical           = false,
     .requires_hil       = false,
     .pre_confirm_prompt = NULL,

@@ -660,3 +660,1186 @@
 2026-06-29 19:36:47,180  DEBUG     asyncio  Using selector: KqueueSelector
 2026-06-29 19:41:53,210  INFO      app.m5_client  M5StampPLC не найден
 2026-06-29 19:41:56,267  WARNING   app.firmware_client  _recv_until timeout after 3.0 s
+2026-06-30 11:07:04,658  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:07:32,037  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:07:38,901  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --erase-chip
+2026-06-30 11:07:38,923  DEBUG     app.flasher  flash_usb [erase]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 11:07:38,923  DEBUG     app.flasher  flash_usb [erase]: warning: Ignoring existing virtual environment linked to non-existent Python interpreter: .venv/bin/python3 -> python
+2026-06-30 11:07:38,925  DEBUG     app.flasher  flash_usb [erase]: Using CPython 3.10.11 interpreter at: /Library/Frameworks/Python.framework/Versions/3.10/bin/python3.10
+2026-06-30 11:07:39,117  DEBUG     app.flasher  flash_usb [erase]: Removed virtual environment at: .venv
+2026-06-30 11:07:39,117  DEBUG     app.flasher  flash_usb [erase]: Creating virtual environment at: .venv
+2026-06-30 11:07:39,247  DEBUG     app.flasher  flash_usb [erase]: Installed 66 packages in 100ms
+2026-06-30 11:07:43,943  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 11:07:43,943  DEBUG     app.flasher  flash_usb [erase]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 11:07:44,116  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]:   Операция: chip erase
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]:   SDP USB:   0x1FC9,0x130
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]:   BL  USB:   0x15A2,0x73
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 11:07:44,134  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 11:07:44,135  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:07:45,522  DEBUG     app.flasher  flash_usb [erase]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 11:07:45,698  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 11:08:20,418  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 11:08:20,670  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]:  OK (1с)
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]:   Полная очистка Flash (chip erase, ~30 с)
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:08:20,689  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   После chip erase BootROM не сможет загрузить прошивку.
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   Используй flash_usb.py для восстановления.
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -t 100000 -u 0x15A2,0x73 -- flash-erase-all 9
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]:   Reset
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:08:20,690  DEBUG     app.flasher  flash_usb [erase]:   ✅  Chip erase завершён
+2026-06-30 11:09:41,208  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 11:09:41,239  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 11:09:41,805  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 11:09:41,805  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 11:09:41,995  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 11:09:42,014  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:43,425  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 11:09:43,598  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:09:44,216  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:09:44,426  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:09:44,610  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:09:44,789  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 11:09:44,957  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:09:44,957  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 11:09:45,207  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:09:45,229  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 11:09:45,229  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:45,229  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:45,229  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 11:09:45,229  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:45,229  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 11:09:45,230  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 11:09:45,231  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:45,231  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:45,231  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 11:09:45,231  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:09:45,231  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 11:09:45,231  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:09:45,231  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 11:10:12,371  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:10:16,917  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 11:10:57,370  ERROR     app.orchestrator  HIL confirm без M5: opto_in1_active
+2026-06-30 11:12:15,443  WARNING   app.orchestrator  Operator confirm timeout: display_red
+2026-06-30 11:12:25,456  ERROR     app.orchestrator  HIL confirm без M5: opto_in1_active
+2026-06-30 11:14:57,478  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:14:59,027  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 11:16:37,862  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:17:04,481  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --erase-chip
+2026-06-30 11:17:04,488  DEBUG     app.flasher  flash_usb [erase]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 11:17:05,064  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 11:17:05,064  DEBUG     app.flasher  flash_usb [erase]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 11:17:05,238  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]:   Операция: chip erase
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]:   SDP USB:   0x1FC9,0x130
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]:   BL  USB:   0x15A2,0x73
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:05,257  DEBUG     app.flasher  flash_usb [erase]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 11:17:05,258  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:05,258  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 11:17:05,258  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 11:17:05,258  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:06,649  DEBUG     app.flasher  flash_usb [erase]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 11:17:06,832  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:41,515  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:41,755  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]:  OK (1с)
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:41,774  DEBUG     app.flasher  flash_usb [erase]:   Полная очистка Flash (chip erase, ~30 с)
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   После chip erase BootROM не сможет загрузить прошивку.
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   Используй flash_usb.py для восстановления.
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -t 100000 -u 0x15A2,0x73 -- flash-erase-all 9
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]:   Reset
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 11:17:41,775  DEBUG     app.flasher  flash_usb [erase]:   ✅  Chip erase завершён
+2026-06-30 11:17:45,454  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 11:17:45,472  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 11:17:45,888  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 11:17:45,888  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 11:17:46,064  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 11:17:46,084  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:47,468  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 11:17:47,641  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:48,263  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:48,472  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:48,646  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:48,815  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 11:17:48,986  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:48,986  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 11:17:49,175  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 11:17:49,195  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 11:17:49,196  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 11:17:49,197  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 11:17:49,197  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:49,197  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:49,197  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 11:17:49,197  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 11:17:49,197  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 11:17:49,197  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 11:17:49,197  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 11:18:16,295  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:18:18,011  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 11:20:23,814  ERROR     app.orchestrator  HIL confirm без M5: opto_in1_active
+2026-06-30 11:22:00,580  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:22:02,131  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 11:24:08,449  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:24:09,999  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 11:24:39,035  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:24:40,580  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 11:25:23,410  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:25:58,243  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:26:30,720  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 11:26:58,255  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:12:49,218  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:12:57,749  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --erase-chip
+2026-06-30 12:12:57,771  DEBUG     app.flasher  flash_usb [erase]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:12:58,350  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:12:58,350  DEBUG     app.flasher  flash_usb [erase]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:12:58,522  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]:   Операция: chip erase
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:12:58,543  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:12:59,916  DEBUG     app.flasher  flash_usb [erase]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:13:00,092  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:13:08,189  DEBUG     app.flasher  flash_usb [erase]: Response status = 10004 (0x2714) No response packet from target device.
+2026-06-30 12:13:08,242  DEBUG     app.flasher  flash_usb [erase]:  OK (1с)
+2026-06-30 12:13:08,242  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:13:08,242  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:08,242  DEBUG     app.flasher  flash_usb [erase]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:13:08,242  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:08,242  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:13:08,242  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:13:08,242  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]:   Полная очистка Flash (chip erase, ~30 с)
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   После chip erase BootROM не сможет загрузить прошивку.
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   Используй flash_usb.py для восстановления.
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -t 100000 -u 0x15A2,0x73 -- flash-erase-all 9
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:13:08,243  DEBUG     app.flasher  flash_usb [erase]: [ERROR] Команда завершилась с кодом 1
+2026-06-30 12:13:12,578  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 12:13:12,604  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:13:13,005  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:13:13,005  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:13:13,178  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:13:13,198  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:14,579  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:13:14,753  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:13:15,335  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:13:15,546  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:13:15,722  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:13:15,893  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 12:13:16,067  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:13:16,067  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 12:13:16,282  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:13:16,301  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 12:13:16,301  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:16,301  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:16,301  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:13:16,301  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:16,301  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:13:16,301  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:16,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 12:13:16,303  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:13:16,303  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:13:16,303  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:13:16,303  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 12:13:46,755  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:13:48,420  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:14:17,920  ERROR     app.screens.diag  run_worker error: read failed: [Errno 6] Device not configured
+2026-06-30 12:14:50,713  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:14:52,420  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:15:19,761  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:15:21,306  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:15:23,620  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 12:15:31,588  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 12:16:53,965  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:16:56,990  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --erase-chip
+2026-06-30 12:16:57,017  DEBUG     app.flasher  flash_usb [erase]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:16:57,543  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:16:57,543  DEBUG     app.flasher  flash_usb [erase]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:16:57,715  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]:   Операция: chip erase
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:16:57,735  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:16:57,736  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:16:59,225  DEBUG     app.flasher  flash_usb [erase]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:16:59,405  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:34,744  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:35,036  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:35,055  DEBUG     app.flasher  flash_usb [erase]:  OK (1с)
+2026-06-30 12:17:35,055  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:17:35,055  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:35,055  DEBUG     app.flasher  flash_usb [erase]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:17:35,055  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:35,055  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]:   Полная очистка Flash (chip erase, ~30 с)
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   После chip erase BootROM не сможет загрузить прошивку.
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   Используй flash_usb.py для восстановления.
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:17:35,056  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -t 100000 -u 0x15A2,0x73 -- flash-erase-all 9
+2026-06-30 12:17:35,057  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:17:35,057  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:35,057  DEBUG     app.flasher  flash_usb [erase]:   Reset
+2026-06-30 12:17:35,057  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:35,057  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:17:35,057  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:17:35,057  DEBUG     app.flasher  flash_usb [erase]:   ✅  Chip erase завершён
+2026-06-30 12:17:38,393  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 12:17:38,415  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:17:38,820  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:17:38,821  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:17:38,996  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:39,015  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:39,016  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:39,016  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:17:39,016  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:39,016  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:17:39,016  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:17:39,016  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:40,400  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:17:40,575  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:41,209  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:41,417  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:41,589  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:41,758  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 12:17:41,926  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:41,926  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 12:17:42,112  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:42,130  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:17:42,131  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 12:18:16,089  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:18:17,817  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:19:51,239  ERROR     app.orchestrator  HIL confirm без M5: opto_in1_active
+2026-06-30 12:20:11,226  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:20:12,767  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:20:46,816  WARNING   app.orchestrator  Operator confirm timeout: mqs_tone
+2026-06-30 12:23:08,021  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:23:09,570  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:24:19,465  ERROR     app.orchestrator  HIL confirm без M5: opto_in1_active
+2026-06-30 12:28:29,368  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:28:32,469  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --erase-chip
+2026-06-30 12:28:32,491  DEBUG     app.flasher  flash_usb [erase]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:28:33,043  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:28:33,043  DEBUG     app.flasher  flash_usb [erase]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:28:33,212  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]:   Операция: chip erase
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:28:33,230  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:28:33,231  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:28:33,231  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:28:33,231  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:28:34,621  DEBUG     app.flasher  flash_usb [erase]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:28:34,792  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:10,122  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:10,362  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]:  OK (1с)
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:29:10,381  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]:   Полная очистка Flash (chip erase, ~30 с)
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   После chip erase BootROM не сможет загрузить прошивку.
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   Используй flash_usb.py для восстановления.
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -t 100000 -u 0x15A2,0x73 -- flash-erase-all 9
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]:   Reset
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:29:10,382  DEBUG     app.flasher  flash_usb [erase]:   ✅  Chip erase завершён
+2026-06-30 12:29:42,254  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 12:29:42,274  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:29:42,779  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:29:42,779  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:29:42,951  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:29:42,971  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:44,350  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:29:44,519  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:45,125  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:45,328  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:45,502  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:45,675  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 12:29:45,847  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:45,847  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 12:29:46,038  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:29:46,057  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 12:29:46,057  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:46,057  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:46,057  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:29:46,057  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:46,057  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 12:29:46,058  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:46,059  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:46,059  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 12:29:46,059  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:29:46,059  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:29:46,059  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:29:46,059  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 12:30:13,179  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:30:57,597  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:31:07,114  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --erase-chip
+2026-06-30 12:31:07,127  DEBUG     app.flasher  flash_usb [erase]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:31:07,633  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:31:07,634  DEBUG     app.flasher  flash_usb [erase]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:31:07,805  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]:   Операция: chip erase
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:07,824  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:31:07,825  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:31:07,825  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:09,209  DEBUG     app.flasher  flash_usb [erase]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:31:09,387  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:43,890  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:44,130  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:44,148  DEBUG     app.flasher  flash_usb [erase]:  OK (1с)
+2026-06-30 12:31:44,148  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:44,148  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:44,148  DEBUG     app.flasher  flash_usb [erase]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:31:44,148  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:44,148  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]:   Полная очистка Flash (chip erase, ~30 с)
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   После chip erase BootROM не сможет загрузить прошивку.
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   Используй flash_usb.py для восстановления.
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:44,149  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -t 100000 -u 0x15A2,0x73 -- flash-erase-all 9
+2026-06-30 12:31:44,150  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:44,150  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:44,150  DEBUG     app.flasher  flash_usb [erase]:   Reset
+2026-06-30 12:31:44,150  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:44,150  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:31:44,150  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 12:31:44,150  DEBUG     app.flasher  flash_usb [erase]:   ✅  Chip erase завершён
+2026-06-30 12:31:54,530  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 12:31:54,544  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:31:54,994  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:31:54,994  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:31:55,169  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:31:55,189  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:56,575  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:31:56,748  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:57,367  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:57,577  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:57,752  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:57,923  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 12:31:58,094  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:58,094  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 12:31:58,282  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 12:31:58,301  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:31:58,302  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 12:32:39,880  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:34:28,288  WARNING   app.orchestrator  Operator confirm timeout: mqs_tone
+2026-06-30 12:36:10,339  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 12:36:12,274  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 12:36:16,715  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 12:36:17,666  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 12:36:20,059  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:36:21,609  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:37:39,767  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:37:42,638  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 12:37:42,653  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:37:43,208  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:37:43,208  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:37:43,385  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:43,403  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:37:43,404  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:37:43,404  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:44,787  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:37:44,965  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:37:45,567  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:37:45,775  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:37:45,949  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:37:46,123  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 12:37:46,295  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:37:46,295  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 12:37:46,484  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:37:46,502  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 12:37:46,502  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:46,502  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:46,502  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:37:46,502  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:46,502  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 12:37:46,503  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:37:46,504  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 12:37:46,504  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:46,504  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:46,504  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 12:37:46,504  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:37:46,504  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:37:46,504  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:37:46,504  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 12:38:28,112  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:39:00,162  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:39:01,711  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:39:16,105  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:39:29,578  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 12:39:29,591  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:39:30,119  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:39:30,119  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:39:30,293  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:39:30,312  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:39:30,313  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:31,690  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:39:31,867  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:32,499  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:32,710  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:32,885  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:33,057  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 12:39:33,232  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:33,232  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 12:39:33,420  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:33,440  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 12:39:33,440  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:33,440  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:33,440  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:39:33,440  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:33,440  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:39:33,441  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 12:39:33,442  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:33,442  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:33,442  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 12:39:33,442  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:33,442  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:39:33,442  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:33,442  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 12:39:42,605  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:39:45,866  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 12:39:45,892  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:39:46,402  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:39:46,402  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:39:46,575  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:46,593  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:39:46,594  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:39:46,594  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:47,978  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:39:48,156  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:48,777  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:48,988  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:49,163  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:49,340  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 12:39:49,511  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:49,511  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 12:39:49,695  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:49,713  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:39:49,714  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 12:40:34,546  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 12:40:34,566  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 12:40:35,182  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:40:35,182  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 12:40:35,411  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 12:40:35,450  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:35,450  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:40:35,450  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 12:40:35,450  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 12:40:35,450  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:40:35,450  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 12:40:35,450  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 12:40:35,451  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 12:40:35,451  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:35,451  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:35,451  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:35,451  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 12:40:35,451  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:35,451  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 12:40:35,452  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 12:40:35,452  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:36,857  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 12:40:37,029  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:40:37,659  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:40:37,878  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:40:38,054  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:40:38,226  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 12:40:38,396  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:40:38,396  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68380 (0x10b1c)
+2026-06-30 12:40:38,581  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 12:40:38,599  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 12:40:38,599  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:38,599  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:38,599  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 12:40:38,599  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:38,599  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 12:40:38,599  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:40:38,599  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68380 байт
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 12:40:38,600  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 12:41:20,289  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:41:45,632  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:41:47,180  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:50:05,155  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:50:06,706  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 12:53:12,550  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:53:19,153  ERROR     app.app  CDC connect failed: firmware_test не отвечает на ping: /dev/cu.usbmodem11301
+2026-06-30 12:53:34,236  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 12:53:35,947  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 13:00:39,178  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:00:40,865  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 13:32:56,441  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:32:57,988  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 13:35:28,536  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:35:45,185  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 13:35:45,204  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 13:35:45,204  DEBUG     app.flasher  flash_usb [firmware_test]: warning: Ignoring existing virtual environment linked to non-existent Python interpreter: .venv/bin/python3 -> python
+2026-06-30 13:35:45,206  DEBUG     app.flasher  flash_usb [firmware_test]: Using CPython 3.10.11 interpreter at: /Library/Frameworks/Python.framework/Versions/3.10/bin/python3.10
+2026-06-30 13:35:45,381  DEBUG     app.flasher  flash_usb [firmware_test]: Removed virtual environment at: .venv
+2026-06-30 13:35:45,381  DEBUG     app.flasher  flash_usb [firmware_test]: Creating virtual environment at: .venv
+2026-06-30 13:35:45,517  DEBUG     app.flasher  flash_usb [firmware_test]: Installed 66 packages in 104ms
+2026-06-30 13:35:50,049  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 13:35:50,049  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 13:35:50,221  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 13:35:50,241  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:51,617  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 13:35:51,786  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 13:35:52,392  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 13:35:52,603  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 13:35:52,777  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 13:35:52,951  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 13:35:53,121  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 13:35:53,122  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68364 (0x10b0c)
+2026-06-30 13:35:53,309  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68364 байт
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 13:35:53,327  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 13:35:53,328  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 13:36:18,782  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 13:40:43,635  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 13:40:50,292  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:40:51,840  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 13:42:37,034  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 13:42:42,356  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:42:43,901  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 13:43:43,721  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 13:43:48,120  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 13:43:50,861  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:43:52,409  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 13:44:36,067  ERROR     app.screens.diag  run_worker error: read failed: [Errno 6] Device not configured
+2026-06-30 13:48:46,897  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:49:26,682  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:50:01,537  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:50:49,483  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 13:50:51,216  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 13:56:22,896  ERROR     app.orchestrator  HIL confirm без M5: opto_in1_active
+2026-06-30 14:13:37,172  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:13:38,722  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 14:16:04,892  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:16:11,539  ERROR     app.app  CDC connect failed: firmware_test не отвечает на ping: /dev/cu.usbmodem11301
+2026-06-30 14:16:18,139  ERROR     app.app  CDC connect failed: firmware_test не отвечает на ping: /dev/cu.usbmodem11301
+2026-06-30 14:16:20,826  ERROR     app.app  CDC connect failed: read failed: [Errno 6] Device not configured
+2026-06-30 14:16:23,904  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 14:17:25,582  ERROR     app.orchestrator  HIL confirm без M5: opto_in1_active
+2026-06-30 14:18:32,310  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:18:33,929  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 14:19:27,641  ERROR     app.screens.diag  run_worker error: read failed: [Errno 6] Device not configured
+2026-06-30 14:19:57,182  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:19:58,730  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 14:36:34,945  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:36:36,495  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 14:38:19,642  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:38:21,192  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 14:38:26,849  ERROR     app.screens.diag  run_worker error: write failed: [Errno 6] Device not configured
+2026-06-30 14:38:58,972  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:43:53,430  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:45:10,133  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:45:51,286  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:55:19,262  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:55:56,114  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:56:46,050  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 14:57:28,802  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --erase-chip
+2026-06-30 14:57:28,820  DEBUG     app.flasher  flash_usb [erase]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 14:57:28,822  DEBUG     app.flasher  flash_usb [erase]: warning: Ignoring existing virtual environment linked to non-existent Python interpreter: .venv/bin/python3 -> python
+2026-06-30 14:57:28,825  DEBUG     app.flasher  flash_usb [erase]: Using CPython 3.10.11 interpreter at: /Library/Frameworks/Python.framework/Versions/3.10/bin/python3.10
+2026-06-30 14:57:29,003  DEBUG     app.flasher  flash_usb [erase]: Removed virtual environment at: .venv
+2026-06-30 14:57:29,003  DEBUG     app.flasher  flash_usb [erase]: Creating virtual environment at: .venv
+2026-06-30 14:57:29,120  DEBUG     app.flasher  flash_usb [erase]: Installed 66 packages in 86ms
+2026-06-30 14:57:33,713  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 14:57:33,713  DEBUG     app.flasher  flash_usb [erase]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 14:57:33,888  DEBUG     app.flasher  flash_usb [erase]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]:   Операция: chip erase
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]:   SDP USB:   0x1FC9,0x130
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]:   BL  USB:   0x15A2,0x73
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]: ════════════════════════════════════════════════════════════
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 14:57:33,906  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 14:57:33,907  DEBUG     app.flasher  flash_usb [erase]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 14:57:33,907  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:57:35,315  DEBUG     app.flasher  flash_usb [erase]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 14:57:35,485  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:10,903  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:11,146  DEBUG     app.flasher  flash_usb [erase]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]:  OK (1с)
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:11,165  DEBUG     app.flasher  flash_usb [erase]:   Полная очистка Flash (chip erase, ~30 с)
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   После chip erase BootROM не сможет загрузить прошивку.
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]:   ⚠️   Используй flash_usb.py для восстановления.
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -t 100000 -u 0x15A2,0x73 -- flash-erase-all 9
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]:   Reset
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:11,166  DEBUG     app.flasher  flash_usb [erase]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 14:58:11,167  DEBUG     app.flasher  flash_usb [erase]: 
+2026-06-30 14:58:11,167  DEBUG     app.flasher  flash_usb [erase]:   ✅  Chip erase завершён
+2026-06-30 14:58:17,157  INFO      app.flasher  Running: uv run --directory /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host python /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/flash_usb.py --firmware firmware_test --build-type Release
+2026-06-30 14:58:17,178  DEBUG     app.flasher  flash_usb [firmware_test]: warning: `VIRTUAL_ENV=/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/production/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+2026-06-30 14:58:17,661  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 14:58:17,661  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 2290649224 (0x88888888) Write File Success.
+2026-06-30 14:58:17,832  DEBUG     app.flasher  flash_usb [firmware_test]: Status (HAB mode) = 1450735702 (0x56787856) Hab Is Disabled (Unlocked).
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]:   MIMXRT1052 Flash Tool (USB SDP)
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка:  firmware_test [Release]
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]:   SDP USB:   0x1FC9,0x130
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]:   BL  USB:   0x15A2,0x73
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]: ════════════════════════════════════════════════════════════
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]:   Загрузка Flashloader через SDP (1FC9:0130)
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- write-file 0x20001C00 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/tools/host/dcd/ivt_flashloader.bin
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]:   $ sdphost -u 0x1FC9,0x130 -j -- jump-address 0x20001C00
+2026-06-30 14:58:17,851  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:19,246  DEBUG     app.flasher  flash_usb [firmware_test]:   Ожидание Flashloader (до 10с)...Response status = 0 (0x0) Success.
+2026-06-30 14:58:19,423  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:20,055  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:20,265  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:20,440  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:20,618  DEBUG     app.flasher  flash_usb [firmware_test]: Writing memory
+2026-06-30 14:58:20,789  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:20,789  DEBUG     app.flasher  flash_usb [firmware_test]: Response word 1 = 68364 (0x10b0c)
+2026-06-30 14:58:20,971  DEBUG     app.flasher  flash_usb [firmware_test]: Response status = 0 (0x0) Success.
+2026-06-30 14:58:20,995  DEBUG     app.flasher  flash_usb [firmware_test]:  OK (1с)
+2026-06-30 14:58:20,995  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:20,995  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:20,995  DEBUG     app.flasher  flash_usb [firmware_test]:   Конфигурация FlexSPI NOR (инициализация контроллера)
+2026-06-30 14:58:20,995  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:20,995  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xC0000007 word
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   Прошивка Flash: firmware_test_hab.bin
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   Образ:     /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   Размер:    68364 байт
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   Адрес:     0x60001000
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   Стирание:  0x60000000 .. +73728 байт
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- flash-erase-region 0x60000000 73728 0
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   Запись FCB в Flash[0x60000000]
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- fill-memory 0x2000 4 0xF000000F word
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- configure-memory 9 0x2000
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- write-memory 0x60001000 /Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/build/Release/firmware_test_hab.bin 0
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:20,996  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:20,997  DEBUG     app.flasher  flash_usb [firmware_test]:   Reset
+2026-06-30 14:58:20,997  DEBUG     app.flasher  flash_usb [firmware_test]: ────────────────────────────────────────────────────────────
+2026-06-30 14:58:20,997  DEBUG     app.flasher  flash_usb [firmware_test]:   $ blhost -u 0x15A2,0x73 -- reset
+2026-06-30 14:58:20,997  DEBUG     app.flasher  flash_usb [firmware_test]: 
+2026-06-30 14:58:20,997  DEBUG     app.flasher  flash_usb [firmware_test]:   ✅  Прошивка завершена успешно
+2026-06-30 14:58:47,116  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:02:20,779  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:02:22,328  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:03:07,785  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:03:09,333  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:03:56,019  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:03:57,569  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:05:47,811  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:05:49,358  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:07:27,853  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:07:29,401  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:08:24,771  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:08:26,321  INFO      app.m5_client  M5StampPLC не найден
+2026-06-30 15:08:55,013  DEBUG     asyncio  Using selector: KqueueSelector
+2026-06-30 15:08:56,561  INFO      app.m5_client  M5StampPLC не найден

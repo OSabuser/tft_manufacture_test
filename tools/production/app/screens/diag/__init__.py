@@ -17,7 +17,7 @@ from typing import Optional
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import Screen
@@ -27,6 +27,7 @@ from ...firmware_client import FirmwareClient
 from ...m5_client import M5Client
 from ...models import SessionState
 from ...orchestrator import Orchestrator, OrchestratorEvent, OrchestratorEventType
+from ...widgets import AppFrame
 from .confirm_panel import ConfirmPanel
 from .results import ResultsPanel
 from .test_list import TestListPanel
@@ -55,48 +56,55 @@ class DiagScreen(Screen):
         self,
         firmware: FirmwareClient,
         m5: Optional[M5Client] = None,
+        fw_version: str = "",
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._fw = firmware
         self._m5 = m5
         self._orchestrator = Orchestrator(firmware, m5)
-        self._session = SessionState()
-        self._running = False
+        self._session = SessionState(fw_version=fw_version)
+        self._tests_running = False
 
     def compose(self) -> ComposeResult:
-        # Шапка
-        with Horizontal(id="diag-header"):
-            yield Static("fw: —", id="diag-header-fw")
-            yield Static("UID: —", id="diag-header-uid")
-            yield Static("M5: —", id="diag-header-m5")
+        with AppFrame(id="diag-frame"):
+            # Шапка — фиксированная высота 3
+            with Horizontal(id="diag-header"):
+                yield Static("firmware_test: —\nFw: —", id="diag-header-fw")
+                yield Static("MCU ID: —", id="diag-header-uid")
+                yield Static("M5: —", id="diag-header-m5")
 
-        # Рабочая зона: список тестов + результаты
-        with Horizontal(id="diag-main"):
-            yield TestListPanel(id="diag-test-list")
-            yield ResultsPanel(id="diag-results")
+            # Рабочая зона: список тестов + результаты — занимает всё
+            # оставшееся место (1fr), сама прокручивается при переполнении
+            with Horizontal(id="diag-main"):
+                yield TestListPanel(id="diag-test-list")
+                yield ResultsPanel(id="diag-results")
 
-        # Прогресс
-        yield ProgressBar(id="diag-progress-bar", show_eta=False)
-        yield Label("", id="diag-progress-label")
+            # Прогресс — скрыт пока нет активного прогона. Контейнер
+            # имеет classes="hidden" по умолчанию — height: auto + display:
+            # none даёт нулевую высоту, не отнимая место у остального layout.
+            with Vertical(id="diag-progress-row", classes="hidden"):
+                yield ProgressBar(id="diag-progress-bar", show_eta=False)
+                yield Label("", id="diag-progress-label")
 
-        # Кнопки запуска
-        with Horizontal(id="diag-btn-row"):
-            yield Button(
-                "▶ Запустить выбранные",
-                id="diag-btn-run-selected",
-                variant="primary",
-                disabled=True,
-            )
-            yield Button(
-                "▶▶ Все тесты",
-                id="diag-btn-run-all",
-                variant="default",
-                disabled=True,
-            )
+            # Кнопки запуска — фиксированная высота 3 (под border Button)
+            with Horizontal(id="diag-btn-row"):
+                yield Button(
+                    "▶ Запустить выбранные",
+                    id="diag-btn-run-selected",
+                    variant="primary",
+                    disabled=True,
+                )
+                yield Button(
+                    "▶▶ Все тесты",
+                    id="diag-btn-run-all",
+                    variant="default",
+                    disabled=True,
+                )
+                yield Button("✕ Выйти", id="diag-btn-quit", variant="default")
 
-        # Панель confirm
-        yield ConfirmPanel(id="diag-confirm", classes="hidden")
+            # Панель confirm — auto-высота, видна только когда есть запрос
+            yield ConfirmPanel(id="diag-confirm", classes="hidden")
 
     def on_mount(self) -> None:
         self._init_session()
@@ -108,7 +116,6 @@ class DiagScreen(Screen):
         try:
             tests = await self._fw.list_tests()
             uid = await self._fw.get_uid()
-            version = await self._fw.get_version()
         except Exception as exc:
             logger.error("Session init failed: %s", exc)
             self.post_message(self.DiagDone())
@@ -116,7 +123,6 @@ class DiagScreen(Screen):
 
         self._session.tests = tests
         self._session.chip_uid = uid
-        self._session.fw_version = version
         self._session.m5_connected = self._m5 is not None
 
         self._update_header()
@@ -129,17 +135,17 @@ class DiagScreen(Screen):
 
     def _update_header(self) -> None:
         self.query_one("#diag-header-fw", Static).update(
-            f"fw: {self._session.fw_version or '?'}"
+            f"firmware_test: {self._session.fw_version or '?'}"
         )
-        uid_short = self._session.chip_uid[:16] if self._session.chip_uid else "—"
-        self.query_one("#diag-header-uid", Static).update(f"UID: {uid_short}")
+        uid = self._session.chip_uid or "—"
+        self.query_one("#diag-header-uid", Static).update(f"MCU ID: {uid}")
 
         m5_widget = self.query_one("#diag-header-m5", Static)
         if self._session.m5_connected:
             m5_widget.update("M5: ✓ подключён")
             m5_widget.remove_class("m5-absent")
         else:
-            m5_widget.update("M5: — нет")
+            m5_widget.update("M5: ✕ не подключен")
             m5_widget.add_class("m5-absent")
 
     # ── Кнопки ───────────────────────────────────────────────────────────────
@@ -156,8 +162,13 @@ class DiagScreen(Screen):
         if ids:
             self._start_run(ids)
 
+    @on(Button.Pressed, "#diag-btn-quit")
+    def _on_quit_pressed(self) -> None:
+        if not self._tests_running:
+            self.app.exit()
+
     def action_go_back(self) -> None:
-        if not self._running:
+        if not self._tests_running:
             self.post_message(self.DiagDone())
 
     def action_run_all(self) -> None:
@@ -181,9 +192,11 @@ class DiagScreen(Screen):
         results = self.query_one("#diag-results", ResultsPanel)
         results.reset()
         self._session.results.clear()
+        self._show_progress(True)
         self._update_progress(0, len(test_ids), "")
         self._set_run_buttons(enabled=False)
-        self._running = True
+        self.query_one("#diag-test-list", TestListPanel).set_enabled(False)
+        self._tests_running = True
         self._run_worker(test_ids)
 
     @work(exclusive=True, thread=False)
@@ -200,8 +213,9 @@ class DiagScreen(Screen):
         except Exception as exc:
             logger.error("run_worker error: %s", exc)
         finally:
-            self._running = False
+            self._tests_running = False
             self._set_run_buttons(enabled=True)
+            self.query_one("#diag-test-list", TestListPanel).set_enabled(True)
             try:
                 self.query_one("#diag-confirm", ConfirmPanel).hide()
             except NoMatches:
@@ -251,9 +265,21 @@ class DiagScreen(Screen):
 
     # ── Утилиты ───────────────────────────────────────────────────────────────
 
+    def _show_progress(self, visible: bool) -> None:
+        """Показать/скрыть строку прогресса. Скрыта в простое — без анимации."""
+        row = self.query_one("#diag-progress-row")
+        bar = self.query_one("#diag-progress-bar", ProgressBar)
+        if visible:
+            bar.update(total=100, progress=0)
+            row.remove_class("hidden")
+        else:
+            row.add_class("hidden")
+
     def _update_progress(self, done: int, total: int, msg: str) -> None:
         pct = int(done / total * 100) if total else 0
-        self.query_one("#diag-progress-bar", ProgressBar).update(progress=pct)
+        self.query_one("#diag-progress-bar", ProgressBar).update(
+            total=100, progress=pct
+        )
         self.query_one("#diag-progress-label", Label).update(msg)
 
     def _set_run_buttons(self, enabled: bool) -> None:

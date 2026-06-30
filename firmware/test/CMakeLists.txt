@@ -84,7 +84,7 @@ target_link_options(
   -Wl,-Map=${CMAKE_BINARY_DIR}/firmware_test.map
   -Wl,--defsym=__stack_size__=0x2000
   -Wl,--defsym=__heap_size__=0x2000
-  -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor_sdram.ld)
+  -T${CMAKE_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor_sdram.ld)
 
 set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
                                                 ${CMAKE_BINARY_DIR})

@@ -1,115 +1,212 @@
 """
 results.py — виджет правой колонки DiagScreen.
 
-Отображает строки результатов тестов: id | статус | detail.
-Обновляется по событиям от Orchestrator через DiagScreen.
+DataTable с колонками: Тест | HIL | Статус | Время | Детали.
+До первого запуска показывает empty-state placeholder вместо таблицы.
+
+Сортировка: FAIL всегда наверху (естественно бросается в глаза),
+внутри групп статусов — исходный порядок реестра firmware_test.
+Строка с FAIL дополнительно подсвечивается красным фоном целиком.
 
 Публичный API:
-    ResultsPanel.populate(tests)          — инициализировать пустые строки
-    ResultsPanel.set_running(test_id)     — показать "выполняется"
+    ResultsPanel.populate(tests)          — показать пустую таблицу (PENDING)
+    ResultsPanel.set_running(test_id)     — пометить тест как выполняющийся
     ResultsPanel.set_result(result)       — показать финальный результат
-    ResultsPanel.reset()                  — сбросить все строки
+    ResultsPanel.reset()                  — сбросить все строки в PENDING
 """
 
 from __future__ import annotations
 
+from rich.style import Style
+from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Horizontal
-from textual.css.query import NoMatches
+from textual.containers import Center, Middle
 from textual.widget import Widget
-from textual.widgets import Label, Static
+from textual.widgets import DataTable, Static
 
-from ...models import TestResult, TestStatus
+from ...models import TestInfo, TestResult, TestStatus
 
+# Порядок сортировки: чем меньше число — тем выше строка в таблице.
+# FAIL всегда наверху, PASS/SKIP внизу — внутри групп сохраняется
+# исходный порядок реестра (стабильная сортировка).
+_SORT_RANK: dict[TestStatus, int] = {
+    TestStatus.FAIL: 0,
+    TestStatus.RUNNING: 1,
+    TestStatus.PENDING: 2,
+    TestStatus.SKIP: 3,
+    TestStatus.PASS: 4,
+}
 
-def _status_display(status: TestStatus) -> tuple[str, str]:
-    """Вернуть (текст, css-класс) для статуса."""
-    return {
-        TestStatus.PASS: ("✓ PASS", "result-status-pass"),
-        TestStatus.FAIL: ("✗ FAIL", "result-status-fail"),
-        TestStatus.RUNNING: ("…", "result-status-running"),
-        TestStatus.SKIP: ("SKIP", "result-status-skip"),
-        TestStatus.PENDING: ("", "result-status-skip"),
-    }[status]
+_STATUS_DISPLAY: dict[TestStatus, tuple[str, str]] = {
+    TestStatus.PASS: ("✓ PASS", "green"),
+    TestStatus.FAIL: ("✗ FAIL", "bold white"),
+    TestStatus.RUNNING: ("…", "yellow"),
+    TestStatus.SKIP: ("SKIP", "grey50"),
+    TestStatus.PENDING: ("", "grey50"),
+}
 
-
-# CSS-классы статусов — для очистки перед сменой
-_STATUS_CLASSES = (
-    "result-status-pass",
-    "result-status-fail",
-    "result-status-running",
-    "result-status-skip",
-)
+_FAIL_BG = "dark_red"
 
 
 class ResultsPanel(Widget):
-    """Правая колонка DiagScreen — результаты тестов."""
+    """Правая колонка DiagScreen — таблица результатов тестов."""
 
-    DEFAULT_CSS = ""  # стили в diag.tcss
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        # test_id → TestInfo, нужно для перестроения строк при сортировке
+        self._tests: dict[str, TestInfo] = {}
+        # test_id → текущий статус (для сортировки и повторных update)
+        self._statuses: dict[str, TestStatus] = {}
+        self._order: list[str] = []  # исходный порядок реестра
 
     def compose(self) -> ComposeResult:
-        yield Label("Результаты", classes="section-title")
+        with Center(id="results-empty"):
+            with Middle():
+                yield Static(
+                    "Выберите тесты и нажмите\n«Запустить выбранные»",
+                    id="results-empty-text",
+                )
+        yield DataTable(id="results-table", cursor_type="row", classes="hidden")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#results-table", DataTable)
+        table.add_columns("Тест", "M5", "Статус", "Время", "Детали")
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def populate(self, tests: list) -> None:
+    def populate(self, tests: list[TestInfo]) -> None:
         """
-        Инициализировать пустые строки результатов.
+        Заполнить таблицу тестами в состоянии PENDING.
+        До первого вызова populate() с непустым списком виден empty-state.
+        """
+        table = self.query_one("#results-table", DataTable)
+        table.clear()
+        self._tests.clear()
+        self._statuses.clear()
+        self._order = [t.id for t in tests]
 
-        :param tests: list[TestInfo]
-        """
-        for child in list(self.children):
-            if not child.has_class("section-title"):
-                child.remove()
+        if not tests:
+            self._show_empty(True)
+            return
 
         for test in tests:
-            row = Horizontal(classes="result-row", id=f"result-row-{test.id}")
-            id_lbl = Static(test.id, classes="result-id")
-            status_lbl = Static(
-                "", classes="result-status-skip", id=f"result-status-{test.id}"
-            )
-            detail_lbl = Static(
-                "", classes="result-detail", id=f"result-detail-{test.id}"
-            )
-            self.mount(row)
-            row.mount(id_lbl)
-            row.mount(status_lbl)
-            row.mount(detail_lbl)
+            self._tests[test.id] = test
+            self._statuses[test.id] = TestStatus.PENDING
+            self._add_row(test, TestStatus.PENDING, duration_ms=0, detail="")
+
+        self._show_empty(False)
 
     def set_running(self, test_id: str) -> None:
         """Пометить тест как выполняющийся."""
-        self._update(test_id, TestStatus.RUNNING, "")
+        self._update_row(test_id, TestStatus.RUNNING, duration_ms=0, detail="")
 
     def set_result(self, result: TestResult) -> None:
         """Показать финальный результат теста."""
         detail = result.detail if result.status == TestStatus.FAIL else ""
-        self._update(result.id, result.status, detail)
+        self._update_row(result.id, result.status, result.duration_ms, detail)
 
     def reset(self) -> None:
-        """Сбросить все строки в пустое состояние."""
-        for widget in self.query(Static):
-            wid = widget.id or ""
-            if wid.startswith("result-status-"):
-                for cls in _STATUS_CLASSES:
-                    widget.remove_class(cls)
-                widget.add_class("result-status-skip")
-                widget.update("")
-            elif wid.startswith("result-detail-"):
-                widget.update("")
+        """Сбросить все строки в PENDING (перед повторным запуском)."""
+        for test_id in list(self._tests.keys()):
+            self._update_row(test_id, TestStatus.PENDING, duration_ms=0, detail="")
 
-    # ── Internal ──────────────────────────────────────────────────────────────
+    # ── Internal: empty state ───────────────────────────────────────────────
 
-    def _update(self, test_id: str, status: TestStatus, detail: str) -> None:
-        try:
-            status_w = self.query_one(f"#result-status-{test_id}", Static)
-            detail_w = self.query_one(f"#result-detail-{test_id}", Static)
-        except NoMatches:
+    def _show_empty(self, visible: bool) -> None:
+        empty = self.query_one("#results-empty")
+        table = self.query_one("#results-table", DataTable)
+        if visible:
+            empty.remove_class("hidden")
+            table.add_class("hidden")
+        else:
+            empty.add_class("hidden")
+            table.remove_class("hidden")
+
+    # ── Internal: строки таблицы ────────────────────────────────────────────
+
+    def _add_row(
+        self, test: TestInfo, status: TestStatus, duration_ms: int, detail: str
+    ) -> None:
+        table = self.query_one("#results-table", DataTable)
+        cells = self._row_cells(test, status, duration_ms, detail)
+        table.add_row(*cells, key=test.id)
+
+    def _update_row(
+        self, test_id: str, status: TestStatus, duration_ms: int, detail: str
+    ) -> None:
+        test = self._tests.get(test_id)
+        if test is None:
             return
+        self._statuses[test_id] = status
 
-        for cls in _STATUS_CLASSES:
-            status_w.remove_class(cls)
+        table = self.query_one("#results-table", DataTable)
+        cells = self._row_cells(test, status, duration_ms, detail)
+        col_keys = [c.key for c in table.ordered_columns]
+        for col_key, value in zip(col_keys, cells):
+            table.update_cell(test_id, col_key, value)
 
-        text, css = _status_display(status)
-        status_w.update(text)
-        status_w.add_class(css)
-        detail_w.update(detail)
+        self._resort(table)
+
+    def _row_cells(
+        self, test: TestInfo, status: TestStatus, duration_ms: int, detail: str
+    ) -> tuple:
+        """Собрать пять ячеек строки с учётом подсветки FAIL."""
+        status_text, status_color = _STATUS_DISPLAY[status]
+        is_fail = status == TestStatus.FAIL
+
+        bg = _FAIL_BG if is_fail else None
+        fg = "white" if is_fail else status_color
+
+        name_style = Style(bgcolor=bg, bold=is_fail)
+        hil_style = Style(bgcolor=bg, color="white" if is_fail else "cyan")
+        status_style = Style(bgcolor=bg, color=fg, bold=True)
+        time_style = Style(bgcolor=bg, color="white" if is_fail else "grey70")
+        detail_style = Style(bgcolor=bg, color="white" if is_fail else "grey50")
+
+        time_text = f"{duration_ms / 1000:.1f}с" if duration_ms > 0 else ""
+        hil_text = "[*]" if test.requires_hil else "[-]"
+
+        return (
+            Text(test.name, style=name_style),
+            Text(hil_text, style=hil_style),
+            Text(status_text, style=status_style),
+            Text(time_text, style=time_style),
+            Text(detail, style=detail_style),
+        )
+
+    def _resort(self, table: DataTable) -> None:
+        """
+        Пересортировать: FAIL наверх, дальше RUNNING/PENDING/SKIP/PASS.
+        Внутри групп — исходный порядок реестра (стабильная сортировка).
+
+        DataTable.sort(*columns, key=...) передаёт в key() кортеж значений
+        ЯЧЕЕК (не row_key) для указанных columns — поэтому сортируем по
+        содержимому самой ячейки "Тест" (используем как индекс в self._order)
+        и по тексту статуса, который мы сами туда пишем и полностью
+        контролируем — никаких приватных атрибутов DataTable не трогаем.
+        """
+        name_col = table.ordered_columns[0].key
+        status_col = table.ordered_columns[2].key
+
+        # text -> status enum, обратное к _STATUS_DISPLAY
+        status_by_text = {text: status for status, (text, _) in _STATUS_DISPLAY.items()}
+        # имя теста -> индекс в исходном реестре (для стабильности внутри группы)
+        name_to_order = {
+            self._tests[tid].name: idx
+            for idx, tid in enumerate(self._order)
+            if tid in self._tests
+        }
+
+        def sort_key(cells: tuple) -> tuple:
+            name_cell, status_cell = cells
+            name_plain = (
+                name_cell.plain if hasattr(name_cell, "plain") else str(name_cell)
+            )
+            status_plain = (
+                status_cell.plain if hasattr(status_cell, "plain") else str(status_cell)
+            )
+            status = status_by_text.get(status_plain, TestStatus.PENDING)
+            order_idx = name_to_order.get(name_plain, 0)
+            return (_SORT_RANK.get(status, 99), order_idx)
+
+        table.sort(name_col, status_col, key=sort_key)

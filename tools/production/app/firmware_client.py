@@ -12,9 +12,10 @@ firmware_client.py — async CDC-клиент firmware_test.
     FirmwareClient.run_selected()    — запустить тесты, вернуть AsyncGenerator событий
     FirmwareClient.send_confirm()    — отправить confirm
     FirmwareClient.get_uid()         — get_uid → str (hex UID)
+    FirmwareClient.get_version()     — get_version → str (X.Y.Z)
     FirmwareClient.send_cmd_raw()    — отправить произвольную JSON-команду
 
-Все blocking-операции с pyserial выполняются в asyncio.get_event_loop().run_in_executor()
+Все blocking-операции с pyserial выполняются в run_in_executor()
 чтобы не блокировать event loop Textual.
 """
 
@@ -28,7 +29,7 @@ from typing import AsyncGenerator, Optional
 import serial
 import serial.tools.list_ports
 
-from .models import TestInfo, TestStatus
+from .models import TestInfo
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +59,6 @@ def _parse_event(line: str) -> Optional[dict]:
     except json.JSONDecodeError:
         logger.warning("Bad JSON from firmware: %r", line)
         return None
-
-
-def _parse_test_status(s: str) -> TestStatus:
-    return {
-        "pass": TestStatus.PASS,
-        "fail": TestStatus.FAIL,
-        "skip": TestStatus.SKIP,
-    }.get(s, TestStatus.FAIL)
 
 
 class FirmwareClient:
@@ -194,7 +187,7 @@ class FirmwareClient:
         return False
 
     async def get_version(self) -> str:
-        """Запросить версию firmware_test. Вернуть строку X.Y.Z или ''."""
+        """Запросить версию firmware_test. Вернуть строку 'X.Y.Z' или ''."""
         await self._send({"type": "cmd", "cmd": "get_version"})
         async for event in self._recv_until({"version_response"}, timeout_s=3.0):
             if event.get("type") == "version_response":

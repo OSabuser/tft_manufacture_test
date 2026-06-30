@@ -380,7 +380,7 @@ static void qspi_test_deinit(void)
 
 const test_module_t K_TEST_QSPI = {
     .id                 = "qspi",
-    .name               = "QSPI Flash W25Qxx",
+    .name               = "NOR Flash W25Qxx",
     .critical           = true,
     .requires_hil       = false,
     .pre_confirm_prompt = NULL,

@@ -14,9 +14,9 @@ from typing import Optional
 class AppMode(Enum):
     """Режим работы приложения — определяется автодетектом USB."""
 
-    WAITING = auto()    # ждём подключения устройства
-    FLASHING = auto()   # обнаружен BootROM SDP (1FC9:0130)
-    DIAGNOSING = auto() # получен session_start по CDC
+    WAITING = auto()  # ждём подключения устройства
+    FLASHING = auto()  # обнаружен BootROM SDP (1FC9:0130)
+    DIAGNOSING = auto()  # получен session_start по CDC
 
 
 class TestStatus(Enum):
@@ -34,7 +34,7 @@ class FlashTarget(Enum):
 
     FIRMWARE_TEST = "firmware_test"
     PRODUCTION = "production"  # bootloader + tft_app
-    CUSTOM = "custom"           # произвольный HAB-бинарь, путь задаётся отдельно
+    CUSTOM = "custom"  # произвольный HAB-бинарь, путь задаётся отдельно
 
 
 @dataclass(frozen=True)
@@ -88,6 +88,6 @@ class ConfirmRequest:
 class FlashProgress:
     """Прогресс прошивки."""
 
-    phase: str       # "sdphost" | "blhost" | "done" | "error"
-    percent: int     # 0..100
+    phase: str  # "sdphost" | "blhost" | "done" | "error"
+    percent: int  # 0..100
     message: str

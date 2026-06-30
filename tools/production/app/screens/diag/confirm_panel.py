@@ -28,7 +28,7 @@ class ConfirmPanel(Widget):
     Использование::
 
         panel = ConfirmPanel()
-        panel.show(prompt="Экран залит красным?", timeout_ms=30000)
+        panel.show_operator(prompt="Экран залит красным?", timeout_ms=30000)
         # Слушать ConfirmPanel.Confirmed в родительском экране
     """
 
@@ -39,13 +39,10 @@ class ConfirmPanel(Widget):
             super().__init__()
             self.confirmed = confirmed
 
-    DEFAULT_CSS = ""  # стили в diag.tcss
-
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._timer: Timer | None = None
         self._remaining: int = 0
-        self._operator_mode: bool = True  # False → режим buttons (нет кнопок)
 
     def compose(self) -> ComposeResult:
         yield Static("", id="confirm-prompt")
@@ -57,9 +54,8 @@ class ConfirmPanel(Widget):
 
     def show_operator(self, prompt: str, timeout_ms: int) -> None:
         """Показать панель с кнопками OK/Нет и countdown."""
-        self._operator_mode = True
         self._remaining = timeout_ms // 1000
-        self._set_prompt(prompt)
+        self._set_prompt(f"⚠  {prompt}")
         self._set_countdown(self._remaining)
         self._show_buttons(True)
         self.remove_class("hidden")
@@ -70,7 +66,6 @@ class ConfirmPanel(Widget):
         Показать инструкцию для теста кнопок.
         Без кнопок OK/Нет — оператор только читает, нажимает физическую кнопку.
         """
-        self._operator_mode = False
         self._stop_timer()
         self._set_prompt(f"⌨  {prompt}")
         self._set_countdown("")
@@ -117,7 +112,7 @@ class ConfirmPanel(Widget):
 
     def _set_prompt(self, text: str) -> None:
         try:
-            self.query_one("#confirm-prompt", Static).update(f"⚠  {text}")
+            self.query_one("#confirm-prompt", Static).update(text)
         except NoMatches:
             pass
 

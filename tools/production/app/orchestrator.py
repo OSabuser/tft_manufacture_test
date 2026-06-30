@@ -4,7 +4,7 @@ orchestrator.py — оркестратор confirm_request для TUI.
 Получает события от FirmwareClient, принимает решение кто должен
 ответить на confirm_request, и отправляет confirm обратно.
 
-Три режима confirm (из закрытых решений Этапа 8):
+Три режима confirm:
 
     standalone/interactive (display, mqs, usd):
         → TUI показывает prompt оператору + кнопки OK/FAIL + countdown
@@ -21,7 +21,7 @@ orchestrator.py — оркестратор confirm_request для TUI.
         → отправляет confirm без участия оператора
         → оператор видит только прогресс
 
-Маршрутизация определяется по prefix confirm_request.id:
+Маршрутизация определяется по id confirm_request:
     "opto_*"        → HIL (M5 relay)
     "can_rx_ready"  → HIL (M5 can_send)
     "can_tx_verify" → HIL (M5 can_recv + verify)
@@ -42,47 +42,48 @@ from typing import AsyncGenerator, Callable, Coroutine, Optional
 
 from .firmware_client import FirmwareClient
 from .m5_client import M5Client
-from .models import ConfirmRequest, TestInfo, TestResult, TestStatus
+from .models import ConfirmRequest, TestResult, TestStatus
 
 logger = logging.getLogger(__name__)
 
-# Задержки для HIL (из закрытых решений: RELAY_ON_S=0.15, RELAY_OFF_S=0.5)
+# Задержки для HIL
 _RELAY_ON_S = 0.15
 _RELAY_OFF_S = 0.50
 
 # Карта confirm_id → реле M5 для opto-теста
-# Формат: confirm_id_prefix → (relay_num, target_state)
+# Формат: confirm_id → (relay_num, target_state)
 _OPTO_RELAY_MAP: dict[str, tuple[int, bool]] = {
-    "opto_in1_active":   (3, True),
+    "opto_in1_active": (3, True),
     "opto_in1_inactive": (3, False),
-    "opto_in2_active":   (4, True),
+    "opto_in2_active": (4, True),
     "opto_in2_inactive": (4, False),
-    "opto_rs_active":    (2, True),
-    "opto_rs_inactive":  (2, False),
+    "opto_rs_active": (2, True),
+    "opto_rs_inactive": (2, False),
 }
 
-# CAN параметры (из закрытых решений)
-_CAN_RX_ID   = 0x100
+# CAN параметры
+_CAN_RX_ID = 0x100
 _CAN_RX_DATA = [0xDE, 0xAD, 0xBE, 0xEF]
-_CAN_TX_ID   = 0x200
+_CAN_TX_ID = 0x200
 _CAN_TX_DATA = [0xCA, 0xFE, 0xBA, 0xBE]
 
 
 # ── Типы событий оркестратора ────────────────────────────────────────────
 
+
 class OrchestratorEventType(Enum):
-    TEST_BEGIN       = auto()  # тест начался
-    TEST_RESULT      = auto()  # тест завершился
-    CONFIRM_NEEDED   = auto()  # нужен ответ оператора (standalone)
+    TEST_BEGIN = auto()  # тест начался
+    TEST_RESULT = auto()  # тест завершился
+    CONFIRM_NEEDED = auto()  # нужен ответ оператора (standalone)
     CONFIRM_RESOLVED = auto()  # HIL confirm выполнен автоматически
-    BUTTONS_PROMPT   = auto()  # показать инструкцию для buttons (без confirm)
-    SUMMARY          = auto()  # итог всей сессии
-    ERROR            = auto()  # ошибка протокола или M5
+    BUTTONS_PROMPT = auto()  # показать инструкцию для buttons (без confirm)
+    SUMMARY = auto()  # итог всей сессии
+    ERROR = auto()  # ошибка протокола или M5
 
 
 @dataclass
 class OrchestratorEvent:
-    """Событие от оркестратора — передаётся в TUI через asyncio.Queue."""
+    """Событие от оркестратора — передаётся в TUI."""
 
     type: OrchestratorEventType
     test_id: str = ""
@@ -93,8 +94,7 @@ class OrchestratorEvent:
     message: str = ""
 
 
-# Тип callback для ответа оператора:
-# TUI вызывает его с True (OK) или False (FAIL) после показа prompt
+# Тип callback для ответа оператора
 OperatorConfirmCallback = Callable[[bool], Coroutine]
 
 
@@ -107,7 +107,6 @@ class Orchestrator:
         orch = Orchestrator(firmware_client, m5_client)
         async for event in orch.run_tests(["sdram", "opto", "display"]):
             if event.type == OrchestratorEventType.CONFIRM_NEEDED:
-                # TUI показывает prompt, получает ответ оператора
                 confirmed = await tui.ask_operator(event.confirm)
                 await orch.resolve_operator_confirm(confirmed)
             elif event.type == OrchestratorEventType.TEST_RESULT:
@@ -121,7 +120,6 @@ class Orchestrator:
     ) -> None:
         self._fw = firmware
         self._m5 = m5
-        # Queue для ответов оператора на CONFIRM_NEEDED
         self._operator_queue: asyncio.Queue[bool] = asyncio.Queue(maxsize=1)
 
     async def resolve_operator_confirm(self, confirmed: bool) -> None:
@@ -151,12 +149,11 @@ class Orchestrator:
                 )
 
             elif event_type == "test_result":
-                status_str = raw.get("status", "fail")
                 status = {
                     "pass": TestStatus.PASS,
                     "fail": TestStatus.FAIL,
                     "skip": TestStatus.SKIP,
-                }.get(status_str, TestStatus.FAIL)
+                }.get(raw.get("status", "fail"), TestStatus.FAIL)
 
                 result = TestResult(
                     id=raw.get("id", ""),
@@ -176,8 +173,8 @@ class Orchestrator:
                     prompt=raw.get("prompt", ""),
                     timeout_ms=raw.get("timeout_ms", 30000),
                 )
-                async for orch_event in self._handle_confirm(confirm):
-                    yield orch_event
+                async for ev in self._handle_confirm(confirm):
+                    yield ev
 
             elif event_type == "summary":
                 yield OrchestratorEvent(
@@ -185,10 +182,10 @@ class Orchestrator:
                     summary=raw,
                 )
 
-            elif event_type in ("error", None):
+            else:
                 yield OrchestratorEvent(
                     type=OrchestratorEventType.ERROR,
-                    message=raw.get("error", "unknown error"),
+                    message=raw.get("error", f"unknown event: {event_type}"),
                 )
 
     # ── Маршрутизация confirm ────────────────────────────────────────────
@@ -199,25 +196,21 @@ class Orchestrator:
         """Определить тип confirm и обработать соответственно."""
         cid = confirm.id
 
-        # HIL: opto-тест
         if cid in _OPTO_RELAY_MAP:
             async for ev in self._handle_hil_opto(confirm):
                 yield ev
             return
 
-        # HIL: CAN RX
         if cid == "can_rx_ready":
             async for ev in self._handle_hil_can_rx(confirm):
                 yield ev
             return
 
-        # HIL: CAN TX verify
         if cid == "can_tx_verify":
             async for ev in self._handle_hil_can_tx(confirm):
                 yield ev
             return
 
-        # buttons: нет JSON-confirm, только инструкция оператору
         if cid.startswith("btn"):
             yield OrchestratorEvent(
                 type=OrchestratorEventType.BUTTONS_PROMPT,
@@ -225,7 +218,6 @@ class Orchestrator:
             )
             return
 
-        # standalone interactive: показать оператору
         async for ev in self._handle_operator_confirm(confirm):
             yield ev
 
@@ -248,7 +240,6 @@ class Orchestrator:
         settle_s = _RELAY_ON_S if relay_state else _RELAY_OFF_S
         ok = await self._m5.relay_set(relay_num, relay_state)
         await asyncio.sleep(settle_s)
-
         await self._fw.send_confirm(confirm.id, ok)
 
         yield OrchestratorEvent(
@@ -270,7 +261,6 @@ class Orchestrator:
             )
             return
 
-        # M5 отправляет CAN-фрейм, таргет принимает после confirmed:true
         ok = await self._m5.can_send(_CAN_RX_ID, _CAN_RX_DATA)
         await self._fw.send_confirm(confirm.id, ok)
 
@@ -293,7 +283,6 @@ class Orchestrator:
             )
             return
 
-        # Таргет уже отправил фрейм, M5 принимает и верифицирует
         frame = await self._m5.can_recv(timeout_ms=500)
         verified = (
             frame is not None
@@ -322,7 +311,6 @@ class Orchestrator:
         Передать confirm оператору. Блокируется до resolve_operator_confirm().
         TUI должен показать prompt и дать возможность ответить.
         """
-        # очистить очередь на случай устаревшего ответа
         while not self._operator_queue.empty():
             self._operator_queue.get_nowait()
 
@@ -331,7 +319,6 @@ class Orchestrator:
             confirm=confirm,
         )
 
-        # ждём ответа от оператора (TUI вызовет resolve_operator_confirm)
         timeout_s = confirm.timeout_ms / 1000.0
         try:
             confirmed = await asyncio.wait_for(

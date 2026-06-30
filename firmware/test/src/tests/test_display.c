@@ -308,7 +308,7 @@ static void display_test_deinit(void)
 
 const test_module_t K_TEST_DISPLAY = {
     .id                 = "display",
-    .name               = "TFT Display RGB888",
+    .name               = "TFT Display",
     .critical           = false,
     .requires_hil       = false,
     .pre_confirm_prompt = NULL,

@@ -30,6 +30,7 @@ from textual.widgets import (
 
 from ..flasher import Flasher
 from ..models import FlashProgress, FlashTarget
+from ..widgets import AppFrame
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class FlashScreen(Screen):
     Экран прошивки.
 
     Messages:
-        FlashDone(success)  — прошивка завершена
+        FlashDone(success, target)  — прошивка завершена
     """
 
     BINDINGS = [
@@ -47,9 +48,10 @@ class FlashScreen(Screen):
     ]
 
     class FlashDone(Message):
-        def __init__(self, success: bool) -> None:
+        def __init__(self, success: bool, target: Optional[FlashTarget] = None) -> None:
             super().__init__()
             self.success = success
+            self.target = target
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -57,48 +59,42 @@ class FlashScreen(Screen):
         self._flashing = False
 
     def compose(self) -> ComposeResult:
-        with Vertical():
+        with AppFrame(id="flash-frame"):
             yield Label(
-                "⚡ Прошивка платы — BootROM SDP обнаружен",
+                "⚡ Загрузка прошивки на плату (BootROM SDP обнаружен)",
                 id="flash-title",
             )
 
             with Vertical(id="flash-target-group"):
-                yield Label("Что прошить?", classes="section-title")
+                yield Label("Выберите файл для загрузки", classes="section-title")
                 with RadioSet(id="flash-radio"):
                     yield RadioButton(
-                        "firmware_test  (диагностическая прошивка)",
+                        "Диагностическая прошивка (firmware_test)",
                         id="radio-fw-test",
                         value=True,
                     )
                     yield RadioButton(
-                        "Production     (bootloader + tft_app)",
+                        "Серийная прошивка (bootloader + tft_app)",
                         id="radio-production",
                     )
                     yield RadioButton(
-                        "Кастомный бинарь...",
+                        "Другое (подготовленный бинарный файл)",
                         id="radio-custom",
                     )
                 with Horizontal(id="flash-custom-path", classes="hidden"):
                     yield Input(
-                        placeholder="Путь к HAB-бинарю (.bin)",
+                        placeholder="Путь к бинарному файлу (.bin)",
                         id="flash-custom-input",
                     )
 
             with Horizontal(id="flash-btn-row"):
+                yield Button("▶ Загрузить ПО", id="flash-btn-flash", variant="warning")
+                yield Button("⚠ Очистить память", id="flash-btn-erase", variant="error")
                 yield Button(
-                    "▶ Прошить",
-                    id="flash-btn-flash",
-                    variant="warning",
-                )
-                yield Button(
-                    "⚠ Chip Erase",
-                    id="flash-btn-erase",
-                    variant="error",
+                    "✕ Выйти из программы", id="flash-btn-quit", variant="default"
                 )
 
-            yield ProgressBar(id="flash-progress-bar", show_eta=False)
-            yield Label("", id="flash-progress-label")
+            yield ProgressBar(id="flash-progress-bar", show_eta=False, classes="hidden")
             yield Log(id="flash-log", auto_scroll=True)
 
     # ── Обработчики ───────────────────────────────────────────────────────────
@@ -118,15 +114,19 @@ class FlashScreen(Screen):
             return
         target, bin_path = self._resolve_target()
         if target is None:
-            self._log("⚠ Укажите путь к бинарю")
+            self._log("⚠ Укажите путь к бинарному файлу!")
             return
         self._do_flash(target, bin_path)
 
     @on(Button.Pressed, "#flash-btn-erase")
     def _on_erase_pressed(self) -> None:
-        if self._flashing:
-            return
-        self._do_erase()
+        if not self._flashing:
+            self._do_erase()
+
+    @on(Button.Pressed, "#flash-btn-quit")
+    def _on_quit_pressed(self) -> None:
+        if not self._flashing:
+            self.app.exit()
 
     def action_go_back(self) -> None:
         if not self._flashing:
@@ -137,6 +137,7 @@ class FlashScreen(Screen):
     @work(exclusive=True, thread=False)
     async def _do_flash(self, target: FlashTarget, bin_path: Optional[Path]) -> None:
         self._set_busy(True)
+        self._show_progress(True)
         self._log(f"▶ Прошивка: {target.value}")
         ok = await self._flasher.flash(
             target=target,
@@ -144,16 +145,23 @@ class FlashScreen(Screen):
             progress_cb=self._on_progress,
         )
         self._set_busy(False)
+        self._finish_progress(ok)
         self._log("✅ Готово" if ok else "❌ Ошибка")
-        self.post_message(self.FlashDone(success=ok))
+        self.post_message(self.FlashDone(success=ok, target=target))
 
     @work(exclusive=True, thread=False)
     async def _do_erase(self) -> None:
         self._set_busy(True)
-        self._log("⚠ Chip erase (~30 с)...")
+        self._show_progress(True)
+        self._log("⚠ Очистка флеш памяти (~30 с)...")
         ok = await self._flasher.erase_chip(progress_cb=self._on_progress)
         self._set_busy(False)
-        self._log("✅ Chip erase завершён" if ok else "❌ Chip erase: ошибка")
+        self._finish_progress(ok)
+        self._log(
+            "✅ Очистка флеш памяти завершена"
+            if ok
+            else "❌ Очистка флеш памяти: ошибка"
+        )
 
     # ── Вспомогательные ───────────────────────────────────────────────────────
 
@@ -177,18 +185,29 @@ class FlashScreen(Screen):
         return None, None
 
     async def _on_progress(self, progress: FlashProgress) -> None:
-        self.query_one("#flash-progress-bar", ProgressBar).update(
-            progress=progress.percent
-        )
-        self.query_one("#flash-progress-label", Label).update(
-            f"{progress.phase}  {progress.percent}%"
-        )
+        bar = self.query_one("#flash-progress-bar", ProgressBar)
+        bar.update(total=100, progress=progress.percent)
         self._log(progress.message)
+
+    def _show_progress(self, visible: bool) -> None:
+        """Показать/скрыть прогресс-бар. Скрыт в простое — без анимации."""
+        bar = self.query_one("#flash-progress-bar", ProgressBar)
+        if visible:
+            bar.update(total=100, progress=0)
+            bar.remove_class("hidden")
+        else:
+            bar.add_class("hidden")
+
+    def _finish_progress(self, success: bool) -> None:
+        """Зафиксировать прогресс-бар на 100% с финальным статусом."""
+        bar = self.query_one("#flash-progress-bar", ProgressBar)
+        bar.update(total=100, progress=100)
 
     def _set_busy(self, busy: bool) -> None:
         self._flashing = busy
         self.query_one("#flash-btn-flash", Button).disabled = busy
         self.query_one("#flash-btn-erase", Button).disabled = busy
+        self.query_one("#flash-btn-quit", Button).disabled = busy
 
     def _log(self, msg: str) -> None:
         try:

@@ -343,7 +343,7 @@ static void usd_deinit(void)
 
 const test_module_t K_TEST_USD = {
     .id                 = "usd",
-    .name               = "microSD (SDIO)",
+    .name               = "microSD Card",
     .critical           = false,
     .requires_hil       = false,
     .pre_confirm_prompt = "Insert microSD card and press OK",
