@@ -20,13 +20,14 @@ import pytest
 from conftest import FirmwareCdc, M5Agent
 
 # CAN параметры — должны совпадать с test_can.c
-CAN_RX_ID   = 0x100
+CAN_RX_ID = 0x100
 CAN_RX_DATA = [0xDE, 0xAD, 0xBE, 0xEF]
-CAN_TX_ID   = 0x200
+CAN_TX_ID = 0x200
 CAN_TX_DATA = [0xCA, 0xFE, 0xBA, 0xBE]
 
 # Таймаут для M5 can_recv — с запасом относительно CAN_RX_TIMEOUT_MS (500 мс) в прошивке
 CAN_RECV_TIMEOUT_MS = 1000
+
 
 @pytest.mark.usb_vcom
 class TestFirmwareCan:
@@ -37,7 +38,6 @@ class TestFirmwareCan:
         self.cdc = firmware_cdc
         self.m5 = m5
 
-    
     def _on_confirm(self, confirm_id: str) -> bool:
         """
         Оркестратор CAN-теста.
@@ -50,7 +50,7 @@ class TestFirmwareCan:
           Таргет уже отправил фрейм ДО confirm_request.
           M5 принимает фрейм, проверяет id+data, возвращает результат.
         """
-  
+
         if confirm_id == "can_rx_ready":
             self.m5.can_send(CAN_RX_ID, CAN_RX_DATA)
             # Небольшая пауза чтобы фрейм успел уйти на шину
@@ -61,12 +61,15 @@ class TestFirmwareCan:
             try:
                 frame = self.m5.can_recv(timeout_ms=CAN_RECV_TIMEOUT_MS)
                 import logging
+
                 logging.getLogger(__name__).info(
-                    "M5 received frame: id=0x%X data=%s", 
-                    frame.get("id", -1), frame.get("data", [])
+                    "M5 received frame: id=0x%X data=%s",
+                    frame.get("id", -1),
+                    frame.get("data", []),
                 )
             except (TimeoutError, RuntimeError) as e:
                 import logging
+
                 logging.getLogger(__name__).warning("M5 can_recv failed: %s", e)
                 return False
 
@@ -90,7 +93,6 @@ class TestFirmwareCan:
     def test_ping(self) -> None:
         """Базовая проверка CDC-канала."""
         self.cdc.ping()
-        
 
     def test_can_pass(self) -> None:
         """
@@ -104,8 +106,7 @@ class TestFirmwareCan:
         )
 
         assert result.get("status") == "pass", (
-            f"test_can вернул {result.get('status')!r}: "
-            f"{result.get('detail', '')}"
+            f"test_can вернул {result.get('status')!r}: {result.get('detail', '')}"
         )
 
     def test_can_rx_fail_no_frame(self) -> None:
@@ -131,6 +132,4 @@ class TestFirmwareCan:
             f"Ожидали fail, получили {result.get('status')!r}"
         )
         detail = result.get("detail", "")
-        assert "no frame" in detail, (
-            f"detail должен содержать 'no frame': {detail!r}"
-        )
+        assert "no frame" in detail, f"detail должен содержать 'no frame': {detail!r}"

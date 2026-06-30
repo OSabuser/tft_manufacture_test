@@ -25,10 +25,10 @@ log = logging.getLogger(__name__)
 # CLI-опции pytest (перекрывают .env и os.environ)
 # ---------------------------------------------------------------------------
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--elf",      default=None,           help="Путь к .elf файлу")
-    parser.addoption("--vcom",     default=cfg.VCOM_PORT,  help="VCOM-порт MCU-Link")
-    parser.addoption("--m5-port",  default=None,           help="M5StampPLC serial port")
-    parser.addoption("--no-load",  action="store_true",    help="ELF уже запущен")
+    parser.addoption("--elf", default=None, help="Путь к .elf файлу")
+    parser.addoption("--vcom", default=cfg.VCOM_PORT, help="VCOM-порт MCU-Link")
+    parser.addoption("--m5-port", default=None, help="M5StampPLC serial port")
+    parser.addoption("--no-load", action="store_true", help="ELF уже запущен")
 
 
 # ---------------------------------------------------------------------------
@@ -105,9 +105,7 @@ class M5Agent:
             except json.JSONDecodeError:
                 continue
             if not resp.get("ok"):
-                raise RuntimeError(
-                    f"M5 error: {resp.get('err', '?')} (cmd={command})"
-                )
+                raise RuntimeError(f"M5 error: {resp.get('err', '?')} (cmd={command})")
             return resp
 
         raise TimeoutError(f"M5: нет ответа на '{command}'")
@@ -124,14 +122,15 @@ class M5Agent:
 
     def opto_all_off(self) -> None:
         self.cmd("opto_all_off")
+
     def info(self) -> dict:
         """Запросить информацию об агенте (включая can_ok)."""
         return self.cmd("info")
- 
+
     def can_send(self, can_id: int, data: list, ext: bool = False) -> None:
         """Отправить CAN-фрейм с шины M5."""
         self.cmd("can_send", id=can_id, data=list(data), ext=ext)
- 
+
     def can_recv(self, timeout_ms: int = 500) -> dict:
         """
         Принять CAN-фрейм на M5.
@@ -205,11 +204,12 @@ def m5(request: pytest.FixtureRequest) -> Generator[M5Agent, None, None]:
 # Фикстуры загрузки (scope=module — один раз на файл с тестами)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def loaded_host_uart(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     """
     Загрузить test_hil_button.elf на таргет по SWD
- 
+
     Явная зависимость от m5 гарантирует порядок:
       1. m5 создаётся первым → питание таргета включено
       2. только потом pyOCD подключается и грузит ELF
@@ -219,11 +219,12 @@ def loaded_host_uart(request: pytest.FixtureRequest, m5: M5Agent) -> None:
         Path(cfg.BUILD_DIR) / "tests/target/host_uart/test_host_uart.elf",
     )
 
+
 @pytest.fixture(scope="module")
 def loaded_hil_button(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     """
     Загрузить test_hil_button.elf на таргет по SWD
- 
+
     Явная зависимость от m5 гарантирует порядок:
       1. m5 создаётся первым → питание таргета включено
       2. только потом pyOCD подключается и грузит ELF
@@ -232,6 +233,7 @@ def loaded_hil_button(request: pytest.FixtureRequest, m5: M5Agent) -> None:
         request,
         Path(cfg.BUILD_DIR) / "tests/target/hil_button/test_hil_button.elf",
     )
+
 
 @pytest.fixture(scope="module")
 def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
@@ -249,11 +251,12 @@ def loaded_hil_opto(request: pytest.FixtureRequest, m5: M5Agent) -> None:
         Path(cfg.BUILD_DIR) / "tests/target/hil_opto/test_hil_opto.elf",
     )
 
+
 @pytest.fixture(scope="module")
 def loaded_hil_can(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     """
     Загрузить test_hil_can.elf  на таргет по SWD
- 
+
     Явная зависимость от m5 гарантирует порядок:
       1. m5 создаётся первым → питание таргета включено
       2. только потом pyOCD подключается и грузит ELF
@@ -263,11 +266,12 @@ def loaded_hil_can(request: pytest.FixtureRequest, m5: M5Agent) -> None:
         Path(cfg.BUILD_DIR) / "tests/target/hil_can/test_hil_can.elf",
     )
 
+
 @pytest.fixture(scope="module")
 def loaded_hil_usb_cdc(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     """
     Загрузить test_hil_usb_cdc.elf  на таргет по SWD
- 
+
     Явная зависимость от m5 гарантирует порядок:
       1. m5 создаётся первым → питание таргета включено
       2. только потом pyOCD подключается и грузит ELF
@@ -277,29 +281,38 @@ def loaded_hil_usb_cdc(request: pytest.FixtureRequest, m5: M5Agent) -> None:
         Path(cfg.BUILD_DIR) / "tests/target/hil_usb_cdc/test_hil_usb_cdc.elf",
     )
 
+
 # ---------------------------------------------------------------------------
 # Фикстуры UART (установление соединения с VCOM программатора NXP MCU-Link)
 # Выполняется один раз на тест
 # ---------------------------------------------------------------------------
 _UART_FIXTURE_MAP = {
-    "uart":             "loaded_host_uart",
-    "uart_opto":        "loaded_hil_opto",
-    "uart_can":         "loaded_hil_can",
-    "uart_button":      "loaded_hil_button",
+    "uart": "loaded_host_uart",
+    "uart_opto": "loaded_hil_opto",
+    "uart_can": "loaded_hil_can",
+    "uart_button": "loaded_hil_button",
     "uart_hil_usb_cdc": "loaded_hil_usb_cdc",
 }
+
+
 def _make_uart_fixture(loaded_name: str):
     @pytest.fixture(scope="module")
-    def _fixture(request: pytest.FixtureRequest) -> Generator[serial.Serial, None, None]:
+    def _fixture(
+        request: pytest.FixtureRequest,
+    ) -> Generator[serial.Serial, None, None]:
         request.getfixturevalue(loaded_name)  # триггерит зависимость явно
         port = request.config.getoption("--vcom")
         with _uart_context(port, cfg.VCOM_BAUD, cfg.READY_TIMEOUT) as ser:
             yield ser
+
     return _fixture
+
 
 # Регистрируем все фикстуры в пространстве имён модуля одной строкой
 for _name, _dep in _UART_FIXTURE_MAP.items():
     globals()[_name] = _make_uart_fixture(_dep)
+
+
 # ---------------------------------------------------------------------------
 # Фикстуры USB CDC (открытие порта, установка DTR)
 # ---------------------------------------------------------------------------
@@ -318,13 +331,17 @@ def usb_cdc_port(
     ser = None
     while time.monotonic() < deadline:
         try:
-            ser = serial.Serial(port=cfg.TARGET_VCOM_PORT, baudrate=cfg.TARGET_VCOM_BAUD, timeout=0.5)
+            ser = serial.Serial(
+                port=cfg.TARGET_VCOM_PORT, baudrate=cfg.TARGET_VCOM_BAUD, timeout=0.5
+            )
             break
         except serial.SerialException:
             time.sleep(0.3)
 
     if ser is None:
-        pytest.fail(f"USB CDC port {cfg.TARGET_VCOM_PORT} not available after {cfg.TARGET_VCOM_TIMEOUT}s")
+        pytest.fail(
+            f"USB CDC port {cfg.TARGET_VCOM_PORT} not available after {cfg.TARGET_VCOM_TIMEOUT}s"
+        )
 
     try:
         # Установить DTR чтобы firmware увидела DTE presence.
@@ -334,7 +351,7 @@ def usb_cdc_port(
         ser.reset_input_buffer()
         yield ser
     finally:
-        ser.close()  
+        ser.close()
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +370,7 @@ def uart_cmd(ser: serial.Serial, cmd: str) -> str:
 # ---------------------------------------------------------------------------
 # firmware_test CDC — фикстура для тестирования firmware_test через протокол v2
 # ---------------------------------------------------------------------------
+
 
 class FirmwareCdc:
     """
@@ -395,7 +413,9 @@ class FirmwareCdc:
             msg = self._readline(timeout_s=max(remaining, 0.1))
             if msg.get("type") == event_type:
                 return msg
-            log.debug("firmware_cdc: пропускаем %r (ждём %r)", msg.get("type"), event_type)
+            log.debug(
+                "firmware_cdc: пропускаем %r (ждём %r)", msg.get("type"), event_type
+            )
         raise TimeoutError(
             f"firmware_cdc: событие {event_type!r} не получено за {timeout_s} с"
         )
@@ -504,8 +524,7 @@ def firmware_cdc(m5: M5Agent) -> Generator[FirmwareCdc, None, None]:
 
     if ser is None:
         pytest.fail(
-            f"CDC порт {cfg.TARGET_VCOM_PORT} недоступен "
-            f"за {cfg.TARGET_VCOM_TIMEOUT} с"
+            f"CDC порт {cfg.TARGET_VCOM_PORT} недоступен за {cfg.TARGET_VCOM_TIMEOUT} с"
         )
 
     try:

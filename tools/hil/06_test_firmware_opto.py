@@ -25,19 +25,20 @@ import pytest
 from conftest import FirmwareCdc, M5Agent
 
 
-RELAY_ON_S  = 0.1   # реле замыкается быстро
-RELAY_OFF_S = 0.25    # размыкание + дебаунс прошивки с запасом
+RELAY_ON_S = 0.1  # реле замыкается быстро
+RELAY_OFF_S = 0.25  # размыкание + дебаунс прошивки с запасом
 
 
 # Маппинг confirm_id → (opto_ch, state)
 _OPTO_ACTIONS: dict[str, tuple[int, bool]] = {
-    "opto_in1_active":   (1, True),
+    "opto_in1_active": (1, True),
     "opto_in1_inactive": (1, False),
-    "opto_in2_active":   (2, True),
+    "opto_in2_active": (2, True),
     "opto_in2_inactive": (2, False),
-    "opto_rs_active":    (3, True),
-    "opto_rs_inactive":  (3, False),
+    "opto_rs_active": (3, True),
+    "opto_rs_inactive": (3, False),
 }
+
 
 @pytest.mark.usb_vcom
 class TestFirmwareOpto:
@@ -86,8 +87,7 @@ class TestFirmwareOpto:
         )
 
         assert result.get("status") == "pass", (
-            f"test_opto вернул {result.get('status')!r}: "
-            f"{result.get('detail', '')}"
+            f"test_opto вернул {result.get('status')!r}: {result.get('detail', '')}"
         )
 
     def test_opto_in1_fail_on_inactive(self) -> None:
@@ -111,6 +111,4 @@ class TestFirmwareOpto:
             f"Ожидали fail, получили {result.get('status')!r}"
         )
         detail = result.get("detail", "")
-        assert "mismatch" in detail, (
-            f"detail должен содержать 'mismatch': {detail!r}"
-        )
+        assert "mismatch" in detail, f"detail должен содержать 'mismatch': {detail!r}"

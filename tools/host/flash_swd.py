@@ -48,16 +48,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # ── Конфигурация из окружения (just экспортирует .env через set export) ───────
 
+
 def _env(key: str, default: str) -> str:
     return os.environ.get(key, default)
 
-PYOCD_TARGET    = _env("PYOCD_TARGET",    "mimxrt1050_quadspi")
+
+PYOCD_TARGET = _env("PYOCD_TARGET", "mimxrt1050_quadspi")
 PYOCD_FREQUENCY = _env("PYOCD_FREQUENCY", "4000000")
-BUILD_DIR       = Path(_env("BUILD_DIR",  str(REPO_ROOT / "build")))
-FCB_PATH        = Path(_env("FCB_PATH",   str(REPO_ROOT / "tools/host/dcd/w25q128_fdcb.bin")))
+BUILD_DIR = Path(_env("BUILD_DIR", str(REPO_ROOT / "build")))
+FCB_PATH = Path(_env("FCB_PATH", str(REPO_ROOT / "tools/host/dcd/w25q128_fdcb.bin")))
 if not FCB_PATH.is_absolute():
     FCB_PATH = REPO_ROOT / FCB_PATH
-HIL_DIR         = REPO_ROOT / "tools" / "hil"
+HIL_DIR = REPO_ROOT / "tools" / "hil"
 
 # IVT располагается по смещению 0x1000 от начала Flash (ivtOffset в HAB yaml)
 IVT_OFFSET = 0x1000
@@ -65,11 +67,12 @@ IVT_OFFSET = 0x1000
 # Маппинг имён прошивок → имена HAB-файлов (генерируются build::hab-*)
 HAB_NAMES = {
     "firmware_test": "firmware_test_hab.bin",
-    "bootloader":    "bootloader_hab.bin",
-    "app":           "app_hab.bin",
+    "bootloader": "bootloader_hab.bin",
+    "app": "app_hab.bin",
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def build_full_image(fcb_path: Path, hab_path: Path) -> bytes:
     """Объединить FCB + padding + HAB в единый образ для записи с 0x60000000."""
@@ -82,7 +85,7 @@ def build_full_image(fcb_path: Path, hab_path: Path) -> bytes:
         )
 
     padding = b"\xff" * (IVT_OFFSET - len(fcb))  # 0xFF = erased flash value
-    image   = fcb + padding + hab
+    image = fcb + padding + hab
 
     print(f"  FCB:     {len(fcb):>6} bytes  @ 0x60000000")
     print(f"  Padding: {len(padding):>6} bytes  @ 0x{0x60000000 + len(fcb):08X}")
@@ -95,13 +98,20 @@ def build_full_image(fcb_path: Path, hab_path: Path) -> bytes:
 def run_pyocd_flash(image_path: Path, target: str, frequency: str) -> int:
     """Запустить pyocd flash через uv run из tools/hil."""
     cmd = [
-        "uv", "run",
-        "--directory", str(HIL_DIR),
-        "pyocd", "flash",
-        "--target",       target,
-        "--frequency",    frequency,
-        "--base-address", "0x60000000",
-        "--erase",        "sector",
+        "uv",
+        "run",
+        "--directory",
+        str(HIL_DIR),
+        "pyocd",
+        "flash",
+        "--target",
+        target,
+        "--frequency",
+        frequency,
+        "--base-address",
+        "0x60000000",
+        "--erase",
+        "sector",
         str(image_path),
     ]
     print(f"\n  Running: {' '.join(cmd)}\n")
@@ -110,10 +120,11 @@ def run_pyocd_flash(image_path: Path, target: str, frequency: str) -> int:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Flash MIMXRT1052 via SWD (MCU-Link). "
-                    "Prepends FCB to HAB image before programming.",
+        "Prepends FCB to HAB image before programming.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -170,7 +181,7 @@ def main() -> int:
     if not hab_path.exists():
         print(f"  ❌  HAB image not found: {hab_path}", file=sys.stderr)
         fw_slug = args.firmware.replace("_", "-")
-        bt_slug  = args.build_type.lower()
+        bt_slug = args.build_type.lower()
         print(
             f"  Hint: run  just build::hab-{fw_slug}-{bt_slug}  "
             "inside devcontainer first.",

@@ -43,6 +43,7 @@ def usb_cdc_echo(ser, data: bytes, timeout_s: float = USB_CDC_READ_TIMEOUT_S) ->
 
     return result
 
+
 @pytest.mark.usb_vcom
 class TestUsbCdcBasic:
     """Базовые тесты USB CDC ACM — enumeration, echo, payload sizes."""

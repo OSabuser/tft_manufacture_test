@@ -109,17 +109,17 @@ set(CMAKE_ASM_FLAGS_DEBUG
     CACHE INTERNAL "")
 
 set(CMAKE_C_FLAGS_RELEASE
-    "-O3 -DNDEBUG"
+    "-O1 -DNDEBUG"
     CACHE INTERNAL "")
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-O3 -DNDEBUG"
+    "-O1 -DNDEBUG"
     CACHE INTERNAL "")
 set(CMAKE_ASM_FLAGS_RELEASE
     ""
     CACHE INTERNAL "")
 
 # -----------------------------------------------------------------------------
-# C runtime библиотека — newlib-nano (меньше размер, подходит для embedded)
+# C runtime библиотека — newlib-nano
 # -----------------------------------------------------------------------------
 # --specs=nano.specs        — использовать newlib-nano: облегчённая stdlib,
 # меньший размер printf/malloc -Wl,--no-warn-rwx-segments — подавить

@@ -37,7 +37,7 @@ from conftest import uart_cmd
 
 # При 125 kbit/s один фрейм занимает ~0.1 мс.
 # Добавляем запас на задержку USB CDC (M5 ↔ хост) и polling в прошивке.
-CAN_SETTLE_S = 0.05   # ждать после отправки перед чтением
+CAN_SETTLE_S = 0.05  # ждать после отправки перед чтением
 
 # Таймаут CAN_RECV на таргете (мс) — передаётся в команду.
 # Должен быть достаточным для round-trip через шину + USB CDC M5.
@@ -50,6 +50,7 @@ CAN_RECV_EMPTY_MS = 100
 # ---------------------------------------------------------------------------
 # Вспомогательные функции
 # ---------------------------------------------------------------------------
+
 
 def can_send_m5(m5, can_id: int, data: list[int], ext: bool = False) -> None:
     """M5 отправляет CAN-фрейм на шину."""
@@ -70,10 +71,10 @@ def can_send_target(ser, can_id: int, data: list[int], ext: bool = False) -> str
     Таргет отправляет CAN-фрейм.
     Возвращает ответ прошивки: 'OK', 'ERR_TIMEOUT', 'ERR_BUSY', 'ERR_PARAM'.
     """
-    dlc       = len(data)
-    data_str  = " ".join(str(b) for b in data)
-    ext_flag  = 1 if ext else 0
-    cmd       = f"CAN_SEND {can_id} {ext_flag} {dlc}"
+    dlc = len(data)
+    data_str = " ".join(str(b) for b in data)
+    ext_flag = 1 if ext else 0
+    cmd = f"CAN_SEND {can_id} {ext_flag} {dlc}"
     if dlc > 0:
         cmd += f" {data_str}"
     return uart_cmd(ser, cmd)
@@ -91,9 +92,9 @@ def can_recv_target(ser, timeout_ms: int = CAN_RECV_TIMEOUT_MS) -> dict | None:
     if len(parts) < 3:
         raise ValueError(f"Неожиданный ответ CAN_RECV: {resp!r}")
     can_id = int(parts[0])
-    ext    = bool(int(parts[1]))
-    dlc    = int(parts[2])
-    data   = [int(b) for b in parts[3:3 + dlc]]
+    ext = bool(int(parts[1]))
+    dlc = int(parts[2])
+    data = [int(b) for b in parts[3 : 3 + dlc]]
     return {"id": can_id, "ext": ext, "dlc": dlc, "data": data}
 
 
@@ -112,13 +113,14 @@ def reset_events(ser) -> None:
 # Проверка каналов связи
 # ---------------------------------------------------------------------------
 
+
 class TestCanConnectivity:
     """Базовая проверка: таргет и M5 отвечают."""
 
     @pytest.fixture(autouse=True)
     def _setup(self, uart_can, m5):
         self.ser = uart_can
-        self.m5  = m5
+        self.m5 = m5
 
     def test_target_ping(self):
         """PING → PONG: UART-канал host↔target работает."""
@@ -131,12 +133,15 @@ class TestCanConnectivity:
     def test_m5_can_available(self):
         """M5 сообщает что CAN инициализирован (can_ok=true в info)."""
         info = self.m5.info()
-        assert info.get("can_ok"), "M5 CAN не инициализирован — проверьте трансивер и agent.py"
+        assert info.get("can_ok"), (
+            "M5 CAN не инициализирован — проверьте трансивер и agent.py"
+        )
 
 
 # ---------------------------------------------------------------------------
 # M5 → таргет
 # ---------------------------------------------------------------------------
+
 
 class TestCanM5ToTarget:
     """M5 отправляет фрейм — таргет принимает."""
@@ -144,7 +149,7 @@ class TestCanM5ToTarget:
     @pytest.fixture(autouse=True)
     def _setup(self, uart_can, m5):
         self.ser = uart_can
-        self.m5  = m5
+        self.m5 = m5
         uart_cmd(self.ser, "CAN_ACCEPT_ALL")
         reset_events(self.ser)
 
@@ -153,10 +158,10 @@ class TestCanM5ToTarget:
         payload = [0x11, 0x22, 0x33]
         can_send_m5(self.m5, 0x123, payload)
         frame = can_recv_target(self.ser)
-        assert frame is not None,        "Таргет не принял фрейм от M5"
-        assert frame["id"]   == 0x123,   f"Неверный ID: {frame['id']:#x}"
-        assert frame["ext"]  is False,   "Ожидали STD-фрейм"
-        assert frame["dlc"]  == 3,       f"Неверный DLC: {frame['dlc']}"
+        assert frame is not None, "Таргет не принял фрейм от M5"
+        assert frame["id"] == 0x123, f"Неверный ID: {frame['id']:#x}"
+        assert frame["ext"] is False, "Ожидали STD-фрейм"
+        assert frame["dlc"] == 3, f"Неверный DLC: {frame['dlc']}"
         assert frame["data"] == payload, f"Неверные данные: {frame['data']}"
 
     def test_ext_frame_received(self):
@@ -164,10 +169,10 @@ class TestCanM5ToTarget:
         payload = [0xAA, 0xBB]
         can_send_m5(self.m5, 0x1ABCDEF, payload, ext=True)
         frame = can_recv_target(self.ser)
-        assert frame is not None,            "Таргет не принял EXT-фрейм"
-        assert frame["id"]  == 0x1ABCDEF,    f"Неверный EXT ID: {frame['id']:#x}"
-        assert frame["ext"] is True,         "Ожидали EXT-фрейм"
-        assert frame["data"] == payload,     f"Неверные данные: {frame['data']}"
+        assert frame is not None, "Таргет не принял EXT-фрейм"
+        assert frame["id"] == 0x1ABCDEF, f"Неверный EXT ID: {frame['id']:#x}"
+        assert frame["ext"] is True, "Ожидали EXT-фрейм"
+        assert frame["data"] == payload, f"Неверные данные: {frame['data']}"
 
     def test_max_dlc_frame(self):
         """M5 TX 8-байтовый фрейм — таргет принимает все 8 байт корректно."""
@@ -175,7 +180,7 @@ class TestCanM5ToTarget:
         can_send_m5(self.m5, 0x7FF, payload)
         frame = can_recv_target(self.ser)
         assert frame is not None
-        assert frame["dlc"]  == 8
+        assert frame["dlc"] == 8
         assert frame["data"] == payload
 
     def test_zero_dlc_frame(self):
@@ -183,7 +188,7 @@ class TestCanM5ToTarget:
         can_send_m5(self.m5, 0x001, [])
         frame = can_recv_target(self.ser)
         assert frame is not None
-        assert frame["dlc"]  == 0
+        assert frame["dlc"] == 0
         assert frame["data"] == []
 
     def test_rx_event_counter_increments(self):
@@ -200,21 +205,22 @@ class TestCanM5ToTarget:
 # Таргет → M5
 # ---------------------------------------------------------------------------
 
+
 class TestCanTargetToM5:
     """Таргет отправляет фрейм — M5 принимает."""
 
     @pytest.fixture(autouse=True)
     def _setup(self, uart_can, m5):
         self.ser = uart_can
-        self.m5  = m5
+        self.m5 = m5
 
     def test_std_frame_sent(self):
         """Таргет TX STD → M5 принимает с верным ID и данными."""
         payload = [0xDE, 0xAD, 0xBE, 0xEF]
         assert can_send_target(self.ser, 0x456, payload) == "OK"
         frame = can_recv_m5(self.m5)
-        assert frame["id"]   == 0x456,   f"Неверный ID: {frame['id']:#x}"
-        assert frame["ext"]  is False,   "Ожидали STD-фрейм"
+        assert frame["id"] == 0x456, f"Неверный ID: {frame['id']:#x}"
+        assert frame["ext"] is False, "Ожидали STD-фрейм"
         assert frame["data"] == payload, f"Неверные данные: {frame['data']}"
 
     def test_ext_frame_sent(self):
@@ -222,8 +228,8 @@ class TestCanTargetToM5:
         payload = [0x01, 0x02]
         assert can_send_target(self.ser, 0x1FFFFFF, payload, ext=True) == "OK"
         frame = can_recv_m5(self.m5)
-        assert frame["id"]  == 0x1FFFFFF, f"Неверный EXT ID: {frame['id']:#x}"
-        assert frame["ext"] is True,      "Ожидали EXT-фрейм"
+        assert frame["id"] == 0x1FFFFFF, f"Неверный EXT ID: {frame['id']:#x}"
+        assert frame["ext"] is True, "Ожидали EXT-фрейм"
 
     def test_max_std_id(self):
         """Максимальный достижимый STD ID через M5 recv — проверяем 0x7FE."""
@@ -249,13 +255,15 @@ class TestCanTargetToM5:
         payload = [0x00, 0xFF, 0x55, 0xAA, 0x0F, 0xF0, 0x01, 0xFE]
         assert can_send_target(self.ser, 0x300, payload) == "OK"
         frame = can_recv_m5(self.m5)
-        assert frame["data"] == payload, \
+        assert frame["data"] == payload, (
             f"Данные искажены: ожидали {payload}, получили {frame['data']}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Фильтрация
 # ---------------------------------------------------------------------------
+
 
 class TestCanFiltering:
     """
@@ -266,7 +274,7 @@ class TestCanFiltering:
     @pytest.fixture(autouse=True)
     def _setup(self, uart_can, m5):
         self.ser = uart_can
-        self.m5  = m5
+        self.m5 = m5
         reset_events(self.ser)
 
     def test_accept_all_receives_any_id(self):
@@ -288,24 +296,27 @@ class TestCanFiltering:
 
         can_send_m5(self.m5, target_id, [0xAA])
         frame = can_recv_target(self.ser)
-        assert frame is not None,         "Фрейм с нужным ID не принят"
-        assert frame["id"] == target_id,  f"Получен ID {frame['id']:#x}, ожидали {target_id:#x}"
+        assert frame is not None, "Фрейм с нужным ID не принят"
+        assert frame["id"] == target_id, (
+            f"Получен ID {frame['id']:#x}, ожидали {target_id:#x}"
+        )
 
     def test_filter_wrong_id_blocked(self):
         """set_filter с точной маской блокирует другой ID."""
         target_id = 0x123
-        wrong_id  = 0x456
+        wrong_id = 0x456
         assert set_filter_target(self.ser, 0, target_id, 0x7FF) == "OK"
 
         can_send_m5(self.m5, wrong_id, [0xBB])
         frame = can_recv_target(self.ser, timeout_ms=CAN_RECV_EMPTY_MS)
-        assert frame is None, \
+        assert frame is None, (
             f"Фрейм с ID {wrong_id:#x} прошёл фильтр, хотя не должен был"
+        )
 
     def test_filter_mask_passes_group(self):
         """Маска 0x7F0 пропускает группу ID с одинаковыми старшими битами."""
         base_id = 0x120
-        mask    = 0x7F0  # проверять биты 11..4, биты 3..0 — игнорировать
+        mask = 0x7F0  # проверять биты 11..4, биты 3..0 — игнорировать
 
         assert set_filter_target(self.ser, 0, base_id, mask) == "OK"
 
@@ -327,8 +338,8 @@ class TestCanFiltering:
 
         can_send_m5(self.m5, target_id, [0x42], ext=True)
         frame = can_recv_target(self.ser)
-        assert frame is not None,        "EXT-фрейм с нужным ID не принят"
-        assert frame["id"]  == target_id
+        assert frame is not None, "EXT-фрейм с нужным ID не принят"
+        assert frame["id"] == target_id
         assert frame["ext"] is True
 
     def test_accept_all_after_filter(self):
@@ -353,13 +364,14 @@ class TestCanFiltering:
 # STD и EXT раздельно
 # ---------------------------------------------------------------------------
 
+
 class TestCanFrameTypes:
     """STD и EXT фреймы не перепутываются — is_extended корректен."""
 
     @pytest.fixture(autouse=True)
     def _setup(self, uart_can, m5):
         self.ser = uart_can
-        self.m5  = m5
+        self.m5 = m5
         uart_cmd(self.ser, "CAN_ACCEPT_ALL")
 
     def test_std_frame_is_not_ext(self):
@@ -374,15 +386,15 @@ class TestCanFrameTypes:
         can_send_m5(self.m5, 0x1FF, [0x01], ext=True)
         frame = can_recv_target(self.ser)
         assert frame is not None
-        assert frame["ext"] is True,  "EXT-фрейм ошибочно помечен как STD"
+        assert frame["ext"] is True, "EXT-фрейм ошибочно помечен как STD"
 
     def test_std_id_range_boundary(self):
         """Граничные STD ID: 0x000 и 0x7FF."""
         for can_id in [0x000, 0x7FF]:
             can_send_m5(self.m5, can_id, [0xBB])
             frame = can_recv_target(self.ser)
-            assert frame is not None,      f"ID {can_id:#x} не принят"
-            assert frame["id"] == can_id,  f"ID {frame['id']:#x} ≠ {can_id:#x}"
+            assert frame is not None, f"ID {can_id:#x} не принят"
+            assert frame["id"] == can_id, f"ID {frame['id']:#x} ≠ {can_id:#x}"
             assert frame["ext"] is False
 
     def test_ext_id_range_boundary(self):
@@ -390,6 +402,6 @@ class TestCanFrameTypes:
         for can_id in [0x000, 0x1FFFFFFF]:
             can_send_m5(self.m5, can_id, [0xCC], ext=True)
             frame = can_recv_target(self.ser)
-            assert frame is not None,     f"EXT ID {can_id:#x} не принят"
+            assert frame is not None, f"EXT ID {can_id:#x} не принят"
             assert frame["id"] == can_id, f"EXT ID {frame['id']:#x} ≠ {can_id:#x}"
             assert frame["ext"] is True

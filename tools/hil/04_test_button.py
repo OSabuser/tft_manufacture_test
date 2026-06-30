@@ -25,9 +25,9 @@ def _operator_prompt(msg: str) -> None:
     input(f"\n  >>> {msg}\n      Нажмите Enter когда готово...")
     time.sleep(DEBOUNCE_SETTLE_S)
 
+
 @pytest.mark.interactive
 class TestHilButton:
-
     @pytest.fixture(autouse=True)
     def _setup(self, uart_button):
         self.ser = uart_button
