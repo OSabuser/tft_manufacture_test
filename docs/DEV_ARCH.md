@@ -194,8 +194,13 @@ flowchart LR
 │   │   ├── flash_usb.py          ← USB SDP: sdphost + blhost
 │   │   ├── flash_swd.py          ← SWD: FCB + HAB → pyOCD Flash
 │   │   ├── hab/                  ← HAB yaml-конфиги (nxpimage)
-│   │   ├── dcd/                  ← w25q128_fdcb.bin, ivt_flashloader.bin
+│   │   ├── dcd/                  ← w25q128_fdcb.bin, w25q512_fdcb.bin,
+│   │   │                            dcd.bin, ivt_flashloader.bin
 │   │   └── uv.lock
+│   │
+│   ├── production/               ← service-tui: TUI сервисного инженера (Textual)
+│   │                                прошивка/диагностика готовых плат, см.
+│   │                                tools/production/README.md + DEV_ARCH.md
 │   │
 │   └── hil/                      ← HIL pytest-окружение
 │       ├── conftest.py           ← фикстуры: m5, loaded_<n>, uart_<n>

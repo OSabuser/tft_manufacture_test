@@ -367,7 +367,7 @@ static void sdram_test_deinit(void)
 
 const test_module_t K_TEST_SDRAM = {
     .id                 = "sdram",
-    .name               = "SDRAM 32 MB",
+    .name               = "SDRAM MT48LC16x",
     .critical           = true,
     .requires_hil       = false,
     .pre_confirm_prompt = NULL,

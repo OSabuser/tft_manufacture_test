@@ -331,6 +331,12 @@ static void handle_cmd(const char *p_line)
         return;
     }
 
+    if (strcmp(cmd_name, "get_version") == 0)
+    {
+        protocol_send_version_response();
+        return;
+    }
+
     if (strcmp(cmd_name, "list_tests") == 0)
     {
         test_runner_send_list();

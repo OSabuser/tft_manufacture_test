@@ -11,6 +11,7 @@ _venv := if _uname =~ "MINGW|MSYS|CYGWIN" { ".venv-host-win" } else { ".venv-hos
 JUST_MIN := "1.36.0"
 UV_MIN := "0.4.0"
 DOCKER_MIN := "24.0.0"
+PLATFORM := os()
 
 set working-directory := '..'
 
@@ -31,14 +32,6 @@ check-deps:
     fail() { echo -e "  ${RED}❌  ${1}${RESET}"; ERRORS=$((ERRORS+1)); }
     warn() { echo -e "  ${YELLOW}⚠️   ${1}${RESET}"; WARNINGS=$((WARNINGS+1)); }
 
-    _uname="$(uname -s)"
-    case "${_uname}" in
-        Linux*)               PLATFORM="linux"   ;;
-        Darwin*)              PLATFORM="macos"   ;;
-        MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
-        *)                    PLATFORM="unknown" ;;
-    esac
-
     semver_ge() {
         local a="$1" b="$2"
         local a1 a2 a3 b1 b2 b3
@@ -56,7 +49,7 @@ check-deps:
 
     install_hint() {
         local tool=$1
-        case "${PLATFORM}" in
+        case "{{ PLATFORM }}" in
             linux)
                 case "$tool" in
                     just)   echo "uv tool install 'rust-just=={{ JUST_MIN }}'" ;;
@@ -100,7 +93,7 @@ check-deps:
     }
 
     echo ""
-    echo -e "${BOLD}  Platform: ${PLATFORM}${RESET}"
+    echo -e "${BOLD}  Platform: {{ PLATFORM }}${RESET}"
     echo ""
     echo -e "${BOLD}  Checking host dependencies...${RESET}"
     echo ""
@@ -109,7 +102,7 @@ check-deps:
     check_tool "uv"     "uv"     "{{ UV_MIN }}"
     check_tool "docker" "docker" "{{ DOCKER_MIN }}"
 
-    if [[ "${PLATFORM}" == "linux" ]]; then
+    if [[ "{{ PLATFORM }}" == "linux" ]]; then
         echo ""
         echo -e "${BOLD}  Checking udev rules (Linux only)...${RESET}"
         echo ""
@@ -182,22 +175,16 @@ setup-tools:
 bootstrap:
     #!/usr/bin/env bash
     set -euo pipefail
-    _uname="$(uname -s)"
-    case "${_uname}" in
-        Linux*)               PLATFORM="linux"   ;;
-        Darwin*)              PLATFORM="macos"   ;;
-        MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
-        *)                    PLATFORM="unknown" ;;
-    esac
+
     echo ""
     echo "  === Bootstrap: step 1/3 -- check-deps ==="
     just host::check-deps
-    if [[ "${PLATFORM}" == "linux" ]]; then
+    if [[ "{{ PLATFORM }}" == "linux" ]]; then
         echo "  === Bootstrap: step 2/3 -- setup-udev ==="
         just host::setup-udev
         just host::setup-m5-udev
     else
-        echo "  ℹ️  step 2/3 -- setup-udev skipped (${PLATFORM})"
+        echo "  ℹ️  step 2/3 -- setup-udev skipped ({{ PLATFORM }})"
     fi
     echo "  === Bootstrap: step 3/3 -- setup-tools ==="
     just host::setup-tools
@@ -255,20 +242,23 @@ flash-ram project type="debug":
 
 [doc('Прошить firmware_test Debug через USB SDP')]
 [group('flash-sdp')]
-flash-test-debug:
-    @just host::flash firmware_test debug
+flash-test-debug: (flash "firmware_test" "debug")
 
 [doc('Прошить firmware_test Release через USB SDP')]
 [group('flash-sdp')]
-flash-test-release:
-    @just host::flash firmware_test release
+flash-test-release: (flash "firmware_test" "release")
 
 [confirm("Flash bootloader + app (Release)?")]
 [doc('Прошить bootloader + tft_app Release через USB SDP (производство)')]
 [group('flash-sdp')]
-flash-production:
-    @just host::flash bootloader release
-    @just host::flash app release
+flash-production: (flash "bootloader" "release") (flash "app" "release")
+
+[confirm("Стереть всю Flash (W25Q128) через USB SDP? Все прошивки будут удалены.")]
+[doc('Стереть всю Flash (W25Q128) через USB SDP (chip erase, ~30 с)')]
+[group('flash-sdp')]
+flash-sdp-erase:
+    cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run python flash_usb.py \
+        --erase-chip
 
 # =============================================================================
 # ГРУППА: flash-swd — прошивка через SWD (MCU-Link, без смены BOOT_MODE)
@@ -319,7 +309,7 @@ flash-swd-erase:
     uv run --directory {{ HIL_DIR }} pyocd erase \
         --target {{ env('PYOCD_TARGET', 'mimxrt1050_quadspi') }} \
         --frequency {{ env('PYOCD_FREQUENCY', '4000000') }} \
-        --chip
+        --chip -O resume_on_disconnect=False
 
 # =============================================================================
 # ГРУППА: hil — запуск HIL-тестов на реальном железе
@@ -543,3 +533,36 @@ incoming: flash-test-release
 [group('pipeline')]
 production: flash-production
     @echo "  ✅  Production firmware flashed"
+
+# =============================================================================
+# ГРУППА: service — TUI сервисного инженера
+# =============================================================================
+
+PRODUCTION_DIR := justfile_directory() / 'tools/production'
+
+[doc('Установить/обновить зависимости TUI сервисного инженера')]
+[group('service')]
+service-setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "  📦  Syncing tools/production deps..."
+    cd "{{ PRODUCTION_DIR }}" && uv sync
+    echo "  ✅  tools/production deps installed"
+
+[doc('Запустить TUI сервисного инженера')]
+[group('service')]
+service-tui:
+    uv run --directory {{ PRODUCTION_DIR }} python main.py
+
+[doc('Собрать standalone-бинарь TUI (PyInstaller → dist/service_tui)')]
+[group('service')]
+service-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "  🔨  Building standalone service-tui..."
+    cd "{{ PRODUCTION_DIR }}" && uv run pyinstaller \
+        --onefile \
+        --name service_tui \
+        --add-data "../shared:shared" \
+        main.py
+    echo "  ✅  dist/service_tui ready"

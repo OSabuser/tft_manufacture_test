@@ -222,11 +222,11 @@ static bool step_rot_apply_and_confirm(bsp_display_rotation_t rotation, const ch
 static bool step_rotation(test_result_t *p_out)
 {
     bool ok = step_rot_apply_and_confirm(BSP_DISPLAY_ROTATE_0, "display_rot0",
-                                         "Screen: left RED, right BLUE?", p_out);
+                                         "Дисплей: слева - красный, справа - синий?", p_out);
     if (ok)
     {
         ok = step_rot_apply_and_confirm(BSP_DISPLAY_FLIP_HORIZONTAL, "display_rot_base",
-                                        "Left RED and right BLUE swapped sides?", p_out);
+                                        "Дисплей: слева - синий, справа - красный?", p_out);
     }
 
     /* Восстановить ROTATE_0 в любом исходе */
@@ -264,19 +264,19 @@ static test_result_t display_test_run(void)
     test_result_t fail_result = { .status = TEST_STATUS_FAIL, .duration_ms = 0U, .detail = { 0 } };
 
     /* Этап 1: цвет */
-    if (!step_color(DISPLAY_COLOR_RED, "display_red", "Screen is solid red?", &fail_result))
+    if (!step_color(DISPLAY_COLOR_RED, "display_red", "Дисплей залит красным?", &fail_result))
     {
         return fail_result;
     }
-    if (!step_color(DISPLAY_COLOR_GREEN, "display_green", "Screen is solid green?", &fail_result))
+    if (!step_color(DISPLAY_COLOR_GREEN, "display_green", "Дисплей залит зеленым?", &fail_result))
     {
         return fail_result;
     }
-    if (!step_color(DISPLAY_COLOR_BLUE, "display_blue", "Screen is solid blue?", &fail_result))
+    if (!step_color(DISPLAY_COLOR_BLUE, "display_blue", "Дисплей залит синим?", &fail_result))
     {
         return fail_result;
     }
-    if (!step_color(DISPLAY_COLOR_WHITE, "display_white", "Screen is solid white?", &fail_result))
+    if (!step_color(DISPLAY_COLOR_WHITE, "display_white", "Дисплей залит белым?", &fail_result))
     {
         return fail_result;
     }
@@ -308,7 +308,7 @@ static void display_test_deinit(void)
 
 const test_module_t K_TEST_DISPLAY = {
     .id                 = "display",
-    .name               = "TFT Display RGB888",
+    .name               = "TFT дисплей",
     .critical           = false,
     .requires_hil       = false,
     .pre_confirm_prompt = NULL,

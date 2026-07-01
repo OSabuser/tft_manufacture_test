@@ -190,7 +190,7 @@ static test_result_t test_mqs_run(void)
      */
     const confirm_params_t K_PARAMS = {
         .id         = "mqs_tone",
-        .prompt     = "Do you hear a tone?",
+        .prompt     = "Звук слышен?",
         .timeout_ms = 15000U,
     };
 
@@ -200,7 +200,7 @@ static test_result_t test_mqs_run(void)
     {
         return (test_result_t){
             .status = TEST_STATUS_FAIL,
-            .detail = "operator: no sound",
+            .detail = "Звук не был услышан",
         };
     }
 
@@ -220,7 +220,7 @@ static void test_mqs_deinit(void)
 
 const test_module_t K_TEST_MQS = {
     .id                 = "mqs",
-    .name               = "MQS Audio Out",
+    .name               = "Аудио-выход",
     .critical           = false,
     .requires_hil       = false,
     .pre_confirm_prompt = NULL,

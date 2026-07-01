@@ -1,7 +1,16 @@
 # firmware/test/CMakeLists.txt Тестовая прошивка — входной контроль платы на
 # производстве
+cmake_minimum_required(VERSION 3.20)
+project(
+  firmware_test
+  VERSION 0.1.1
+  LANGUAGES C ASM)
 
 set(TARGET_NAME firmware_test)
+
+# Генерация version.h из шаблона
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/generated/version.h" @ONLY)
 
 add_subdirectory(fatfs)
 
@@ -25,6 +34,8 @@ add_executable(
 
 target_include_directories(firmware_test PRIVATE src/)
 
+target_include_directories(firmware_test
+                           PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 # __STARTUP_INITIALIZE_RAMFUNCTION - очистка секции .ram_function и копирование
 # туда данных из __ram_function_flash_start; __STARTUP_INITIALIZE_NONCACHEDATA -
 # инициализация некешируемое секции нулями
@@ -73,7 +84,7 @@ target_link_options(
   -Wl,-Map=${CMAKE_BINARY_DIR}/firmware_test.map
   -Wl,--defsym=__stack_size__=0x2000
   -Wl,--defsym=__heap_size__=0x2000
-  -T${PROJECT_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor_sdram.ld)
+  -T${CMAKE_SOURCE_DIR}/cmake/linker/MIMXRT1052xxxxx_flexspi_nor_sdram.ld)
 
 set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
                                                 ${CMAKE_BINARY_DIR})

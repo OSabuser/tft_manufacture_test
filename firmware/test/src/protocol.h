@@ -19,12 +19,14 @@
 #define PROTOCOL_H_
 
 #include "test_module.h"
+#include "version.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
 /** @brief Строка версии прошивки, вставляемая в session_start. */
-#define FIRMWARE_TEST_VERSION "0.1.4"
+#define FIRMWARE_TEST_VERSION FIRMWARE_TEST_VERSION_STR
 
 /** @brief Таймаут подтверждения по умолчанию, мс. */
 #define PROTOCOL_CONFIRM_TIMEOUT_MS 30000U
@@ -99,5 +101,12 @@ void protocol_send_error(const char *p_code);
  * @param[in] p_uid  Буфер с UID длиной BSP_PROV_UID_LEN байт.
  */
 void protocol_send_uid_response(const uint8_t *p_uid);
+
+/**
+ * @brief Отправить ответ на команду get_version.
+ *
+ * Формат: {"type":"version_response","fw":"X.Y.Z"}
+ */
+void protocol_send_version_response(void);
 
 #endif /* PROTOCOL_H_ */

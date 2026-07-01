@@ -182,7 +182,7 @@ static test_result_t opto_run(void)
 /** @brief Дескриптор для регистрации в test_runner. */
 const test_module_t K_TEST_OPTO = {
     .id                 = "opto",
-    .name               = "Opto Inputs",
+    .name               = "Оптопары",
     .critical           = false,
     .requires_hil       = true,
     .pre_confirm_prompt = NULL,
