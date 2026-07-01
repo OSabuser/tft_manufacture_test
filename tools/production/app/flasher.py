@@ -19,10 +19,12 @@ import asyncio
 import logging
 import os
 import re
+import sys
+import tempfile
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
-from .models import FlashProgress, FlashTarget
+from .models import FcbVariant, FlashProgress, FlashTarget
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,31 @@ _FIRMWARE_BUILD_TYPE = os.environ.get("FIRMWARE_BUILD_TYPE", "Debug")
 # Путь до flash_usb.py относительно корня репозитория
 _FLASH_USB_SCRIPT = Path(__file__).parents[3] / "tools" / "host" / "flash_usb.py"
 _HOST_TOOLS_DIR = _FLASH_USB_SCRIPT.parent
+_HAB_DIR = _HOST_TOOLS_DIR / "hab"
+_DCD_DIR = _HOST_TOOLS_DIR / "dcd"
+
+
+def _resolve_custom_binaries_dir() -> Path:
+    """
+    Директория с «сырыми» кастомными бинарниками для FlashScreen.
+
+    Не пакуется в PyInstaller-бандл — внешняя директория, путь к которой
+    можно переопределить через SERVICE_CUSTOM_BINARIES_DIR. sys.executable
+    указывает на реальный exe и для --onefile, и для --onedir (в отличие
+    от sys._MEIPASS — временной распаковки onefile).
+    """
+    override = os.environ.get("SERVICE_CUSTOM_BINARIES_DIR")
+    if override:
+        base = Path(override)
+    elif getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent / "custom_binaries"
+    else:
+        base = Path(__file__).parents[1] / "custom_binaries"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+CUSTOM_BINARIES_DIR = _resolve_custom_binaries_dir()
 
 # Паттерны stdout flash_usb.py для извлечения прогресса
 _RE_PERCENT = re.compile(r"(\d{1,3})\s*%")
@@ -108,6 +135,11 @@ class Flasher:
         """True если виден CDC firmware_test (1996:00AD)."""
         return _detect_usb(_CDC_VID, _CDC_PID)
 
+    @staticmethod
+    def list_custom_binaries() -> list[Path]:
+        """Отсканировать custom_binaries/ на *.bin, отсортировано по имени."""
+        return sorted(CUSTOM_BINARIES_DIR.glob("*.bin"))
+
     # ── Erase ────────────────────────────────────────────────────────────────
 
     async def erase_chip(
@@ -138,6 +170,8 @@ class Flasher:
         target: FlashTarget,
         progress_cb: Optional[ProgressCallback] = None,
         bin_path: Optional[Path] = None,
+        use_dcd: bool = False,
+        fcb_variant: FcbVariant = FcbVariant.W25Q128,
     ) -> bool:
         """
         Запустить прошивку через flash_usb.py.
@@ -145,6 +179,10 @@ class Flasher:
         :param target:      Что прошиваем (firmware_test, production или custom).
         :param progress_cb: Async callback с FlashProgress (может быть None).
         :param bin_path:    Путь к бинарю (обязателен для CUSTOM).
+        :param use_dcd:     Только для CUSTOM — включить DCDFilePath (SDRAM-init)
+                             при сборке HAB-образа через nxpimage.
+        :param fcb_variant: Только для CUSTOM — какой явный FCB-блоб (dcd/*_fdcb.bin)
+                             записать в Flash[0x60000000] вместо auto-config.
         :return: True при успехе.
         """
         if target == FlashTarget.FIRMWARE_TEST:
@@ -159,8 +197,143 @@ class Flasher:
         elif target == FlashTarget.CUSTOM:
             if bin_path is None:
                 raise ValueError("FlashTarget.CUSTOM требует bin_path")
-            return await self._run_flash_bin(bin_path, progress_cb)
+            return await self._run_flash_custom(
+                bin_path, use_dcd, fcb_variant, progress_cb
+            )
         return False
+
+    async def _run_flash_custom(
+        self,
+        raw_bin_path: Path,
+        use_dcd: bool,
+        fcb_variant: FcbVariant,
+        progress_cb: Optional[ProgressCallback],
+    ) -> bool:
+        """
+        Прошить «сырой» (не-HAB) кастомный бинарник из custom_binaries/.
+
+        Два шага:
+          1. Собрать HAB-образ (IVT + опционально DCD, БЕЗ FCB) через
+             nxpimage — так же, как just build::hab-* собирает штатные
+             прошивки, только конфиг генерируется на лету под выбранный файл.
+          2. Прошить получившийся HAB-образ через flash_usb.py --bin-path,
+             подставив явный FCB-блоб (--fcb-path) под выбранный тип памяти —
+             см. FcbVariant.
+        """
+        if progress_cb is not None:
+            await progress_cb(
+                FlashProgress(
+                    phase="nxpimage", percent=0, message="Сборка HAB-образа..."
+                )
+            )
+
+        hab_bin = await self._build_custom_hab(raw_bin_path, use_dcd, progress_cb)
+        if hab_bin is None:
+            if progress_cb is not None:
+                await progress_cb(
+                    FlashProgress(
+                        phase="error",
+                        percent=0,
+                        message="Ошибка сборки HAB-образа (nxpimage)",
+                    )
+                )
+            return False
+
+        fcb_path = _DCD_DIR / fcb_variant.fcb_filename
+        try:
+            cmd = [
+                "uv",
+                "run",
+                "--directory",
+                str(_HOST_TOOLS_DIR),
+                "python",
+                str(_FLASH_USB_SCRIPT),
+                "--bin-path",
+                str(hab_bin),
+                "--fcb-path",
+                str(fcb_path),
+            ]
+            return await self._run_cmd(cmd, raw_bin_path.stem, progress_cb)
+        finally:
+            hab_bin.unlink(missing_ok=True)
+
+    async def _build_custom_hab(
+        self,
+        raw_bin: Path,
+        use_dcd: bool,
+        progress_cb: Optional[ProgressCallback] = None,
+    ) -> Optional[Path]:
+        """
+        Собрать HAB-образ из сырого бинарника через nxpimage.
+
+        Временный YAML пишется прямо в tools/host/hab/ (как и штатные
+        hab_*.yaml) и nxpimage запускается с cwd=tools/host/hab/ — это
+        обязательно: относительный DCDFilePath ("../dcd/dcd.bin") в
+        существующих конфигах резолвится именно так (см. build.just,
+        группа hab_image_gen — `cd tools/host/hab && uv run nxpimage ...`).
+        Отходить от этой схемы рискованно — nxpimage не документирует
+        явно, от чего резолвит относительные пути.
+
+        :return: путь к собранному *.hab.bin, либо None при ошибке nxpimage.
+        """
+        yaml_f = tempfile.NamedTemporaryFile(
+            dir=_HAB_DIR, suffix=".yaml", prefix="_tui_custom_", delete=False
+        )
+        yaml_path = Path(yaml_f.name)
+        out_path = yaml_path.with_suffix(".hab.bin")
+
+        lines = [
+            "options:",
+            "  flags: 0x00",
+            "  startAddress: 0x60000000",
+            "  ivtOffset: 0x1000",
+            "  initialLoadSize: 0x2000",
+            "  family: mimxrt1050",
+        ]
+        if use_dcd:
+            lines.append("  DCDFilePath: ../dcd/dcd.bin")
+        lines.append(f'inputImageFile: "{raw_bin.resolve()}"')
+        lines.append("sections: []")
+
+        try:
+            yaml_f.write("\n".join(lines).encode("utf-8"))
+            yaml_f.close()
+
+            cmd = [
+                "uv",
+                "run",
+                "nxpimage",
+                "hab",
+                "export",
+                "--force",
+                "-c",
+                str(yaml_path),
+                "-o",
+                str(out_path),
+            ]
+            logger.info("Building custom HAB image: %s", " ".join(cmd))
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(_HAB_DIR),
+            )
+            assert proc.stdout is not None
+            async for raw_line in proc.stdout:
+                line = raw_line.decode("utf-8", errors="replace").rstrip()
+                logger.debug("nxpimage: %s", line)
+                if progress_cb is not None and line:
+                    await progress_cb(
+                        FlashProgress(phase="nxpimage", percent=0, message=line)
+                    )
+            await proc.wait()
+
+            if proc.returncode != 0 or not out_path.exists():
+                logger.error("nxpimage hab export failed (rc=%s)", proc.returncode)
+                return None
+            return out_path
+        finally:
+            yaml_path.unlink(missing_ok=True)
 
     async def _run_flash(
         self,

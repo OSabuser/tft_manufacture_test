@@ -37,6 +37,49 @@ class FlashTarget(Enum):
     CUSTOM = "custom"  # произвольный HAB-бинарь, путь задаётся отдельно
 
 
+class FcbVariant(str, Enum):
+    """Вариант FCB для кастомных бинарей.
+
+    W25Q128/W25Q64 (3-байтная адресация) и W25Q256/W25Q512 (4-байтная)
+    сведены к двум случаям — см. обсуждение прошивки старых плат.
+    """
+
+    W25Q128 = "w25q128"
+    W25Q512 = "w25q512"
+
+    @property
+    def fcb_filename(self) -> str:
+        """Имя файла в tools/host/dcd/, соответствующее варианту."""
+        return f"{self.value}_fdcb.bin"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            FcbVariant.W25Q128: "W25Q128 / W25Q64",
+            FcbVariant.W25Q512: "W25Q256 / W25Q512",
+        }[self]
+
+
+@dataclass
+class FlashPreset:
+    """«Липкий» выбор оператора на FlashScreen.
+
+    Живёт в памяти ServiceApp (не на диске), переносится на следующую
+    плату в рамках одного запуска TUI — чтобы не выбирать заново файл
+    и опции при прошивке партии одинаковых плат. Сбрасывается при
+    перезапуске TUI. Обновляется в момент нажатия «Загрузить» (не только
+    при успехе — неудача чаще всего про USB-кабель, а не про то, что
+    выбор был неверным).
+
+    DCD/FCB-поля имеют смысл только при target == FlashTarget.CUSTOM.
+    """
+
+    target: FlashTarget = FlashTarget.FIRMWARE_TEST
+    custom_bin_name: Optional[str] = None
+    use_dcd: bool = False
+    fcb_variant: FcbVariant = FcbVariant.W25Q128
+
+
 @dataclass(frozen=True)
 class TestInfo:
     """Метаданные теста из list_tests."""

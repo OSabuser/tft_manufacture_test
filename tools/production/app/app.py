@@ -17,7 +17,7 @@ from textual.binding import Binding
 
 from .firmware_client import FirmwareClient
 from .m5_client import M5Client
-from .models import AppMode, FlashTarget
+from .models import AppMode, FlashPreset, FlashTarget
 from .screens import DiagScreen, FlashScreen, PostFlashScreen, WaitingScreen
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,10 @@ class ServiceApp(App):
         super().__init__()
         self._fw: Optional[FirmwareClient] = None
         self._m5: Optional[M5Client] = None
+        # «Липкий» выбор оператора на FlashScreen — переносится на следующую
+        # плату в рамках одного запуска TUI (см. FlashPreset docstring).
+        # Сбрасывается при перезапуске TUI, не персистится на диск.
+        self._last_flash_preset = FlashPreset()
 
     def on_mount(self) -> None:
         self.push_screen(WaitingScreen())
@@ -48,9 +52,10 @@ class ServiceApp(App):
     # ── Переходы между экранами ───────────────────────────────────────────────
 
     @on(WaitingScreen.DeviceDetected)
+    @on(WaitingScreen.DeviceDetected)
     def _on_device_detected(self, event: WaitingScreen.DeviceDetected) -> None:
         if event.mode == AppMode.FLASHING:
-            self.switch_screen(FlashScreen())
+            self.switch_screen(FlashScreen(preset=self._last_flash_preset))
         elif event.mode == AppMode.DIAGNOSING:
             self._connect_and_diagnose()
 
@@ -63,6 +68,9 @@ class ServiceApp(App):
           - target=None — маркер потери соединения (см. ConnectionWatcherMixin)
             → WaitingScreen с явной причиной возврата
         """
+        if event.preset is not None:
+            self._last_flash_preset = event.preset
+
         if event.target is None and not event.success:
             self.switch_screen(
                 WaitingScreen(disconnect_reason="Соединение с платой потеряно")

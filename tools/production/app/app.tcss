@@ -16,7 +16,7 @@ AppFrame {
     width: 100%;
     height: 100%;
     max-width: 112;
-    max-height: 35;
+    max-height: 40;
     border: heavy $primary;
     background: $surface;
     padding: 1 2;
@@ -88,19 +88,39 @@ AppFrame {
     padding: 1 2;
     margin-bottom: 1;
     height: auto;
+    max-height: 18;
+    overflow-y: auto;
 }
 
-#flash-custom-path {
+#flash-target-group .section-title {
+    text-style: bold;
+    color: $text-muted;
+    padding: 0 0 1 0;
+}
+
+#flash-custom-group {
     margin-top: 1;
     height: auto;
 }
 
-#flash-custom-path.hidden {
+#flash-custom-group.hidden {
     display: none;
 }
 
-#flash-custom-input {
+#flash-custom-select,
+#flash-fcb-select {
     width: 1fr;
+    margin-bottom: 1;
+}
+
+#flash-dcd-row {
+    height: auto;
+    align: left middle;
+    margin-top: 1;
+}
+
+#flash-dcd-switch {
+    margin-right: 1;
 }
 
 #flash-btn-row {
@@ -131,6 +151,7 @@ AppFrame {
 
 #flash-log {
     height: 1fr;
+    min-height: 6;
     margin-top: 1;
     border: round $panel;
     background: $surface-darken-1;

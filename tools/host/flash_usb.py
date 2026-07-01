@@ -76,6 +76,8 @@ FLEXSPI_FCB_VALUE = "0xF000000F"
 FLASH_BASE = 0x60000000
 HAB_OFFSET = 0x1000  # IVT offset: write address = FLASH_BASE + HAB_OFFSET
 
+ERASE_ALL_TIMEOUT_MS = "200000"  # W25Q512 стирается заметно дольше W25Q128
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -216,10 +218,39 @@ def write_fcb() -> None:
     )
 
 
+def write_fcb_explicit(fcb_path: Path) -> None:
+    """Записывает буквальный FCB-блоб (512 байт) в Flash[0x60000000].
+
+    В отличие от write_fcb() (magic option word 0xF000000F — auto-config
+    Flashloader, надёжно проверен только для W25Q128), здесь FCB пишется
+    байт-в-байт через write-memory. Нужен для custom-бинарей: nxpimage
+    всегда собирает "чистый" app-образ без FCB (см. hab_*.yaml — FCB туда
+    не входит), поэтому его нужно подставлять явно под конкретный чип —
+    tools/host/dcd/w25q128_fdcb.bin или tools/host/dcd/w25q512_fdcb.bin.
+    """
+    if not fcb_path.exists():
+        print(f"[ERROR] FCB-файл не найден: {fcb_path}", file=sys.stderr)
+        sys.exit(1)
+
+    step(f"Запись явного FCB ({fcb_path.name}) в Flash[0x60000000]")
+    run(
+        [
+            "blhost",
+            "-u",
+            BLHOST_USB,
+            "--",
+            "write-memory",
+            f"0x{FLASH_BASE:08X}",
+            str(fcb_path),
+            "0",
+        ]
+    )
+
+
 # ─── Основные операции ────────────────────────────────────────────────────────
 
 
-def flash(hab_bin: Path, ram_only: bool = False) -> None:
+def flash(hab_bin: Path, ram_only: bool = False, fcb_path: Path | None = None) -> None:
     """Прошить HAB-образ в Flash или загрузить в RAM."""
     if not hab_bin.exists():
         print(f"[ERROR] Файл не найден: {hab_bin}", file=sys.stderr)
@@ -280,7 +311,10 @@ def flash(hab_bin: Path, ram_only: bool = False) -> None:
         ]
     )
 
-    write_fcb()
+    if fcb_path is not None:
+        write_fcb_explicit(fcb_path)
+    else:
+        write_fcb()
 
     run(
         [
@@ -318,7 +352,7 @@ def erase_chip() -> None:
         [
             "blhost",
             "-t",
-            "100000",
+            ERASE_ALL_TIMEOUT_MS,
             "-u",
             BLHOST_USB,
             "--",
@@ -340,6 +374,17 @@ def main() -> None:
         description="Прошивка/очистка MIMXRT1052 через USB SDP",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
+    )
+
+    parser.add_argument(
+        "--fcb-path",
+        type=Path,
+        metavar="PATH",
+        default=None,
+        help=(
+            "Явный FCB-блоб (512 байт) для записи в 0x60000000 вместо "
+            "auto-config Flashloader. Имеет смысл только с --bin-path."
+        ),
     )
 
     # Группа: что прошивать (взаимоисключающие варианты)
@@ -381,6 +426,9 @@ def main() -> None:
     if args.erase_chip and args.ram_only:
         parser.error("--erase-chip несовместим с --ram-only")
 
+    if args.fcb_path is not None and args.bin_path is None:
+        parser.error("--fcb-path имеет смысл только вместе с --bin-path")
+
     if args.firmware is None and args.bin_path is None and not args.erase_chip:
         parser.error("Укажи --firmware, --bin-path или --erase-chip")
 
@@ -413,7 +461,7 @@ def main() -> None:
     if args.erase_chip:
         erase_chip()
     elif hab_bin is not None:
-        flash(hab_bin, ram_only=args.ram_only)
+        flash(hab_bin, ram_only=args.ram_only, fcb_path=args.fcb_path)
 
 
 if __name__ == "__main__":
