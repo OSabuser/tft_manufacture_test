@@ -14,23 +14,51 @@ waiting.py — экран ожидания подключения платы.
 
 from __future__ import annotations
 
+import logging
+import tomllib
+from pathlib import Path
 from typing import Optional
 
 from textual.app import ComposeResult
+from textual.containers import Center
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Static
 
+from ..boot_art import LOGO_ART
 from ..flasher import Flasher
 from ..models import AppMode
 from ..widgets import AppFrame
+
+logger = logging.getLogger(__name__)
 
 _DETECT_INTERVAL_S = 1.5
 _SPIN_INTERVAL_S = 0.1
 _REASON_DISPLAY_S = 4.0
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+
+def _read_app_version() -> str:
+    """
+    Прочитать версию service-tui из pyproject.toml.
+
+    Не используем importlib.metadata — проект не устанавливается как пакет
+    (tool.uv.package = false), метаданные могут отсутствовать. Читаем файл
+    напрямую через tomllib (stdlib, requires-python >= 3.11 уже задан).
+    """
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    try:
+        with pyproject_path.open("rb") as f:
+            data = tomllib.load(f)
+        return data.get("project", {}).get("version", "0.0.0")
+    except Exception as exc:
+        logger.warning("Не удалось прочитать версию из %s: %s", pyproject_path, exc)
+        return "0.0.0"
+
+
+_APP_VERSION = _read_app_version()
 
 
 class WaitingScreen(Screen):
@@ -58,7 +86,9 @@ class WaitingScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with AppFrame(id="waiting-frame"):
-            yield Static("TFT Indicator Board\nService Tool", id="waiting-logo")
+            yield Static(f"service_tool  v{_APP_VERSION}", id="waiting-version")
+            with Center(id="waiting-logo-row"):
+                yield Static(LOGO_ART, id="waiting-logo-art")
             yield Static("", id="waiting-reason", classes="hidden")
             yield Static("Подключите плату индикатора к USB...", id="waiting-hint")
             yield Static(_SPINNER_FRAMES[0], id="waiting-spinner")

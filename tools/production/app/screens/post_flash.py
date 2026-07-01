@@ -19,7 +19,7 @@ post_flash.py — экран-промпт после успешной проши
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal
+from textual.containers import Center, Horizontal
 from textual.message import Message
 from textual.screen import Screen
 from textual.timer import Timer
@@ -49,12 +49,14 @@ class PostFlashScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with AppFrame(id="post-flash-frame"):
-            yield Label("✅ firmware_test успешно записан", id="post-flash-title")
+            with Center(id="post-flash-title-row"):
+                yield Label("✅ firmware_test успешно записан", id="post-flash-title")
 
-            yield Static(
-                "Переведите плату в нормальный режим:\nBOOT_MOD_1 → GND → Reset",
-                id="post-flash-instruction",
-            )
+            with Center(id="post-flash-instruction-row"):
+                yield Static(
+                    "Переведите плату в нормальный режим:\nBOOT_MOD_1 → GND → Reset",
+                    id="post-flash-instruction",
+                )
 
             yield Static("", id="post-flash-countdown")
 
