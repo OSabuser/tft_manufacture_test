@@ -1,6 +1,6 @@
 # service-tui — TUI сервисного инженера
 
-TUI-приложение для диагностики и прошивки платы **MIMXRT1052CVJ5B** на сервисе.  
+TUI-приложение для диагностики и прошивки платы **MIMXRT1052CVJ5B** на сервисе.
 Написано на Python + [Textual](https://textual.textualize.io/). Работает на Linux, macOS, Windows.
 
 ---
@@ -14,24 +14,26 @@ tools/production/
 ├── uv.lock
 └── app/
     ├── app.py                           ← ServiceApp — роутинг экранов, жизненный цикл клиентов
+    ├── app.tcss                         ← единый файл стилей для всех экранов
     ├── models.py                        ← все типы данных (dataclass/Enum)
-    ├── firmware_client.py               ← async USB CDC клиент firmware_test
-    ├── m5_client.py                     ← async M5StampPLC клиент (Serial JSON-lines)
+    ├── firmware_client.py               ← async USB CDC клиент firmware_test (UTF-8)
+    ├── m5_client.py                     ← async M5StampPLC клиент (Serial JSON-lines, UTF-8)
     ├── flasher.py                       ← subprocess-обёртка над tools/host/flash_usb.py
-    ├── orchestrator.py                  ← маршрутизация confirm_request
+    ├── orchestrator.py                  ← маршрутизация confirm_request, progress, таймауты
+    ├── widgets/
+    │   ├── __init__.py
+    │   └── app_frame.py                 ← AppFrame — общий адаптивный контейнер всех экранов
     └── screens/
-        ├── __init__.py                  ← реэкспорт: WaitingScreen, FlashScreen, DiagScreen
-        ├── waiting.py                   ← WaitingScreen — ожидание USB
+        ├── __init__.py                  ← реэкспорт: WaitingScreen, FlashScreen, PostFlashScreen, DiagScreen
+        ├── waiting.py                   ← WaitingScreen — ожидание USB, баннер причины возврата
         ├── flash.py                     ← FlashScreen — прошивка / chip erase
+        ├── post_flash.py                ← PostFlashScreen — промпт смены BootMode после прошивки
+        ├── connection_watcher.py        ← ConnectionWatcherMixin — мониторинг обрыва USB
         └── diag/
             ├── __init__.py              ← DiagScreen — координатор диагностики
-            ├── test_list.py             ← TestListPanel — чекбоксы тестов
-            ├── results.py               ← ResultsPanel — строки результатов
-            ├── confirm_panel.py         ← ConfirmPanel — prompt оператора + countdown
-            └── styles/
-                ├── waiting.tcss
-                ├── flash.tcss
-                └── diag.tcss
+            ├── test_list.py             ← TestListPanel — чекбоксы тестов, Выбрать/Снять все
+            ├── results.py               ← ResultsPanel — DataTable результатов
+            └── confirm_panel.py         ← ConfirmPanel — prompt оператора + countdown
 ```
 
 ---
@@ -43,10 +45,10 @@ graph LR
     subgraph PC["Сервисный ПК"]
         TUI["service-tui\n(Textual App)"]
         subgraph app["app/"]
-            FC["firmware_client.py\nUSB CDC ACM"]
-            M5["m5_client.py\nSerial JSON-lines"]
-            FL["flasher.py\nsubprocess"]
-            OR["orchestrator.py\nconfirm router"]
+            FC["firmware_client.py\nUSB CDC ACM, UTF-8"]
+            M5["m5_client.py\nSerial JSON-lines, UTF-8"]
+            FL["flasher.py\nsubprocess + pyusb detect"]
+            OR["orchestrator.py\nconfirm/progress/timeout router"]
         end
         TUI --> FC & M5 & FL & OR
     end
@@ -64,18 +66,20 @@ graph LR
         FU["flash_usb.py\nsdphost + blhost"]
     end
 
-    FC   <-->|"JSON-lines\nVID:PID 1996:00AD"| FW
+    FC   <-->|"JSON-lines UTF-8\nVID:PID 1996:00AD"| FW
     FL    -->|"subprocess uv run"| FU
     FU    -->|"sdphost + blhost\nVID:PID 1FC9:0130"| ROM
     M5   <-->|"JSON-lines\nSerial"| M5HW
     M5HW  -->|"RLY1–4"| Board
 ```
 
+> **Детект USB:** `Flasher.detect_sdp()`/`detect_cdc()` используют `pyusb` как основной метод (BootROM SDP не создаёт serial-порт на macOS и невидим через `pyserial.list_ports`), с fallback на `serial.tools.list_ports` для CDC.
+
 ---
 
-## Два режима работы
+## Состояния приложения
 
-Режим определяется автодетектом USB и меняется динамически без перезапуска TUI.
+Состояние определяется автодетектом USB и меняется динамически без перезапуска TUI. При потере соединения сессия разрывается полностью — TUI не пытается восстановить прежнее состояние, а стартует заново с `WaitingScreen`.
 
 ```mermaid
 stateDiagram-v2
@@ -84,16 +88,18 @@ stateDiagram-v2
     WAITING --> FLASHING   : VID:PID 1FC9:0130\n(BootROM SDP)
     WAITING --> DIAGNOSING : VID:PID 1996:00AD\n+ ping→pong по CDC
 
-    FLASHING --> WAITING   : FlashDone / ESC / плата отключена
-    FLASHING --> DIAGNOSING: плата перезагружена после прошивки
+    FLASHING --> POST_FLASH : firmware_test прошит успешно
+    FLASHING --> WAITING    : Production/Custom прошит, ошибка,\nили потеря USB в простое
 
-    DIAGNOSING --> WAITING : DiagDone / ESC / плата отключена
+    POST_FLASH --> WAITING : оператор подтвердил / таймаут 40с
+
+    DIAGNOSING --> WAITING : DiagDone / ESC /\nпотеря USB в простое
     DIAGNOSING --> FLASHING: плата переведена в SDP (перемычка BOOT_MOD)
 ```
 
-### Режим A — Прошивка
+### Режим A — Прошивка (FlashScreen)
 
-Триггер: BootROM SDP `1FC9:0130` виден в `serial.tools.list_ports`.
+Триггер: BootROM SDP `1FC9:0130` обнаружен через `pyusb`.
 
 ```bash
 ┌─ Прошивка платы ─────────────────────────────────┐
@@ -104,9 +110,9 @@ stateDiagram-v2
 │  ○ Production     (bootloader + tft_app)           │
 │  ○ Кастомный бинарь...                             │
 │                                                    │
-│  [ ▶ Прошить ]   [ ⚠ Chip Erase ]                 │
+│  [ ▶ Прошить ]  [ ⚠ Chip Erase ]  [ ✕ Выйти ]      │
 │                                                    │
-│  ████████████░░░░░░  64%   blhost  64%             │
+│  ████████████░░░░░░  ← без числового %             │
 │  ┌────────────────────────────────────────────┐    │
 │  │ ▶ Прошивка: firmware_test                  │    │
 │  │ $ blhost -u 0x15A2,0x0073 -- write-memory… │    │
@@ -114,368 +120,123 @@ stateDiagram-v2
 └────────────────────────────────────────────────────┘
 ```
 
-### Режим B — Диагностика
+ProgressBar виден только во время активной операции (скрыт в простое), без числового `%` — только полоса и построчный лог в реальном времени.
+
+### Промежуточный экран — PostFlashScreen
+
+Показывается **только** после успешной прошивки `firmware_test` (не для Production/Custom — им этот шаг не нужен).
+
+```bash
+┌─ Прошивка завершена ──────────────────────────────┐
+│  ✅ firmware_test успешно записан                  │
+│                                                    │
+│  Переведите плату в нормальный режим:              │
+│  BOOT_MOD_1 → GND → Reset                         │
+│                                                    │
+│  [ ✓ Готово, перешёл ]   [ ✕ Выйти ]              │
+│  Автопереход через: 40с                            │
+└────────────────────────────────────────────────────┘
+```
+
+### Режим B — Диагностика (DiagScreen)
 
 Триггер: CDC-порт `1996:00AD` виден + `ping→pong` прошёл.
 
 ```bash
-┌─ Диагностика  fw:0.1.4  UID:A1B2C3D4E5F60011 ────────────────┐
-│  M5: ✓ подключён                                               │
-├────────────────────────────┬───────────────────────────────────┤
-│  Тесты                     │  Результаты                       │
-│  ☑ SDRAM 32 MB             │  sdram    ✓ PASS                  │
-│  ☑ QSPI Flash              │  qspi     ✓ PASS                  │
-│  ☑ microSD                 │  usd      ✗ FAIL  mount err: 5   │
-│  ☑ TFT Display             │  display  ✓ PASS                  │
-│  ☑ Кнопки                  │  buttons  ✓ PASS                  │
-│  ☑ MQS Audio               │  mqs      ✓ PASS                  │
-│  ☑ CAN loopback  [HIL]     │  can      … running               │
-│  ☑ Оптовходы     [HIL]     │  opto     pending                 │
-├────────────────────────────┴───────────────────────────────────┤
-│  [ ▶ Запустить выбранные ]     [ ▶▶ Все тесты ]               │
-│  ████████████████░░░░  80%  Тест: can                          │
-├────────────────────────────────────────────────────────────────┤
-│  ⚠  Экран залит красным цветом?                    28с         │
-│  [ ✓ Да ]   [ ✗ Нет ]                                         │
-└────────────────────────────────────────────────────────────────┘
+┌─ Диагностика  fw:0.2.0  UID:A1B2C3D4E5F60011  M5: ✓ подключён ─┐
+│  Тесты                     │  Результаты (DataTable)            │
+│  [Выбрать все][Снять все]  │  Тест        HIL  Статус  Время    │
+│  ☐ SDRAM 32 MB             │  microSD          ✗ FAIL  0.1с     │
+│  ☐ QSPI Flash              │    no card detected (без обрезки)  │
+│  ☐ microSD                 │  SDRAM 32 MB      ✓ PASS   1.8с    │
+│  ☐ TFT Display             │  QSPI Flash       ✓ PASS   0.6с    │
+│  ☐ CAN loopback  [HIL]     │  TFT Display      …  running       │
+│  ☐ Оптовходы     [HIL]     │  Кнопки           pending          │
+├─────────────────────────────────────────────────────────────────┤
+│  [▶ Запустить выбранные] [▶▶ Все тесты] [✕ Выйти]               │
+│  ████████░░░░  Тест: usd — mount: ok                            │
+├─────────────────────────────────────────────────────────────────┤
+│  ⚠  Экран залит красным цветом?                    28с          │
+│  [ ✓ Да ]   [ ✗ Нет ]                                          │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-HIL-тесты без M5StampPLC отображаются серыми и не выбираются автоматически.
-
----
-
-## Диаграмма классов
-
-```mermaid
-classDiagram
-    direction TB
-
-    %% ── Точка входа ──────────────────────────────────────────
-    class ServiceApp {
-        -_fw: FirmwareClient
-        -_m5: M5Client
-        +on_mount()
-        +_on_device_detected(event)
-        +_on_flash_done(event)
-        +_on_diag_done()
-        +_connect_and_diagnose()
-        +_disconnect()
-    }
-
-    %% ── Экраны ───────────────────────────────────────────────
-    class WaitingScreen {
-        -_spinner_idx: int
-        -_detect_timer: Timer
-        -_spin_timer: Timer
-        +on_mount()
-        +on_unmount()
-        -_poll_usb()
-        -_spin()
-        -_stop_timers()
-    }
-    class WaitingScreen.DeviceDetected {
-        +mode: AppMode
-    }
-
-    class FlashScreen {
-        -_flasher: Flasher
-        -_flashing: bool
-        +compose()
-        -_on_radio_changed(event)
-        -_on_flash_pressed()
-        -_on_erase_pressed()
-        -_do_flash(target, bin_path)
-        -_do_erase()
-        -_resolve_target()
-        -_on_progress(progress)
-        -_set_busy(busy)
-    }
-    class FlashScreen.FlashDone {
-        +success: bool
-    }
-
-    class DiagScreen {
-        -_fw: FirmwareClient
-        -_m5: M5Client
-        -_orchestrator: Orchestrator
-        -_session: SessionState
-        -_running: bool
-        +on_mount()
-        -_init_session()
-        -_update_header()
-        -_on_run_selected()
-        -_on_run_all()
-        -_on_confirmed(event)
-        -_start_run(test_ids)
-        -_run_worker(test_ids)
-        -_handle_event(event, total, done)
-        -_on_summary(summary)
-    }
-    class DiagScreen.DiagDone
-
-    %% ── Виджеты DiagScreen ───────────────────────────────────
-    class TestListPanel {
-        -_checkboxes: dict
-        +populate(tests, m5_connected)
-        +get_selected_ids() list
-        +set_enabled(enabled)
-    }
-
-    class ResultsPanel {
-        +populate(tests)
-        +set_running(test_id)
-        +set_result(result)
-        +reset()
-        -_update(test_id, status, detail)
-    }
-
-    class ConfirmPanel {
-        -_timer: Timer
-        -_remaining: int
-        +show_operator(prompt, timeout_ms)
-        +show_buttons_hint(prompt)
-        +hide()
-        -_tick()
-        -_start_timer()
-        -_stop_timer()
-    }
-    class ConfirmPanel.Confirmed {
-        +confirmed: bool
-    }
-
-    %% ── Клиенты ──────────────────────────────────────────────
-    class FirmwareClient {
-        -_port: str
-        -_ser: Serial
-        -_lock: Lock
-        +connect()
-        +disconnect()
-        +ping() bool
-        +list_tests() list
-        +run_selected(test_ids) AsyncGenerator
-        +send_confirm(id, confirmed)
-        +get_uid() str
-        +auto_connect(vid, pid)$
-        +find_port(vid, pid)$
-    }
-
-    class M5Client {
-        -_port: str
-        -_ser: Serial
-        -_lock: Lock
-        +connect()
-        +disconnect()
-        +ping() bool
-        +relay_set(relay, state) bool
-        +relay_get(relay) bool
-        +can_send(id, data) bool
-        +can_recv(timeout_ms) dict
-        +auto_connect()$
-        +find_port()$
-    }
-
-    class Flasher {
-        -_proc: Process
-        +detect_sdp()$  bool
-        +detect_cdc()$  bool
-        +flash(target, progress_cb, bin_path) bool
-        +erase_chip(progress_cb) bool
-        -_run_flash(firmware, build_type, cb)
-        -_run_flash_bin(bin_path, cb)
-        -_run_cmd(cmd, label, cb)
-    }
-
-    %% ── Оркестратор ──────────────────────────────────────────
-    class Orchestrator {
-        -_fw: FirmwareClient
-        -_m5: M5Client
-        -_operator_queue: Queue
-        +run_tests(test_ids) AsyncGenerator
-        +resolve_operator_confirm(confirmed)
-        -_handle_confirm(confirm)
-        -_handle_hil_opto(confirm)
-        -_handle_hil_can_rx(confirm)
-        -_handle_hil_can_tx(confirm)
-        -_handle_operator_confirm(confirm)
-    }
-
-    %% ── Модели ───────────────────────────────────────────────
-    class SessionState {
-        +fw_version: str
-        +chip_uid: str
-        +m5_connected: bool
-        +tests: list
-        +results: dict
-        +get_result(id)
-        +set_result(result)
-    }
-
-    class OrchestratorEvent {
-        +type: OrchestratorEventType
-        +test_id: str
-        +result: TestResult
-        +confirm: ConfirmRequest
-        +summary: dict
-        +message: str
-    }
-
-    class TestInfo {
-        +id: str
-        +name: str
-        +critical: bool
-        +requires_hil: bool
-    }
-
-    class TestResult {
-        +id: str
-        +status: TestStatus
-        +duration_ms: int
-        +detail: str
-    }
-
-    class ConfirmRequest {
-        +id: str
-        +prompt: str
-        +timeout_ms: int
-    }
-
-    class FlashProgress {
-        +phase: str
-        +percent: int
-        +message: str
-    }
-
-    %% ── Enum ─────────────────────────────────────────────────
-    class AppMode {
-        <<enumeration>>
-        WAITING
-        FLASHING
-        DIAGNOSING
-    }
-
-    class TestStatus {
-        <<enumeration>>
-        PENDING
-        RUNNING
-        PASS
-        FAIL
-        SKIP
-    }
-
-    class FlashTarget {
-        <<enumeration>>
-        FIRMWARE_TEST
-        PRODUCTION
-        CUSTOM
-    }
-
-    class OrchestratorEventType {
-        <<enumeration>>
-        TEST_BEGIN
-        TEST_RESULT
-        CONFIRM_NEEDED
-        CONFIRM_RESOLVED
-        BUTTONS_PROMPT
-        SUMMARY
-        ERROR
-    }
-
-    %% ── Связи ────────────────────────────────────────────────
-
-    %% App → экраны
-    ServiceApp --> WaitingScreen : push/switch
-    ServiceApp --> FlashScreen   : switch
-    ServiceApp --> DiagScreen    : switch
-    ServiceApp --> FirmwareClient : создаёт
-    ServiceApp --> M5Client       : создаёт
-
-    %% Сообщения от экранов
-    WaitingScreen ..> WaitingScreen.DeviceDetected : posts
-    FlashScreen   ..> FlashScreen.FlashDone        : posts
-    DiagScreen    ..> DiagScreen.DiagDone          : posts
-    ConfirmPanel  ..> ConfirmPanel.Confirmed       : posts
-
-    %% App слушает сообщения
-    ServiceApp ..> WaitingScreen.DeviceDetected : on()
-    ServiceApp ..> FlashScreen.FlashDone        : on()
-    ServiceApp ..> DiagScreen.DiagDone          : on()
-
-    %% Экраны → компоненты
-    FlashScreen --> Flasher : использует
-    DiagScreen  --> Orchestrator    : создаёт
-    DiagScreen  --> TestListPanel   : монтирует
-    DiagScreen  --> ResultsPanel    : монтирует
-    DiagScreen  --> ConfirmPanel    : монтирует
-    DiagScreen  --> SessionState    : владеет
-    DiagScreen  ..> ConfirmPanel.Confirmed : on()
-
-    %% Оркестратор
-    Orchestrator --> FirmwareClient    : вызывает
-    Orchestrator --> M5Client          : вызывает
-    Orchestrator ..> OrchestratorEvent : yields
-
-    %% Flasher детект
-    WaitingScreen --> Flasher : detect_sdp/cdc
-
-    %% Модели
-    Flasher       --> FlashProgress
-    Orchestrator  --> ConfirmRequest
-    Orchestrator  --> TestResult
-    DiagScreen    --> OrchestratorEvent
-    SessionState  --> TestInfo
-    SessionState  --> TestResult
-
-    %% Enum использование
-    ServiceApp    --> AppMode
-    WaitingScreen.DeviceDetected --> AppMode
-    TestResult    --> TestStatus
-    Flasher       --> FlashTarget
-    Orchestrator  --> OrchestratorEventType
-    OrchestratorEvent --> OrchestratorEventType
-```
+Ключевые отличия от ранних версий TUI:
+- **Тесты изначально не выбраны** — сервисник выбирает явно, либо кнопками "Выбрать все"/"Снять все"
+- **Результаты — `DataTable`**, не текстовые строки: сортировка FAIL-наверх (стабильная внутри группы по порядку реестра), FAIL-строка подсвечена красным фоном целиком, длинные `detail`-сообщения переносятся на несколько строк без обрезания (явная ширина колонок, см. раздел «Известные грабли Textual»)
+- **`progress`-события** теста USD (`card_detect`, `mount`, `write`, `read_compare`) отображаются в прогресс-строке как текущая фаза
+- HIL-тесты без M5StampPLC — серые, недоступны для выбора (постоянное состояние, не путается с временной блокировкой во время прогона)
 
 ---
 
 ## Обработка confirm_request
 
-Маршрутизация реализована в `Orchestrator._handle_confirm()` по значению `confirm_request.id`:
+Маршрутизация реализована в `Orchestrator._handle_confirm()` по значению `confirm_request.id`. Помимо confirm, протокол v2 определяет `progress` — внутришаговые информационные события долгих тестов (сейчас только `usd`), не требующие ответа.
 
 ```mermaid
 flowchart TD
-    CR["confirm_request\nот firmware_test"]
-    CR --> R{confirm_request.id}
+    EV["Событие от firmware_test"]
+    EV --> T{type}
 
-    R -->|"opto_in1_active\nopto_in1_inactive\nopto_in2_active\nopto_in2_inactive\nopto_rs_active\nopto_rs_inactive"| HIL_OPTO
-    R -->|"can_rx_ready"| HIL_CAN_RX
-    R -->|"can_tx_verify"| HIL_CAN_TX
-    R -->|"btn*"| BTN
-    R -->|"всё остальное"| OP
+    T -->|"confirm_request"| R{confirm_request.id}
+    T -->|"progress"| PROG["TEST_PROGRESS\nотобразить фазу в прогресс-строке"]
+    T -->|"test_begin / test_result / summary"| STD["стандартная обработка"]
+    T -->|"_timeout (синтетическое,\nот FirmwareClient)"| TO["синтезировать FAIL\nдля зависшего теста\n+ гарантированный SUMMARY"]
+    T -->|"неизвестный тип"| LOG["logger.debug — НЕ ошибка,\nне показывается оператору"]
 
-    HIL_OPTO["M5: relay_set(rly, state)\nsleep(settle)\nsend_confirm(true/false)"]
-    HIL_CAN_RX["M5: can_send(0x100, data)\nsend_confirm(ok)"]
-    HIL_CAN_TX["M5: can_recv()\nverify id+data\nsend_confirm(verified)"]
-    BTN["DiagScreen: show_buttons_hint()\nНЕ отправлять confirm\nтаргет сам детектирует нажатие"]
-    OP["DiagScreen: show_operator()\nCountdown таймер\nОжидать resolve_operator_confirm()"]
-
-    HIL_OPTO --> RAUTO["CONFIRM_RESOLVED → прогресс"]
-    HIL_CAN_RX --> RAUTO
-    HIL_CAN_TX --> RAUTO
-    OP --> RNEED["CONFIRM_NEEDED → UI панель\nОператор нажимает OK/Нет"]
-    RNEED --> RESOLVE["ConfirmPanel.Confirmed\n→ resolve_operator_confirm()\n→ send_confirm()"]
+    R -->|"opto_*"| HIL_OPTO["M5: relay_set → settle → send_confirm"]
+    R -->|"can_rx_ready"| HIL_CAN_RX["M5: can_send → send_confirm"]
+    R -->|"can_tx_verify"| HIL_CAN_TX["M5: can_recv → verify → send_confirm"]
+    R -->|"btn*"| BTN["show_buttons_hint, БЕЗ JSON-confirm"]
+    R -->|"остальное"| OP["show_operator + countdown\nждать resolve_operator_confirm()"]
 ```
 
-| `confirm_request.id` | Кто отвечает | Действие TUI         | Реле M5    |
-| -------------------- | ------------ | -------------------- | ---------- |
-| `opto_in1_active`    | M5 авто      | прогресс             | RLY3 ON    |
-| `opto_in1_inactive`  | M5 авто      | прогресс             | RLY3 OFF   |
-| `opto_in2_active`    | M5 авто      | прогресс             | RLY4 ON    |
-| `opto_in2_inactive`  | M5 авто      | прогресс             | RLY4 OFF   |
-| `opto_rs_active`     | M5 авто      | прогресс             | RLY2 ON    |
-| `opto_rs_inactive`   | M5 авто      | прогресс             | RLY2 OFF   |
-| `can_rx_ready`       | M5 авто      | прогресс             | — (CAN TX) |
-| `can_tx_verify`      | M5 авто      | прогресс             | — (CAN RX) |
-| `btn*`               | физика       | инструкция оператору | —          |
-| всё остальное        | оператор     | prompt + countdown   | —          |
+| `confirm_request.id`            | Кто отвечает                 | Реле M5 |
+| ------------------------------- | ---------------------------- | ------- |
+| `opto_in1_active` / `_inactive` | M5 авто                      | RLY3    |
+| `opto_in2_active` / `_inactive` | M5 авто                      | RLY4    |
+| `opto_rs_active` / `_inactive`  | M5 авто                      | RLY2    |
+| `can_rx_ready`                  | M5 авто (CAN TX)             | —       |
+| `can_tx_verify`                 | M5 авто (CAN RX)             | —       |
+| `btn*`                          | физика, без JSON-ответа      | —       |
+| всё остальное                   | оператор, prompt + countdown | —       |
+
+**Гарантия таймаута:** `Orchestrator.run_tests()` всегда завершается ровно одним событием `SUMMARY` — настоящим от firmware или синтетическим (`aborted: true`), если чтение порта оборвалось по таймауту. Без этой гарантии зависший тест блокировал бы кнопки "Выйти" и повторного запуска навсегда (исторический баг, см. CHANGELOG).
+
+---
+
+## Мониторинг соединения и разрыв сессии
+
+`ConnectionWatcherMixin` (`screens/connection_watcher.py`) подключается к `FlashScreen` и `DiagScreen`: каждые 1.5с проверяет, виден ли таргет на шине.
+
+- **На `FlashScreen`** — проверка приостановлена во время активной прошивки/erase (обрыв обнаружит сам `flash_usb.py` subprocess).
+- **На `DiagScreen`** — проверка приостановлена во время прогона тестов (обрыв надёжнее детектирует таймаут чтения порта внутри `Orchestrator`, не просто исчезновение устройства из списка).
+- При срабатывании — `ConnectionLost` message → экран постит `FlashDone(success=False, target=None)` / `DiagDone(reason=...)` → `ServiceApp` разрывает сессию (`FirmwareClient.disconnect()`) и переключает на `WaitingScreen(disconnect_reason=...)`.
+- `WaitingScreen` показывает причину возврата баннером на 4 секунды, затем продолжает обычный автодетект.
+
+Архитектурное решение: **сессия никогда не восстанавливается** — после разрыва TUI не пытается определить, вернулась ли та же плата, просто стартует диагностику с нуля.
+
+---
+
+## AppFrame — общий каркас экранов
+
+`widgets/app_frame.py` — единый контейнер, который оборачивает содержимое всех трёх основных экранов:
+
+```css
+AppFrame {
+    width: 100%;
+    height: 100%;
+    max-width: 160;
+    max-height: 50;
+    border: heavy $primary;
+}
+```
+
+Решает две задачи:
+1. **Визуальная консистентность** — одна и та же рамка на всех экранах.
+2. **Устраняет краш Textual 8.x** при mouse drag (`assert isinstance(content_widget.parent, Widget)`) — раньше `Screen` мог выступать `content_widget` напрямую; с `AppFrame` между `Screen` и контентом всегда есть валидный промежуточный `Widget`.
+
+Адаптивный размер (`100%` с потолком `160×50`) — гарантирует, что элементы управления (кнопки, таблицы) никогда не обрезаются на маленьком терминале и не расползаются на огромном мониторе.
 
 ---
 
@@ -487,12 +248,13 @@ graph TB
         direction LR
         WS["WaitingScreen"]
         FS["FlashScreen"]
+        PF["PostFlashScreen"]
         DS["DiagScreen"]
     end
 
     subgraph DiagInternals["DiagScreen (screens/diag/)"]
         TL["TestListPanel\ntest_list.py"]
-        RP["ResultsPanel\nresults.py"]
+        RP["ResultsPanel (DataTable)\nresults.py"]
         CP["ConfirmPanel\nconfirm_panel.py"]
         OR["Orchestrator\norchestrator.py"]
     end
@@ -505,8 +267,10 @@ graph TB
 
     WS -->|"DeviceDetected(FLASHING)"| FS
     WS -->|"DeviceDetected(DIAGNOSING)"| DS
-    FS -->|"FlashDone"| WS
-    DS -->|"DiagDone"| WS
+    FS -->|"FlashDone(success=True, target=FIRMWARE_TEST)"| PF
+    FS -->|"FlashDone(остальное)"| WS
+    PF -->|"Done"| WS
+    DS -->|"DiagDone(reason)"| WS
 
     FS --> FL
     DS --> OR
@@ -517,11 +281,14 @@ graph TB
     OR --> FC
     OR --> M5
     WS --> FL
+
+    FS -.->|"ConnectionWatcherMixin"| FL
+    DS -.->|"ConnectionWatcherMixin"| FL
 ```
 
 ---
 
-## Жизненный цикл сессии
+## Жизненный цикл диагностической сессии
 
 ```mermaid
 sequenceDiagram
@@ -534,30 +301,36 @@ sequenceDiagram
 
     OP->>TUI: запустить service_tui
     TUI->>WS: push_screen()
-    WS->>WS: poll USB каждые 1.5 с
+    WS->>WS: pyusb poll каждые 1.5 с
 
     OP->>FW: подключить плату USB
     WS->>TUI: DeviceDetected(DIAGNOSING)
     TUI->>FW: auto_connect() → ping→pong
+    TUI->>FW: get_version()
     TUI->>M5: auto_connect() (опционально)
-    TUI->>DS: switch_screen()
+    TUI->>DS: switch_screen(fw_version=...)
 
-    DS->>FW: list_tests() → TestInfo×8
-    DS->>FW: get_uid() → "A1B2C3D4..."
-    DS->>DS: populate TestListPanel + ResultsPanel
+    DS->>FW: list_tests() → TestInfo×N
+    DS->>FW: get_uid()
+    DS->>DS: populate (тесты НЕ выбраны по умолчанию)
+    DS->>DS: ConnectionWatcherMixin: старт мониторинга
 
-    OP->>DS: выбрать тесты → Запустить
+    OP->>DS: выбрать тесты / "Выбрать все" → Запустить
     DS->>FW: run_selected([...])
 
     loop Для каждого теста
         FW-->>DS: test_begin
         DS->>DS: ResultsPanel.set_running()
 
+        opt progress (напр. usd)
+            FW-->>DS: progress {step, status}
+            DS->>DS: обновить прогресс-строку
+        end
+
         alt HIL confirm (opto / can)
             FW-->>DS: confirm_request
             DS->>M5: relay_set() / can_send() / can_recv()
             DS->>FW: send_confirm(true/false)
-            DS->>DS: прогресс CONFIRM_RESOLVED
         else Оператор (display / mqs)
             FW-->>DS: confirm_request
             DS->>DS: ConfirmPanel.show_operator()
@@ -570,20 +343,25 @@ sequenceDiagram
         end
 
         FW-->>DS: test_result
-        DS->>DS: ResultsPanel.set_result()
+        DS->>DS: ResultsPanel.set_result() + сортировка FAIL-наверх
     end
 
     FW-->>DS: summary
     DS->>DS: показать итог PASS / FAIL
-    OP->>DS: ESC → DiagDone
-    TUI->>WS: switch_screen()
+
+    alt Нормальное завершение
+        OP->>DS: ESC / Выйти → DiagDone()
+        TUI->>WS: switch_screen()
+    else Потеря USB
+        DS->>DS: ConnectionLost
+        TUI->>FW: disconnect()
+        TUI->>WS: switch_screen(disconnect_reason=...)
+    end
 ```
 
 ---
 
 ## Конфигурация (`.env`)
-
-Файл `.env` в корне репозитория — единый источник. Загружается через `python-dotenv` в `main.py` до импорта app-модулей.
 
 ```ini
 # USB VID:PID — BootROM SDP (константы NXP, не менять)
@@ -598,11 +376,19 @@ FLASHLOADER_PID=0073
 SERVICE_CDC_VID=1996
 SERVICE_CDC_PID=00ad
 
+# Тип сборки firmware_test для прошивки (Debug | Release).
+# Release временно нестабилен — по умолчанию Debug.
+FIRMWARE_BUILD_TYPE=Debug
+
 # Опционально: путь к директории лога TUI
 # SERVICE_LOG_DIR=/tmp
 ```
 
-Пути к бинарям `flash_usb.py` вычисляет автоматически из `BUILD_DIR` (также из `.env`).
+---
+
+## Версионирование firmware
+
+`firmware_test` версионируется через CMake (`project(firmware_test VERSION X.Y.Z)`), генерирует `version.h` через `configure_file`. Команда протокола `get_version` (по аналогии с `get_uid`) запрашивается один раз при подключении в `ServiceApp._connect_and_diagnose()` и передаётся в `DiagScreen` параметром конструктора — версия не запрашивается повторно внутри самого экрана.
 
 ---
 
@@ -611,25 +397,18 @@ SERVICE_CDC_PID=00ad
 ### Из монорепозитория (разработчик)
 
 ```bash
-# Установить зависимости tools/production/
-just host::service-setup
-
-# Запустить TUI
-just host::service-tui
+just host::service-setup   # установить зависимости tools/production/
+just host::service-tui     # запустить TUI
 ```
 
 ### Standalone-бинарь (сервисник)
-
-Скачать `service_tui` из [GitHub Releases](https://github.com/OSabuser/tft_manufacture_test/releases) и запустить двойным кликом — Python не требуется.
-
-Для сборки из исходников:
 
 ```bash
 just host::service-build
 # → tools/production/dist/service_tui
 ```
 
-> **Важно:** standalone-бинарь не включает `tools/host/`. Перед сборкой убедитесь что `tools/host/` инициализирован (`just host::setup-tools`) и доступен рядом с бинарём, либо измените `_FLASH_USB_SCRIPT` в `flasher.py` на абсолютный путь.
+> Standalone-бинарь не включает `tools/host/` — для прошивки рядом нужен инициализированный `tools/host/` (`just host::setup-tools`), либо абсолютный путь в `_FLASH_USB_SCRIPT` (`flasher.py`).
 
 ---
 
@@ -639,56 +418,65 @@ just host::service-build
 
 ```bash
 1. BOOT_MOD_1 → GND, сбросить плату
-2. Подключить USB к сервисному ПК
-3. TUI: WaitingScreen → обнаружен CDC 1996:00AD → DiagScreen
-4. Выбрать тесты (или Все тесты) → Запустить
-5. Ответить на интерактивные запросы (display, mqs)
-6. Получить итог PASS / FAIL
+2. Подключить USB → DiagScreen
+3. Выбрать тесты (по умолчанию ничего не выбрано) или "Выбрать все"
+4. Запустить → ответить на интерактивные запросы
+5. Получить итог; FAIL-тесты — наверху таблицы, detail виден полностью
 ```
 
 ### Перепрошивка firmware_test
 
 ```bash
-1. BOOT_MOD_1 → 3V3, сбросить плату
-2. Подключить USB → TUI: FlashScreen
-3. Выбрать firmware_test → Прошить
-4. BOOT_MOD_1 → GND, сбросить плату
-5. TUI автоматически переходит в DiagScreen
+1. BOOT_MOD_1 → 3V3, сбросить плату → FlashScreen
+2. Выбрать firmware_test → Прошить
+3. PostFlashScreen: BOOT_MOD_1 → GND, сбросить плату
+4. Нажать "Готово" (или дождаться авто-перехода через 40с)
+5. TUI автоматически попадает в DiagScreen при следующем подключении
 ```
 
-### Chip Erase (сброс Flash в FF)
+### Chip Erase
 
 ```bash
 1. Плата в SDP-режиме (BOOT_MOD_1 → 3V3)
 2. FlashScreen → Chip Erase (~30 с)
-3. После erase: BootROM не загрузит прошивку —
-   необходимо перепрошить (пункт выше)
+3. После erase BootROM не загрузит прошивку — требуется перепрошить
 ```
 
 ---
 
 ## Зависимости
 
-| Пакет           | Версия | Назначение               |
-| --------------- | ------ | ------------------------ |
-| `textual`       | ≥ 0.80 | TUI фреймворк            |
-| `pyserial`      | ≥ 3.5  | USB CDC ACM + M5 Serial  |
-| `python-dotenv` | ≥ 1.0  | загрузка `.env`          |
-| `pyinstaller`   | ≥ 6.0  | сборка standalone-бинаря |
+| Пакет           | Версия | Назначение                                            |
+| --------------- | ------ | ----------------------------------------------------- |
+| `textual`       | ≥ 0.80 | TUI фреймворк                                         |
+| `pyserial`      | ≥ 3.5  | USB CDC ACM + M5 Serial                               |
+| `pyusb`         | ≥ 1.0  | детект BootROM SDP (не виден через pyserial на macOS) |
+| `python-dotenv` | ≥ 1.0  | загрузка `.env`                                       |
+| `pyinstaller`   | ≥ 6.0  | сборка standalone-бинаря                              |
 
-**Runtime-зависимость (не в `pyproject.toml`):**
-`flasher.py` вызывает `tools/host/flash_usb.py` через `uv run` — uv-окружение `tools/host/` должно быть инициализировано командой `just host::setup-tools`.
+**Runtime-зависимость (не в `pyproject.toml`):** `flasher.py` вызывает `tools/host/flash_usb.py` через `uv run` — `tools/host/` должен быть инициализирован (`just host::setup-tools`).
+
+---
+
+## Известные грабли Textual 8.x (для тех, кто продолжит разработку)
+
+Зафиксировано на практике — экономит время при будущих доработках:
+
+- **`Screen.Message` не существует.** Вложенные сообщения экранов наследуются от `textual.message.Message` напрямую, не от несуществующего атрибута `Screen.Message`.
+- **`self._running` — зарезервированное имя.** `MessagePump` (предок `Screen`) использует это поле для своего внутреннего message loop. Случайное совпадение имени тихо ломает логику без исключения — в `DiagScreen` переименовано в `_tests_running`.
+- **`row.mount(child)` сразу после `self.mount(row)` бросает `MountError`** — `row` ещё не прикреплён к DOM. Решение: передавать детей в конструктор контейнера (`Horizontal(cb, label, classes=...)`) и монтировать одним `mount_all()`.
+- **`CSS_PATH` резолвится относительно файла класса**, не относительно корня проекта — постоянно расходится при рефакторинге структуры. Решение: один `CSS_PATH` только на `ServiceApp`, все стили в едином `app.tcss`.
+- **`table.add_columns(*labels)` не принимает `width=`.** Колонка получает ширину по умолчанию равную длине заголовка — длинный контент обрезается независимо от `height` строки. Нужно использовать `add_column(label, width=N)` по одной колонке.
+- **`DataTable.sort(*columns, key=fn)` передаёт в `key()` кортеж значений ячеек** (для указанных `columns`), не `row_key` и не `(row_key, row_data)`. Сортировка по `test_id` напрямую невозможна без парсинга содержимого ячеек, которые сами полностью контролируем.
+- **Нет публичного API для изменения высоты уже добавленной строки.** `update_cell()` меняет только содержимое. Если нужно изменить `height` (например, под более длинный текст) — единственный надёжный путь: `remove_row()` + `add_row(..., height=N)`.
 
 ---
 
 ## Логирование
-
-TUI логирует в файл (не в stdout — Textual захватывает терминал):
 
 ```bash
 tools/production/service_tui.log   ← по умолчанию
 $SERVICE_LOG_DIR/service_tui.log   ← если задан в .env
 ```
 
-Уровень: `DEBUG` для всех модулей, `WARNING` для textual.  
-При standalone-запуске лог создаётся рядом с исполняемым файлом.
+Уровень: `DEBUG` для модулей приложения, `WARNING` для самого textual. TUI не пишет в stdout — Textual захватывает терминал.

@@ -19,7 +19,7 @@ Blocking-вызовы выполняются в executor чтобы не бло�
 """
 
 from __future__ import annotations
-
+import os
 import asyncio
 import json
 import logging
@@ -30,9 +30,9 @@ import serial.tools.list_ports
 
 logger = logging.getLogger(__name__)
 
-# VID/PID M5StampPLC (Espressif USB JTAG/serial)
-_M5_VID = 0x303A
-_M5_PID = 0x1001
+# VID/PID M5StampPLC
+_M5_VID = int(os.environ.get("SERVICE_M5_VID", "0x303A"), 16)
+_M5_PID = int(os.environ.get("SERVICE_M5_PID", "0x4001"), 16)
 
 _READLINE_TIMEOUT_S = 0.5
 _CMD_TIMEOUT_S = 3.0
@@ -142,18 +142,18 @@ class M5Client:
     async def ping(self) -> bool:
         """Проверить связь с агентом."""
         resp = await self._cmd({"cmd": "ping"})
-        return resp is not None and resp.get("status") == "ok"
+        return resp is not None and resp.get("ok") is True
 
     async def relay_set(self, relay: int, state: bool) -> bool:
         """
         Переключить реле.
 
-        :param relay: Номер реле 1..4.
+        :param relay: Номер реле 1..4 (в протоколе агента — поле "ch").
         :param state: True = ON, False = OFF.
         :return: True при успехе.
         """
-        resp = await self._cmd({"cmd": "relay_set", "relay": relay, "state": state})
-        return resp is not None and resp.get("status") == "ok"
+        resp = await self._cmd({"cmd": "relay_set", "ch": relay, "state": state})
+        return resp is not None and resp.get("ok") is True
 
     async def relay_get(self, relay: int) -> Optional[bool]:
         """
@@ -161,15 +161,15 @@ class M5Client:
 
         :return: True/False или None при ошибке.
         """
-        resp = await self._cmd({"cmd": "relay_get", "relay": relay})
-        if resp and resp.get("status") == "ok":
+        resp = await self._cmd({"cmd": "relay_get", "ch": relay})
+        if resp and resp.get("ok") is True:
             return bool(resp.get("state"))
         return None
 
     async def can_send(self, can_id: int, data: list[int]) -> bool:
         """Отправить CAN-фрейм через M5."""
         resp = await self._cmd({"cmd": "can_send", "id": can_id, "data": data})
-        return resp is not None and resp.get("status") == "ok"
+        return resp is not None and resp.get("ok") is True
 
     async def can_recv(self, timeout_ms: int = 500) -> Optional[dict]:
         """
@@ -178,7 +178,7 @@ class M5Client:
         :return: {"id": int, "data": list[int]} или None при таймауте/ошибке.
         """
         resp = await self._cmd({"cmd": "can_recv", "timeout_ms": timeout_ms})
-        if resp and resp.get("status") == "ok":
+        if resp and resp.get("ok") is True:
             return {"id": resp["id"], "data": resp["data"]}
         return None
 
