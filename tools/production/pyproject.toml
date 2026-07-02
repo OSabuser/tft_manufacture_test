@@ -8,7 +8,8 @@ dependencies = [
     "pyserial>=3.5",
     "python-dotenv>=1.0.0",
     "pyinstaller>=6.0.0",
-    "pyusb>=1.0.0",    
+    "pyusb>=1.0.0",
+    "spsdk==3.7.0",
 ]
 
 [project.scripts]
@@ -16,6 +17,9 @@ service-tui = "main:main"
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]
 
 [build-system]
 requires = ["hatchling"]

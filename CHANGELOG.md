@@ -58,6 +58,84 @@
 - Следить за развитием BSP: MQS, RGB, bootloader или `tft_app`.
 - Отслеживать локальные патчи поверх vendor SDK, которые нужно вести отдельным patch log.
 
+## [Не выпущено] — service-tui: кастомная прошивка нестандартной памяти (после слияния `feature-tui-python`)
+
+Диапазон: `<заполнить после merge>..<текущий HEAD>`
+Сравнение: `<заполнить после merge>`
+
+> Изменения внесены **поверх** слияния `feature-tui-python → dev` — базовая
+> архитектура `service-tui` (экраны, USB/M5-клиенты, оркестратор) приходит
+> самим merge-коммитом; здесь только то, что было доработано отдельно после.
+
+### Кратко
+
+- `service-tui` теперь умеет прошивать сторонние/легаси бинарники (платы
+  с W25Q256/512 вместо штатного W25Q128) через USB SDP, с явной записью
+  FCB вместо ненадёжного для таких чипов auto-config Flashloader.
+- Выбор оператора на `FlashScreen` (файл/память/DCD) запоминается на весь
+  запуск TUI — ускоряет прошивку партии одинаковых плат.
+- Документация (`tools/production/README.md`, `tools/production/DEV_ARCH.md`,
+  `tools/host/README.md`, `docs/HOW_TO_FLASH.md`, `docs/DEV_ARCH.md`)
+  синхронизирована с фактическим состоянием кода.
+
+### Добавлено
+
+- `tools/host/flash_usb.py` — `write_fcb_explicit()` + флаг `--fcb-path`:
+  буквальная запись 512-байтного FCB-блоба (`write-memory 0x60000000`)
+  вместо magic option word `0xF000000F`. Штатный `--firmware`-путь
+  (`firmware_test`/`bootloader`/`app`) не тронут — работает как раньше.
+- `tools/production/app/models.py` — `FcbVariant` (`W25Q128` покрывает и
+  W25Q64, `W25Q512` — и W25Q256) и `FlashPreset` (липкий выбор оператора).
+- `tools/production/app/flasher.py` — `_build_custom_hab()`: сборка
+  HAB-образа на лету через `nxpimage hab export` из «сырого» бинарника
+  (без FCB/IVT/DCD) в `custom_binaries/`, с опциональным `DCDFilePath`;
+  стриминг вывода `nxpimage` в UI-лог, а не только в `logger.debug`.
+  `list_custom_binaries()` + `SERVICE_CUSTOM_BINARIES_DIR` — резолв
+  директории кастомных бинарей (внешняя, не пакуется в PyInstaller).
+- `tools/production/app/screens/flash.py` — `Select` по `custom_binaries/`,
+  `Select` по `FcbVariant`, `Switch` DCD вместо свободного текстового
+  `Input`; предзаполнение из `FlashPreset` при создании экрана.
+- `tools/production/app/app.py` — `ServiceApp._last_flash_preset`,
+  прокидывается в новый `FlashScreen` при каждом `DeviceDetected(FLASHING)`.
+
+### Изменено
+
+- `tools/host/flash_usb.py`, `erase_chip()` — таймаут `blhost`
+  `flash-erase-all` увеличен до `-t 200000` (W25Q512 стирается заметно
+  дольше W25Q128, дефолтного таймаута не хватало). `flash-erase-region`
+  (обычная прошивка) не тронут — там стирается пара секторов, масштаб иной.
+- `tools/production/app/app.tcss` — `#flash-target-group` ограничен по
+  высоте (`max-height: 18`, свой скролл), `#flash-log` защищён
+  `min-height: 6` — разросшаяся custom-группа больше не сжимает лог
+  прошивки до нечитаемого состояния.
+
+### Документация
+
+- `tools/production/README.md` — мокап `FlashScreen` под факт (Select/Select/
+  Switch), новый workflow «Прошивка стороннего бинарника», `SERVICE_CUSTOM_BINARIES_DIR`
+  в примере `.env`.
+- `tools/production/DEV_ARCH.md` — новый §8 (конвейер кастомной прошивки,
+  `FlashPreset`, явная запись FCB, обоснование отказа от auto-config для
+  W25Q256/512 и от полноценного авто-батч-режима прошивки).
+- `docs/HOW_TO_FLASH.md` — §1.5, сноска в сравнительной таблице способов
+  прошивки (FCB «не нужен» верно только для W25Q128).
+- `docs/DEV_ARCH.md` — `tools/production/` добавлен в дерево структуры
+  репозитория (отсутствовал ранее).
+- `tools/host/README.md` — актуализирован статус `dcd/*.bin` (`w25q512_fdcb.bin`
+  теперь используется), указатель на `service-tui` как способ прошивки
+  нестандартной памяти.
+
+### Известные ограничения
+
+- Auto-config Flashloader для W25Q256/512 не проверялся напрямую — решение
+  писать FCB явно снимает вопрос архитектурно, но не подтверждает и не
+  опровергает надёжность auto-config как таковую.
+- Полноценный режим массового программирования (авто-прошивка по факту
+  детекта USB, без подтверждения оператора) рассмотрен и отклонён — в
+  SDP/Flashloader-режиме нет способа прочитать UID платы для идентификации.
+- Standalone-упаковка (`PyInstaller`) для этого функционала ещё не
+  реализована — см. `tools/production/RELEASE_PLAN.md`.
+
 ## [2026-06-29] — Этапы 6г–7: MQS, HIL pytest firmware_test, Provisioning
 
 ### Кратко
