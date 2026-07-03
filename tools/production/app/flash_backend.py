@@ -9,12 +9,18 @@ Zero Textual/asyncio импортов — модуль полностью син
 без event loop (см. test_flash_backend.py). Async-обвязка (asyncio.to_thread
 + run_coroutine_threadsafe) — забота Flasher (Фаза 2), не этого модуля.
 
-Открытые вопросы/допущения (см. сопроводительное сообщение в чате):
+Открытые вопросы/допущения:
   - Одна сессия McuBoot на весь flash()/erase_chip(), а не переоткрытие
     на каждую операцию, как в CLI flash_usb.py.
   - Имена FlashProgress.phase свои (не парсинг stdout blhost).
-  - Иерархия исключений — предложение автора модуля, не зафиксирована
-    отдельно в MONOLITH_APP_PLAN.md.
+
+Фаза 4: SPSDKConnectionError оборачивается в ConnectionLostError на всех
+трёх точках отказа (SDP write, McuBoot handshake+команды, McuBoot chip erase),
+что позволяет Flasher/TUI отличить обрыв USB от логической ошибки через
+поле connection_lost. USB-интерфейс, полученный из load_flashloader(),
+закрывается в finally на любом исходе (защита от утечки HID-хэндла в
+редком окне «wait_for_flashloader вернул интерфейс → USB выдернут →
+McuBoot.__enter__ упал»).
 """
 
 from __future__ import annotations
@@ -22,11 +28,13 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from spsdk.exceptions import SPSDKConnectionError
 from spsdk.image.hab.hab_image import HabImage
 from spsdk.mboot import McuBoot, MbootUSBInterface
 from spsdk.sdp import SDP, SdpUSBInterface
@@ -50,6 +58,15 @@ REAL_DCD_BIN = _HOST_DCD_DIR / "dcd.bin"
 def fcb_blob_path(fcb_filename: str) -> Path:
     """Путь к готовому FCB-блобу (tools/host/dcd/w25q128_fdcb.bin и т.п.)."""
     return _HOST_DCD_DIR / fcb_filename
+
+
+def firmware_hab_path(firmware: str, build_type: str) -> Path:
+    """Путь к готовому HAB-образу штатной прошивки (Р6, двухрежимный резолв)."""
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent / "firmware"
+    else:
+        base = Path(os.environ.get("BUILD_DIR", str(REPO_ROOT / "build")))
+    return base / build_type / f"{firmware}_hab.bin"
 
 
 # ─── USB VID:PID (те же переменные окружения, что уже приняты в проекте) ──
@@ -92,7 +109,38 @@ _HAB_OPTIONS_TEMPLATE = [
 
 
 class FlashBackendError(Exception):
-    """Базовая ошибка flash_backend."""
+    """Базовая ошибка flash_backend.
+
+    :cvar connection_lost: True если ошибка связана с потерей физического
+        соединения (USB выдернут, устройство пропало с шины). Позволяет
+        Flasher/TUI отличить обрыв от логической ошибки без парсинга
+        текста сообщения. По умолчанию False; подкласс ConnectionLostError
+        переопределяет на True.
+    """
+
+    connection_lost: bool = False
+
+    def __init__(self, message: str, *, connection_lost: bool = False) -> None:
+        super().__init__(message)
+        # instance-level override — на случай, если базовый класс поднимается
+        # напрямую с connection_lost=True без использования ConnectionLostError
+        if connection_lost:
+            self.connection_lost = True
+
+
+class ConnectionLostError(FlashBackendError):
+    """Потеря USB-соединения посреди операции (обёртка над SPSDKConnectionError).
+
+    Обёртка над spsdk.exceptions.SPSDKConnectionError, поднимается при
+    исчезновении устройства с шины во время выполнения SDP/McuBoot команд.
+    Отличается от DeviceNotFoundError, который возникает ДО начала операции
+    (устройство никогда не было подключено).
+    """
+
+    connection_lost: bool = True
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, connection_lost=True)
 
 
 class DeviceNotFoundError(FlashBackendError):
@@ -127,6 +175,21 @@ def _emit(
         progress_cb(FlashProgress(phase=phase, percent=percent, message=message))
 
 
+def _close_iface_quiet(iface: MbootUSBInterface) -> None:
+    """Закрыть интерфейс в finally, глотая любые ошибки.
+
+    Внутри McuBoot() как context-manager закрытие уже происходит, поэтому
+    повторное close() на закрытом интерфейсе может выкинуть исключение
+    из libusbsio — нам это не важно, мы просто хотим гарантию, что если
+    McuBoot.__enter__ упал (окно между load_flashloader и with McuBoot()),
+    интерфейс не остался висеть с открытым HID-хэндлом.
+    """
+    try:
+        iface.close()
+    except Exception:
+        pass
+
+
 # ─── Flashloader bring-up ───────────────────────────────────────────────────
 
 
@@ -155,6 +218,7 @@ def load_flashloader(
 
     :raises DeviceNotFoundError: SDP-устройство не найдено (и Flashloader тоже не поднят).
     :raises FlashLoaderTimeoutError: см. wait_for_flashloader().
+    :raises ConnectionLostError: USB-соединение потеряно во время SDP-обмена.
     """
     already = MbootUSBInterface.scan(device_id=_FLASHLOADER_DEVICE_ID)
     if already:
@@ -176,9 +240,14 @@ def load_flashloader(
         f"Загрузка Flashloader через SDP ({_SDP_DEVICE_ID})",
     )
     data = FLASHLOADER_BIN.read_bytes()
-    with SDP(sdp_devices[0]) as sdp:
-        sdp.write_file(FLASHLOADER_LOAD_ADDR, data)
-        sdp.jump_and_run(FLASHLOADER_LOAD_ADDR)
+    try:
+        with SDP(sdp_devices[0]) as sdp:
+            sdp.write_file(FLASHLOADER_LOAD_ADDR, data)
+            sdp.jump_and_run(FLASHLOADER_LOAD_ADDR)
+    except SPSDKConnectionError as exc:
+        raise ConnectionLostError(
+            f"USB-соединение потеряно при загрузке Flashloader: {exc}"
+        ) from exc
 
     iface = wait_for_flashloader()
     _emit(progress_cb, "load_flashloader", 100, "Flashloader готов")
@@ -239,6 +308,7 @@ def flash(
     :param fcb_path: Явный FCB-блоб (custom-бинари). None → auto-config
                       (write_fcb_auto, только для штатных firmware_test/production).
     :raises FlashBackendError: и подклассы — на любой ошибке.
+    :raises ConnectionLostError: обрыв USB посреди операции.
     """
     if not hab_bin.exists():
         raise FlashBackendError(f"Файл не найден: {hab_bin}")
@@ -249,9 +319,14 @@ def flash(
         if not sdp_devices:
             raise DeviceNotFoundError(f"SDP-устройство не найдено ({_SDP_DEVICE_ID})")
         addr = FLASH_BASE + HAB_OFFSET
-        with SDP(sdp_devices[0]) as sdp:
-            sdp.write_file(addr, hab_bin.read_bytes())
-            sdp.jump_and_run(addr)
+        try:
+            with SDP(sdp_devices[0]) as sdp:
+                sdp.write_file(addr, hab_bin.read_bytes())
+                sdp.jump_and_run(addr)
+        except SPSDKConnectionError as exc:
+            raise ConnectionLostError(
+                f"USB-соединение потеряно при RAM-загрузке: {exc}"
+            ) from exc
         _emit(progress_cb, "done", 100, "Загружено в RAM")
         return
 
@@ -261,59 +336,82 @@ def flash(
     hab_size = hab_bin.stat().st_size
     erase_size = ((HAB_OFFSET + hab_size + 0xFFF) // 0x1000) * 0x1000
 
-    with McuBoot(iface) as mboot:
-        _emit(progress_cb, "configure", 0, "Конфигурация FlexSPI NOR")
-        configure_flexspi(mboot)
+    # try/finally гарантирует закрытие iface даже если McuBoot.__enter__ падает
+    # ДО того, как SDP context-manager отработает (тонкое окно, но реальное:
+    # wait_for_flashloader вернул интерфейс, USB выдернут до McuBoot handshake).
+    try:
+        with McuBoot(iface) as mboot:
+            _emit(progress_cb, "configure", 0, "Конфигурация FlexSPI NOR")
+            configure_flexspi(mboot)
 
-        _emit(
-            progress_cb, "erase", 0, f"Стирание 0x{FLASH_BASE:08X} + {erase_size} байт"
-        )
-        ok = mboot.flash_erase_region(FLASH_BASE, erase_size, mem_id=0)
-        if not ok:
-            raise FlashBackendError("flash_erase_region вернул False")
+            _emit(
+                progress_cb,
+                "erase",
+                0,
+                f"Стирание 0x{FLASH_BASE:08X} + {erase_size} байт",
+            )
+            ok = mboot.flash_erase_region(FLASH_BASE, erase_size, mem_id=0)
+            if not ok:
+                raise FlashBackendError("flash_erase_region вернул False")
 
-        _emit(progress_cb, "fcb", 0, "Запись FCB")
-        if fcb_path is not None:
-            write_fcb_explicit(mboot, fcb_path)
-        else:
-            write_fcb_auto(mboot)
+            _emit(progress_cb, "fcb", 0, "Запись FCB")
+            if fcb_path is not None:
+                write_fcb_explicit(mboot, fcb_path)
+            else:
+                write_fcb_auto(mboot)
 
-        _emit(progress_cb, "write", 0, f"Запись {hab_bin.name} ({hab_size} байт)")
+            _emit(progress_cb, "write", 0, f"Запись {hab_bin.name} ({hab_size} байт)")
 
-        def _on_progress(current: int, total: int) -> None:
-            percent = int(current * 100 / total) if total else 0
-            _emit(progress_cb, "write", percent, f"{current}/{total} байт")
+            def _on_progress(current: int, total: int) -> None:
+                percent = int(current * 100 / total) if total else 0
+                _emit(progress_cb, "write", percent, f"{current}/{total} байт")
 
-        data = hab_bin.read_bytes()
-        ok = mboot.write_memory(
-            write_addr, data, mem_id=0, progress_callback=_on_progress
-        )
-        if not ok:
-            raise FlashBackendError("write_memory (HAB-образ) вернул False")
+            data = hab_bin.read_bytes()
+            ok = mboot.write_memory(
+                write_addr, data, mem_id=0, progress_callback=_on_progress
+            )
+            if not ok:
+                raise FlashBackendError("write_memory (HAB-образ) вернул False")
 
-        _emit(progress_cb, "reset", 0, "Reset")
-        mboot.reset(reopen=False)
+            _emit(progress_cb, "reset", 0, "Reset")
+            mboot.reset(reopen=False)
+    except SPSDKConnectionError as exc:
+        raise ConnectionLostError(
+            f"USB-соединение потеряно во время прошивки: {exc}"
+        ) from exc
+    finally:
+        _close_iface_quiet(iface)
 
     _emit(progress_cb, "done", 100, "Прошивка завершена успешно")
 
 
 def erase_chip(progress_cb: Optional[ProgressCallback] = None) -> None:
     """Полная очистка Flash (см. flash_usb.py::erase_chip). После erase FCB
-    тоже стёрт — плата не загрузится до следующей прошивки."""
+    тоже стёрт — плата не загрузится до следующей прошивки.
+
+    :raises ConnectionLostError: обрыв USB посреди chip erase.
+    """
     iface = load_flashloader(progress_cb)
 
-    with McuBoot(iface) as mboot:
-        _emit(progress_cb, "configure", 0, "Конфигурация FlexSPI NOR")
-        configure_flexspi(mboot)
+    try:
+        with McuBoot(iface) as mboot:
+            _emit(progress_cb, "configure", 0, "Конфигурация FlexSPI NOR")
+            configure_flexspi(mboot)
 
-        _emit(progress_cb, "erase", 0, "Полная очистка Flash (~30с)")
-        iface.device.timeout = ERASE_ALL_TIMEOUT_MS  # см. Фазу 0, ⚠В2
-        ok = mboot.flash_erase_all(mem_id=FLEXSPI_MEMORY_ID)
-        if not ok:
-            raise FlashBackendError("flash_erase_all вернул False")
+            _emit(progress_cb, "erase", 0, "Полная очистка Flash (~30с)")
+            iface.device.timeout = ERASE_ALL_TIMEOUT_MS  # см. Фазу 0, ⚠В2
+            ok = mboot.flash_erase_all(mem_id=FLEXSPI_MEMORY_ID)
+            if not ok:
+                raise FlashBackendError("flash_erase_all вернул False")
 
-        _emit(progress_cb, "reset", 0, "Reset")
-        mboot.reset(reopen=False)
+            _emit(progress_cb, "reset", 0, "Reset")
+            mboot.reset(reopen=False)
+    except SPSDKConnectionError as exc:
+        raise ConnectionLostError(
+            f"USB-соединение потеряно во время chip erase: {exc}"
+        ) from exc
+    finally:
+        _close_iface_quiet(iface)
 
     _emit(progress_cb, "done", 100, "Chip erase завершён")
 

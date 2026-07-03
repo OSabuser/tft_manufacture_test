@@ -48,16 +48,10 @@ logger = logging.getLogger(__name__)
 # Release временно нестабилен (см. отчёт о тестировании) — по умолчанию Debug.
 _FIRMWARE_BUILD_TYPE = os.environ.get("FIRMWARE_BUILD_TYPE", "Debug")
 
-# tools/host/build (или переопределено через BUILD_DIR) — та же логика,
-# что раньше жила внутри flash_usb.py::main() и была ему видна только
-# через CLI-аргументы --firmware/--build-type. Теперь резолвим сами.
-_BUILD_DIR = Path(os.environ.get("BUILD_DIR", str(flash_backend.REPO_ROOT / "build")))
-
 
 def _firmware_hab_path(firmware: str) -> Path:
-    """Путь к готовому HAB-образу штатной прошивки (см. build.just — тот же
-    файл, что собирает `nxpimage hab export` при обычной сборке)."""
-    return _BUILD_DIR / _FIRMWARE_BUILD_TYPE / f"{firmware}_hab.bin"
+    """Делегирование в backend (Р6): dev/frozen резолв живёт там."""
+    return flash_backend.firmware_hab_path(firmware, _FIRMWARE_BUILD_TYPE)
 
 
 def _resolve_custom_binaries_dir() -> Path:
@@ -111,6 +105,20 @@ def _make_sync_progress_cb(
     return _sync_cb
 
 
+def _format_error_message(exc: BaseException) -> str:
+    """Человекочитаемое сообщение для FlashProgress(phase="error").
+
+    Для ConnectionLostError (и любого FlashBackendError с connection_lost=True)
+    добавляет явный префикс — вариант А (согласовано): специального перехода
+    экрана нет, но в #flash-log причина должна читаться однозначно, без
+    необходимости лезть в общий лог-файл за трейсбеком.
+    """
+    connection_lost = getattr(exc, "connection_lost", False)
+    if connection_lost:
+        return f"Соединение с платой потеряно: {exc}"
+    return str(exc)
+
+
 class Flasher:
     """
     Async-обёртка над app/flash_backend.py.
@@ -154,9 +162,17 @@ class Flasher:
     ) -> bool:
         """Выполнить flash_backend.flash()/erase_chip() в потоке.
 
-        flash_backend поднимает FlashBackendError вместо возврата False —
-        здесь это конвертируется обратно в контракт Flasher (bool + событие
-        phase="error"), который был у subprocess-версии (ненулевой returncode).
+        flash_backend поднимает FlashBackendError (включая ConnectionLostError,
+        см. Фазу 4) вместо возврата False — здесь это конвертируется обратно
+        в контракт Flasher (bool + событие phase="error"), который был у
+        subprocess-версии (ненулевой returncode).
+
+        Отдельный except Exception — safety net (Фаза 4, согласовано):
+        любое непредвиденное исключение из worker-потока (не только
+        FlashBackendError) обязано вернуть управление в TUI с ok=False,
+        а не оставить кнопки заблокированными навсегда. KeyboardInterrupt/
+        SystemExit/CancelledError не перехватываются — это BaseException,
+        не Exception, пробрасываются как есть
         """
         try:
             await asyncio.to_thread(func, *args, progress_cb=sync_progress_cb, **kwargs)
@@ -165,7 +181,22 @@ class Flasher:
             logger.error("%s: %s", getattr(func, "__name__", func), exc)
             if async_progress_cb is not None:
                 await async_progress_cb(
-                    FlashProgress(phase="error", percent=0, message=str(exc))
+                    FlashProgress(
+                        phase="error", percent=0, message=_format_error_message(exc)
+                    )
+                )
+            return False
+        except Exception as exc:  # noqa: BLE001 — safety net, см. docstring
+            logger.exception(
+                "%s: непредвиденная ошибка", getattr(func, "__name__", func)
+            )
+            if async_progress_cb is not None:
+                await async_progress_cb(
+                    FlashProgress(
+                        phase="error",
+                        percent=0,
+                        message=f"Непредвиденная ошибка: {exc}",
+                    )
                 )
             return False
 
@@ -319,7 +350,18 @@ class Flasher:
                     FlashProgress(
                         phase="error",
                         percent=0,
-                        message=f"Ошибка сборки HAB-образа: {exc}",
+                        message=f"Ошибка сборки HAB-образа: {_format_error_message(exc)}",
+                    )
+                )
+            return None
+        except Exception as exc:  # noqa: BLE001 — safety net, см. _run_flash_op
+            logger.exception("build_custom_hab: непредвиденная ошибка")
+            if progress_cb is not None:
+                await progress_cb(
+                    FlashProgress(
+                        phase="error",
+                        percent=0,
+                        message=f"Непредвиденная ошибка сборки HAB-образа: {exc}",
                     )
                 )
             return None

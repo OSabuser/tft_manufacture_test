@@ -421,3 +421,28 @@ def test_build_custom_hab_bytes_match_golden(tmp_path):
     out1 = fb.build_custom_hab(raw, use_dcd=False)
     out2 = fb.build_custom_hab(raw, use_dcd=False)
     assert out1.read_bytes() == out2.read_bytes()
+
+
+# ─── firmware_hab_path() — двухрежимный резолв (Р6) ──────────────────────
+
+
+def test_firmware_hab_path_dev_default(monkeypatch):
+    monkeypatch.delenv("BUILD_DIR", raising=False)
+    p = fb.firmware_hab_path("firmware_test", "Debug")
+    assert p == fb.REPO_ROOT / "build" / "Debug" / "firmware_test_hab.bin"
+
+
+def test_firmware_hab_path_dev_env_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("BUILD_DIR", str(tmp_path))
+    p = fb.firmware_hab_path("bootloader", "Release")
+    assert p == tmp_path / "Release" / "bootloader_hab.bin"
+
+
+def test_firmware_hab_path_frozen(monkeypatch, tmp_path):
+    exe = tmp_path / "dist" / "service_tui"
+    exe.parent.mkdir(parents=True)
+    exe.touch()
+    monkeypatch.setattr(fb.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(fb.sys, "executable", str(exe))
+    p = fb.firmware_hab_path("firmware_test", "Debug")
+    assert p == exe.parent / "firmware" / "Debug" / "firmware_test_hab.bin"

@@ -131,6 +131,7 @@ class ConfirmRequest:
 class FlashProgress:
     """Прогресс прошивки."""
 
-    phase: str  # "sdphost" | "blhost" | "done" | "error"
+    phase: str  # "load_flashloader" | "configure" | "erase" | "fcb" | "write"
+    # | "reset" | "hab_build" | "done" | "error"
     percent: int  # 0..100
     message: str

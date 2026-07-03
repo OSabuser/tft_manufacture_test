@@ -49,7 +49,8 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
     Если плата физически отключена в простое — сессия считается
     недостоверной, экран сразу уходит на WaitingScreen (см. замечание
     №4 отчёта). Во время самой прошивки/erase мониторинг приостановлен —
-    обрыв в этом случае обнаружит и обработает сам flash_usb.py subprocess.
+    обрыв в этом случае обнаруживает сам flash_backend (SPSDKConnectionError
+    → ConnectionLostError, см. Фазу 4) и репортит через #flash-log.
     """
 
     BINDINGS = [
@@ -154,6 +155,8 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
     def _check_sdp_present(self) -> bool:
         # Не считаем потерей соединения, если идёт активная операция —
         # flash_usb.py сам обработает реальный обрыв через subprocess.
+        # обрыв в этом случае обнаружит и обработает сам flash_backend
+        # (ConnectionLostError, см. Фазу 4), не watcher.
         if self._flashing:
             return True
         return Flasher.detect_sdp()
