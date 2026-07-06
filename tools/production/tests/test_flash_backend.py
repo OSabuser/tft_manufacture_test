@@ -1,5 +1,6 @@
 """
 test_flash_backend.py — юнит-тесты app/flash_backend.py.
+uv run pytest tests/test_flash_backend.py -v
 
 Два уровня:
   1. SDP/McuBoot/detect — моки (unittest.mock через monkeypatch). Железо не
@@ -160,10 +161,14 @@ def test_configure_flexspi_ok():
     )
 
 
-def test_configure_flexspi_fail():
+def test_configure_flexspi_fail(monkeypatch):
+    # Плата на месте → честная ошибка операции, НЕ обрыв (вариант B, Фаза 4a).
+    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=True))
     mboot = Mock(configure_memory=Mock(return_value=False))
-    with pytest.raises(fb.FlashBackendError):
+    with pytest.raises(fb.FlashBackendError) as ei:
         fb.configure_flexspi(mboot)
+    assert not isinstance(ei.value, fb.ConnectionLostError)
+    assert ei.value.connection_lost is False
 
 
 def test_write_fcb_auto_uses_magic_word():
@@ -190,13 +195,15 @@ def test_write_fcb_explicit_ok(tmp_path):
     mboot.write_memory.assert_called_once_with(fb.FLASH_BASE, b"\xab" * 512, mem_id=0)
 
 
-def test_write_fcb_explicit_write_fails(tmp_path):
+def test_write_fcb_explicit_write_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=True))
     fcb = tmp_path / "w25q128_fdcb.bin"
     fcb.write_bytes(b"\xab" * 512)
     mboot = Mock(write_memory=Mock(return_value=False))
 
-    with pytest.raises(fb.FlashBackendError):
+    with pytest.raises(fb.FlashBackendError) as ei:
         fb.write_fcb_explicit(mboot, fcb)
+    assert ei.value.connection_lost is False
 
 
 # ─── flash() ──────────────────────────────────────────────────────────────
@@ -309,6 +316,9 @@ def test_flash_write_memory_fails(monkeypatch, events, tmp_path):
     hab_bin = tmp_path / "fw_hab.bin"
     hab_bin.write_bytes(b"\xd1")
 
+    monkeypatch.setattr(
+        fb, "detect_sdp", Mock(return_value=True)
+    )  # плата на месте → честная ошибка
     monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=Mock()))
     _mock_mcuboot_ctx(monkeypatch, write_memory=False)
 
@@ -361,6 +371,9 @@ def test_erase_chip_happy_path(monkeypatch, events):
 
 
 def test_erase_chip_fails(monkeypatch, events):
+    monkeypatch.setattr(
+        fb, "detect_sdp", Mock(return_value=True)
+    )  # плата на месте → честная ошибка
     monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=MagicMock()))
     _mock_mcuboot_ctx(monkeypatch, flash_erase_all=False)
 
@@ -446,3 +459,104 @@ def test_firmware_hab_path_frozen(monkeypatch, tmp_path):
     monkeypatch.setattr(fb.sys, "executable", str(exe))
     p = fb.firmware_hab_path("firmware_test", "Debug")
     assert p == exe.parent / "firmware" / "Debug" / "firmware_test_hab.bin"
+
+
+# ─── Фаза 4a: типизация обрыва USB ───────────────────────────────────────
+#
+# Три проявления обрыва (RELEASE_ROADMAP.md):
+#   1) SDP/McuBoot бросают SPSDKConnectionError            — ловилось и до 4a;
+#   2) read-фаза после write бросает SPSDKTimeoutError     — НЕ ловилось (баг);
+#   3) команда возвращает False по таймауту (erase/write)  — вариант B (Р10).
+
+
+def test_connection_lost_tuple_covers_timeout():
+    """Инвариант, на котором держится вся 4a: SPSDKTimeoutError НЕ потомок
+    SPSDKConnectionError, поэтому обязан быть в кортеже явно. Страховка от
+    случайного регресса при апгрейде spsdk."""
+    assert fb.SPSDKTimeoutError in fb._CONNECTION_LOST_EXCEPTIONS
+    assert not issubclass(fb.SPSDKTimeoutError, fb.SPSDKConnectionError)
+
+
+def test_sdp_still_present_swallows_check_error(monkeypatch):
+    """§B: ошибка самой проверки detect_sdp() трактуется как «устройства нет»."""
+    monkeypatch.setattr(fb, "detect_sdp", Mock(side_effect=RuntimeError("bus gone")))
+    assert fb._sdp_still_present() is False
+
+
+def test_fail_command_device_gone_is_connection_lost(monkeypatch):
+    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=False))
+    with pytest.raises(fb.ConnectionLostError) as ei:
+        fb._fail_command("flash_erase_all вернул False")
+    assert ei.value.connection_lost is True
+
+
+def test_fail_command_device_present_is_plain_error(monkeypatch):
+    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=True))
+    with pytest.raises(fb.FlashBackendError) as ei:
+        fb._fail_command("flash_erase_all вернул False")
+    assert not isinstance(ei.value, fb.ConnectionLostError)
+    assert ei.value.connection_lost is False
+
+
+def test_load_flashloader_timeout_is_connection_lost(monkeypatch):
+    """SPSDKTimeoutError из SDP-обмена → ConnectionLostError (обёртка 4a)."""
+    monkeypatch.setattr(fb.MbootUSBInterface, "scan", Mock(return_value=[]))
+    monkeypatch.setattr(fb.SdpUSBInterface, "scan", Mock(return_value=[Mock()]))
+    monkeypatch.setattr(
+        fb,
+        "FLASHLOADER_BIN",
+        Mock(
+            exists=Mock(return_value=True), read_bytes=Mock(return_value=b"\x00" * 16)
+        ),
+    )
+    sdp_ctx = MagicMock()
+    sdp_ctx.__enter__.return_value = sdp_ctx
+    sdp_ctx.write_file.side_effect = fb.SPSDKTimeoutError()
+    monkeypatch.setattr(fb, "SDP", Mock(return_value=sdp_ctx))
+
+    with pytest.raises(fb.ConnectionLostError):
+        fb.load_flashloader()
+
+
+def test_flash_write_memory_timeout_is_connection_lost(monkeypatch, events, tmp_path):
+    """Гейт 4a #1: SPSDKTimeoutError из write_memory → ConnectionLostError,
+    а не safety-net «Непредвиденная ошибка»."""
+    hab_bin = tmp_path / "fw_hab.bin"
+    hab_bin.write_bytes(b"\xd1" + b"\x00" * 63)
+
+    monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=Mock()))
+    ctx = _mock_mcuboot_ctx(monkeypatch)
+    ctx.write_memory.side_effect = fb.SPSDKTimeoutError()
+
+    with pytest.raises(fb.ConnectionLostError) as ei:
+        fb.flash(hab_bin, progress_cb=_collector(events))
+    assert ei.value.connection_lost is True
+    assert "reset" not in _phases(events)
+    assert "done" not in _phases(events)
+
+
+def test_flash_write_false_device_gone_is_connection_lost(
+    monkeypatch, events, tmp_path
+):
+    """Вариант B в flash(): write_memory=False + плата пропала → ConnectionLostError."""
+    hab_bin = tmp_path / "fw_hab.bin"
+    hab_bin.write_bytes(b"\xd1")
+
+    monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=Mock()))
+    _mock_mcuboot_ctx(monkeypatch, write_memory=False)
+    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=False))
+
+    with pytest.raises(fb.ConnectionLostError):
+        fb.flash(hab_bin, progress_cb=_collector(events))
+
+
+def test_erase_chip_false_device_gone_is_connection_lost(monkeypatch, events):
+    """Гейт 4a #2a: flash_erase_all=False + detect_sdp=False → ConnectionLostError."""
+    monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=MagicMock()))
+    _mock_mcuboot_ctx(monkeypatch, flash_erase_all=False)
+    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=False))
+
+    with pytest.raises(fb.ConnectionLostError) as ei:
+        fb.erase_chip(progress_cb=_collector(events))
+    assert ei.value.connection_lost is True
+    assert "done" not in _phases(events)

@@ -39,6 +39,7 @@ from spsdk.image.hab.hab_image import HabImage
 from spsdk.mboot import McuBoot, MbootUSBInterface
 from spsdk.sdp import SDP, SdpUSBInterface
 from spsdk.utils.config import Config
+from spsdk.utils.exceptions import SPSDKTimeoutError
 
 from .models import FlashProgress
 from .usb_ports import UsbId, resolve_serial_port
@@ -155,6 +156,15 @@ class HabBuildError(FlashBackendError):
     """Ошибка сборки HAB-образа через HabImage (см. build_custom_hab)."""
 
 
+# SPSDKTimeoutError НЕ наследует SPSDKConnectionError (оба — потомки SPSDKError,
+# проверено по исходникам spsdk 3.7.0), поэтому один `except SPSDKConnectionError`
+# его пропускал → safety net в Flasher показывал «Непредвиденная ошибка» вместо
+# «Соединение потеряно» (Фаза 4a). Ловим оба явным кортежем в SDP/McuBoot-обёртках:
+# read-фаза после write может отдать голый таймаут. Именованная константа вместо
+# 4× инлайн-дублей.
+_CONNECTION_LOST_EXCEPTIONS = (SPSDKConnectionError, SPSDKTimeoutError)
+
+
 # ─── Detection (Р7 — spsdk API вместо pyusb) ───────────────────────────────
 
 
@@ -166,6 +176,35 @@ def detect_sdp() -> bool:
 def detect_cdc() -> bool:
     """True если виден CDC firmware_test (список портов, см. usb_ports.py)."""
     return resolve_serial_port(UsbId(_CDC_VID, _CDC_PID)) is not None
+
+
+def _sdp_still_present() -> bool:
+    """Быстрая проверка «плата ещё на шине» для error-путей (вариант B, Р10).
+
+    Любая ошибка самой проверки трактуется как «устройства нет»: проверка
+    выполняется только ПОСЛЕ уже случившегося сбоя команды, шина в этот
+    момент нестабильна, и «не смог проверить» практически всегда означает
+    «плату выдернули» (согласовано, RELEASE_ROADMAP.md §B).
+    """
+    try:
+        return detect_sdp()
+    except Exception:  # noqa: BLE001 — см. docstring: любой сбой ⇒ считаем обрывом
+        return False
+
+
+def _fail_command(message: str) -> None:
+    """Живая команда spsdk вернула False — переклассификация по варианту B (Р10).
+
+    Если устройство пропало с шины → обрыв (ConnectionLostError), иначе →
+    честная ошибка операции (FlashBackendError с прежним текстом). detect_sdp()
+    выполняется ТОЛЬКО здесь, в error-пути; happy path не затрагивается.
+
+    :raises ConnectionLostError: устройство исчезло с шины после сбоя команды.
+    :raises FlashBackendError: устройство на месте — ошибка самой операции.
+    """
+    if not _sdp_still_present():
+        raise ConnectionLostError(f"{message} (устройство пропало с шины)")
+    raise FlashBackendError(message)
 
 
 def _emit(
@@ -244,7 +283,7 @@ def load_flashloader(
         with SDP(sdp_devices[0]) as sdp:
             sdp.write_file(FLASHLOADER_LOAD_ADDR, data)
             sdp.jump_and_run(FLASHLOADER_LOAD_ADDR)
-    except SPSDKConnectionError as exc:
+    except _CONNECTION_LOST_EXCEPTIONS as exc:
         raise ConnectionLostError(
             f"USB-соединение потеряно при загрузке Flashloader: {exc}"
         ) from exc
@@ -262,7 +301,7 @@ def configure_flexspi(mboot: McuBoot) -> None:
     mboot.fill_memory(FLEXSPI_OPTION_ADDR, 4, FLEXSPI_OPTION_VALUE)
     ok = mboot.configure_memory(FLEXSPI_OPTION_ADDR, FLEXSPI_MEMORY_ID)
     if not ok:
-        raise FlashBackendError("configure_memory (FlexSPI init) вернул False")
+        _fail_command("configure_memory (FlexSPI init) вернул False")
 
 
 def write_fcb_auto(mboot: McuBoot) -> None:
@@ -273,7 +312,7 @@ def write_fcb_auto(mboot: McuBoot) -> None:
     mboot.fill_memory(FLEXSPI_OPTION_ADDR, 4, FLEXSPI_FCB_VALUE)
     ok = mboot.configure_memory(FLEXSPI_OPTION_ADDR, FLEXSPI_MEMORY_ID)
     if not ok:
-        raise FlashBackendError("configure_memory (FCB write) вернул False")
+        _fail_command("configure_memory (FCB write) вернул False")
 
 
 def write_fcb_explicit(mboot: McuBoot, fcb_path: Path) -> None:
@@ -287,7 +326,7 @@ def write_fcb_explicit(mboot: McuBoot, fcb_path: Path) -> None:
     data = fcb_path.read_bytes()
     ok = mboot.write_memory(FLASH_BASE, data, mem_id=0)
     if not ok:
-        raise FlashBackendError(f"write_memory(FCB {fcb_path.name}) вернул False")
+        _fail_command(f"write_memory(FCB {fcb_path.name}) вернул False")
 
 
 # ─── Прошивка / RAM-load / erase ────────────────────────────────────────────
@@ -323,7 +362,7 @@ def flash(
             with SDP(sdp_devices[0]) as sdp:
                 sdp.write_file(addr, hab_bin.read_bytes())
                 sdp.jump_and_run(addr)
-        except SPSDKConnectionError as exc:
+        except _CONNECTION_LOST_EXCEPTIONS as exc:
             raise ConnectionLostError(
                 f"USB-соединение потеряно при RAM-загрузке: {exc}"
             ) from exc
@@ -352,7 +391,7 @@ def flash(
             )
             ok = mboot.flash_erase_region(FLASH_BASE, erase_size, mem_id=0)
             if not ok:
-                raise FlashBackendError("flash_erase_region вернул False")
+                _fail_command("flash_erase_region вернул False")
 
             _emit(progress_cb, "fcb", 0, "Запись FCB")
             if fcb_path is not None:
@@ -371,11 +410,11 @@ def flash(
                 write_addr, data, mem_id=0, progress_callback=_on_progress
             )
             if not ok:
-                raise FlashBackendError("write_memory (HAB-образ) вернул False")
+                _fail_command("write_memory (HAB-образ) вернул False")
 
             _emit(progress_cb, "reset", 0, "Reset")
             mboot.reset(reopen=False)
-    except SPSDKConnectionError as exc:
+    except _CONNECTION_LOST_EXCEPTIONS as exc:
         raise ConnectionLostError(
             f"USB-соединение потеряно во время прошивки: {exc}"
         ) from exc
@@ -402,11 +441,11 @@ def erase_chip(progress_cb: Optional[ProgressCallback] = None) -> None:
             iface.device.timeout = ERASE_ALL_TIMEOUT_MS  # см. Фазу 0, ⚠В2
             ok = mboot.flash_erase_all(mem_id=FLEXSPI_MEMORY_ID)
             if not ok:
-                raise FlashBackendError("flash_erase_all вернул False")
+                _fail_command("flash_erase_all вернул False")
 
             _emit(progress_cb, "reset", 0, "Reset")
             mboot.reset(reopen=False)
-    except SPSDKConnectionError as exc:
+    except _CONNECTION_LOST_EXCEPTIONS as exc:
         raise ConnectionLostError(
             f"USB-соединение потеряно во время chip erase: {exc}"
         ) from exc
