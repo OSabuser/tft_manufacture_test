@@ -171,6 +171,7 @@ add_host_test(
   INCLUDES
   ${CMAKE_SOURCE_DIR}/firmware/test/src/
   ${CMAKE_SOURCE_DIR}/bsp/common/include
+  ${CMAKE_SOURCE_DIR}/bsp/provisioning/include
   MOCKS
   ${BSP_MOCKS_DIR})
 

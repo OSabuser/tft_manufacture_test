@@ -11,7 +11,10 @@
  * пока стек ещё жив (аргументы — указатели на локальные буферы cli.c).
  */
 
+#include "bsp/provisioning.h"
+#include "bsp/status.h"
 #include "fff.h"
+#include "test_module.h"
 #include "unity.h"
 
 #include <stdbool.h>
@@ -28,7 +31,11 @@ FAKE_VOID_FUNC(protocol_send_error, const char *);
 FAKE_VOID_FUNC(test_runner_run_all);
 FAKE_VOID_FUNC(test_runner_run_single, const char *);
 FAKE_VOID_FUNC(test_runner_on_confirm, const char *, bool);
-
+FAKE_VOID_FUNC(protocol_send_uid_response, const uint8_t *);
+FAKE_VOID_FUNC(protocol_send_version_response);
+FAKE_VOID_FUNC(test_runner_run_selected, const char *const *, size_t);
+FAKE_VOID_FUNC(test_runner_send_list);
+FAKE_VALUE_FUNC(bsp_status_t, bsp_prov_read_uid, uint8_t *, size_t);
 /* ── Модуль под тестом ─────────────────────────────────────────────────── */
 
 #include "cli.h"
@@ -72,6 +79,16 @@ static char s_run_single_id[32U];
 static char s_confirm_id[32U];
 static bool s_confirm_value;
 
+/* get_uid: cli.c передаёт указатель на СВОЙ стековый буфер — копируем
+ * по значению внутри custom_fake, иначе после возврата cli_process()
+ * указатель уже dangling (см. "Ловушка" в HOST_CREATE_TEST.md). */
+static uint8_t s_captured_uid[BSP_PROV_UID_LEN];
+
+/* run_selected: id_ptrs[] в cli.c указывает на локальный id_bufs[][] —
+ * та же ловушка, копируем строки, а не указатели. */
+static size_t s_run_selected_count;
+static char s_run_selected_ids[TEST_REGISTRY_MAX_SIZE][TEST_ID_MAX_SIZE];
+
 static void capture_run_single(const char *p_id)
 {
     (void) snprintf(s_run_single_id, sizeof(s_run_single_id), "%s", p_id);
@@ -83,6 +100,31 @@ static void capture_on_confirm(const char *p_id, bool confirmed)
     s_confirm_value = confirmed;
 }
 
+static void capture_uid_response(const uint8_t *p_uid)
+{
+    memcpy(s_captured_uid, p_uid, BSP_PROV_UID_LEN);
+}
+
+static void capture_run_selected(const char *const *pp_ids, size_t count)
+{
+    s_run_selected_count = count;
+    for (size_t i = 0U; i < count && i < TEST_REGISTRY_MAX_SIZE; i++)
+    {
+        (void) snprintf(s_run_selected_ids[i], sizeof(s_run_selected_ids[i]), "%s", pp_ids[i]);
+    }
+}
+
+/* Фиксированный UID, который "читает" bsp_prov_read_uid в тестах успеха. */
+static const uint8_t K_TEST_UID[BSP_PROV_UID_LEN] = {
+    0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22
+};
+
+static bsp_status_t prov_read_uid_success(uint8_t *p_uid, size_t len)
+{
+    (void) len;
+    memcpy(p_uid, K_TEST_UID, BSP_PROV_UID_LEN);
+    return BSP_OK;
+}
 /* ── setUp / tearDown ──────────────────────────────────────────────────── */
 
 void setUp(void)
@@ -94,16 +136,27 @@ void setUp(void)
     RESET_FAKE(test_runner_run_all);
     RESET_FAKE(test_runner_run_single);
     RESET_FAKE(test_runner_on_confirm);
+    RESET_FAKE(protocol_send_uid_response);
+    RESET_FAKE(protocol_send_version_response);
+    RESET_FAKE(bsp_prov_read_uid);
+    RESET_FAKE(protocol_send_version_response);
+    RESET_FAKE(bsp_prov_read_uid);
+    RESET_FAKE(test_runner_run_selected);
+    RESET_FAKE(test_runner_send_list);
     FFF_RESET_HISTORY();
 
-    bsp_usb_cdc_read_fake.custom_fake       = fake_usb_read;
-    test_runner_run_single_fake.custom_fake = capture_run_single;
-    test_runner_on_confirm_fake.custom_fake = capture_on_confirm;
+    bsp_usb_cdc_read_fake.custom_fake           = fake_usb_read;
+    test_runner_run_single_fake.custom_fake     = capture_run_single;
+    test_runner_on_confirm_fake.custom_fake     = capture_on_confirm;
+    protocol_send_uid_response_fake.custom_fake = capture_uid_response;
+    test_runner_run_selected_fake.custom_fake   = capture_run_selected;
 
-    s_inject_len       = 0U;
-    s_run_single_id[0] = '\0';
-    s_confirm_id[0]    = '\0';
-    s_confirm_value    = false;
+    s_inject_len         = 0U;
+    s_run_single_id[0]   = '\0';
+    s_confirm_id[0]      = '\0';
+    s_confirm_value      = false;
+    s_run_selected_count = 0U;
+    (void) memset(s_captured_uid, 0, sizeof(s_captured_uid));
 
     cli_init();
 }
@@ -136,6 +189,62 @@ void test_run_single_dispatches_with_id(void)
 
     TEST_ASSERT_EQUAL_INT(1, test_runner_run_single_fake.call_count);
     TEST_ASSERT_EQUAL_STRING("sdram", s_run_single_id);
+}
+
+void test_get_uid_success(void)
+{
+    bsp_prov_read_uid_fake.custom_fake = prov_read_uid_success;
+
+    inject("{\"type\":\"cmd\",\"cmd\":\"get_uid\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, bsp_prov_read_uid_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_uid_response_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(K_TEST_UID, s_captured_uid, BSP_PROV_UID_LEN);
+}
+
+void test_get_uid_read_failure_sends_error(void)
+{
+    bsp_prov_read_uid_fake.return_val = BSP_ERR_PARAM;
+
+    inject("{\"type\":\"cmd\",\"cmd\":\"get_uid\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(0, protocol_send_uid_response_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("UID_READ_ERR", protocol_send_error_fake.arg0_val);
+}
+
+void test_get_version_dispatches(void)
+{
+    inject("{\"type\":\"cmd\",\"cmd\":\"get_version\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_version_response_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, protocol_send_error_fake.call_count);
+}
+
+void test_list_tests_dispatches(void)
+{
+    inject("{\"type\":\"cmd\",\"cmd\":\"list_tests\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, test_runner_send_list_fake.call_count);
+}
+
+void test_run_selected_dispatches_with_ids(void)
+{
+    inject("{\"type\":\"cmd\",\"cmd\":\"run_selected\",\"tests\":[\"sdram\",\"opto\"]}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, test_runner_run_selected_fake.call_count);
+    TEST_ASSERT_EQUAL(2, s_run_selected_count);
+    TEST_ASSERT_EQUAL_STRING("sdram", s_run_selected_ids[0]);
+    TEST_ASSERT_EQUAL_STRING("opto", s_run_selected_ids[1]);
+}
+
+void test_run_selected_missing_tests_field_sends_parse_err(void)
+{
+    inject("{\"type\":\"cmd\",\"cmd\":\"run_selected\"}\n");
+
+    TEST_ASSERT_EQUAL_INT(1, protocol_send_error_fake.call_count);
+    TEST_ASSERT_EQUAL_STRING("PARSE_ERR", protocol_send_error_fake.arg0_val);
 }
 
 void test_unknown_cmd_sends_unknown_cmd_error(void)
@@ -261,6 +370,13 @@ int main(void)
     RUN_TEST(test_empty_line_ignored);
     RUN_TEST(test_crlf_handled_same_as_lf);
     RUN_TEST(test_two_lines_in_one_chunk_both_dispatched);
+
+    RUN_TEST(test_get_uid_success);
+    RUN_TEST(test_get_uid_read_failure_sends_error);
+    RUN_TEST(test_get_version_dispatches);
+    RUN_TEST(test_list_tests_dispatches);
+    RUN_TEST(test_run_selected_dispatches_with_ids);
+    RUN_TEST(test_run_selected_missing_tests_field_sends_parse_err);
 
     return UNITY_END();
 }

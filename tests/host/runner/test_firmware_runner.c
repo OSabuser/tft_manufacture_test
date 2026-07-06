@@ -36,7 +36,7 @@ FAKE_VOID_FUNC(protocol_send_confirm_request, const confirm_params_t *);
 FAKE_VOID_FUNC(protocol_send_error, const char *);
 FAKE_VOID_FUNC(protocol_send_pong);
 FAKE_VOID_FUNC(protocol_send_session_start);
-
+FAKE_VOID_FUNC(protocol_send_test_list, const test_module_t *const *, size_t);
 /* ── Модуль под тестом ─────────────────────────────────────────────────── */
 
 #include "test_runner.h"
@@ -131,6 +131,7 @@ void setUp(void)
     RESET_FAKE(protocol_send_summary);
     RESET_FAKE(protocol_send_confirm_request);
     RESET_FAKE(protocol_send_error);
+    RESET_FAKE(protocol_send_test_list);
     FFF_RESET_HISTORY();
 
     protocol_send_test_result_fake.custom_fake = capture_test_result;

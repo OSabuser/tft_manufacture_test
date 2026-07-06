@@ -1132,7 +1132,6 @@ dependencies = [
     { name = "pyinstaller" },
     { name = "pyserial" },
     { name = "python-dotenv" },
-    { name = "pyusb" },
     { name = "spsdk" },
     { name = "textual" },
 ]
@@ -1147,7 +1146,6 @@ requires-dist = [
     { name = "pyinstaller", specifier = ">=6.0.0" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "pyusb", specifier = ">=1.0.0" },
     { name = "spsdk", specifier = "==3.7.0" },
     { name = "textual", specifier = ">=0.80.0" },
 ]
