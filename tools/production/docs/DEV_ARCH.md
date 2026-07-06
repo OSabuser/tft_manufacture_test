@@ -6,34 +6,42 @@
 > взаимодействия с firmware/M5, экранную архитектуру Textual, известные
 > особенности фреймворка.
 > Пользовательская документация (экраны, запуск, конфигурация,
-> рабочие процессы сервисника) — в [README.md](README.md).
+> рабочие процессы сервисника) — в [README.md](../README.md).
 
 ---
 
 ## 1. Структура проекта
 
+## 1. Структура проекта
+
 ```bash
 tools/production/
-├── main.py                              ← точка входа (10 строк)
+├── main.py                              ← точка входа
 ├── pyproject.toml                       ← зависимости uv
+├── dist/                                ← дистрибутивы программы (PyInstaller)
 ├── uv.lock
-├── custom_binaries/                     ← runtime, gitignored, создаётся автоматически
-│                                          сырые (без FCB/IVT/DCD) бинарники для FlashScreen → «Другое»
-└── app/
+├── service_tui.spec                     ← PyInstaller spec
+├── custom_binaries/                     ← runtime, создаётся автоматически;
+│                                          сырые/готовые бинарники для FlashScreen → «Другое»
+└── app/                                 ← implicit namespace package 
+    │                                    
+    │                                    
     ├── app.py                           ← ServiceApp — роутинг экранов, жизненный цикл клиентов
     ├── app.tcss                         ← единый файл стилей для всех экранов
     ├── models.py                        ← все типы данных (dataclass/Enum)
     ├── boot_art.py                      ← LOGO_ART — растеризованный логотип для WaitingScreen
-    ├── firmware_client.py               ← async USB CDC клиент firmware_test (UTF-8)
-    ├── m5_client.py                     ← async M5StampPLC клиент (Serial JSON-lines, UTF-8)
-    ├── flasher.py                       ← subprocess-обёртка над tools/host/flash_usb.py
+    ├── firmware_client.py               ← async USB CDC клиент firmware_test
+    ├── m5_client.py                     ← async M5StampPLC клиент
+    ├── flash_backend.py                 ← spsdk 3.7.0 in-process: SDP, McuBoot, HabImage
+    ├── flasher.py                       ← async-обёртка над flash_backend для Textual workers
+    ├── usb_ports.py                     ← резолвер serial-портов по VID:PID
     ├── orchestrator.py                  ← маршрутизация confirm_request, progress, таймауты
     ├── widgets/
     │   ├── __init__.py
     │   └── app_frame.py                 ← AppFrame — общий адаптивный контейнер всех экранов
     └── screens/
         ├── __init__.py                  ← реэкспорт: WaitingScreen, FlashScreen, PostFlashScreen, DiagScreen
-        ├── waiting.py                   ← WaitingScreen — ожидание USB, лого, версия, баннер причины возврата
+        ├── waiting.py                   ← WaitingScreen — ожидание USB, лого, версия, баннер, кнопка «Выйти»
         ├── flash.py                     ← FlashScreen — прошивка / chip erase
         ├── post_flash.py                ← PostFlashScreen — промпт смены BootMode после прошивки
         ├── connection_watcher.py        ← ConnectionWatcherMixin — мониторинг обрыва USB
@@ -55,7 +63,7 @@ graph LR
         subgraph app["app/"]
             FC["firmware_client.py\nUSB CDC ACM, UTF-8"]
             M5["m5_client.py\nSerial JSON-lines, UTF-8"]
-            FL["flasher.py\nsubprocess + pyusb detect"]
+            FL["flasher.py + flash_backend.py\nspsdk in-process: SDP/McuBoot/HabImage"]
             OR["orchestrator.py\nconfirm/progress/timeout router"]
         end
         TUI --> FC & M5 & FL & OR
@@ -70,22 +78,16 @@ graph LR
         M5HW["M5StampPLC\nRLY1–4 + CAN"]
     end
 
-    subgraph Host["tools/host/"]
-        FU["flash_usb.py\nsdphost + blhost"]
-    end
-
-    FC   <-->|"JSON-lines UTF-8\nVID:PID 1996:00AD"| FW
-    FL    -->|"subprocess uv run"| FU
-    FU    -->|"sdphost + blhost\nVID:PID 1FC9:0130"| ROM
-    M5   <-->|"JSON-lines\nSerial"| M5HW
+    FC   |"JSON-lines UTF-8\nVID:PID 1996:00AD"| FW
+    FL   |"spsdk (libusbsio HID)\nVID:PID 1FC9:0130 / 15A2:0073"| ROM
+    M5   |"JSON-lines\nSerial"| M5HW
     M5HW  -->|"RLY1–4"| Board
 ```
 
-> **Детект USB:** `Flasher.detect_sdp()`/`detect_cdc()` используют `pyusb` как
-> основной метод (BootROM SDP не создаёт serial-порт на macOS и невидим через
-> `pyserial.list_ports`), с fallback на `serial.tools.list_ports` для CDC.
-> M5StampPLC детектируется отдельно в `m5_client.py` тем же способом
-> (`pyusb`, VID/PID из `.env` — см. раздел 5).
+> **Детект USB:** `flash_backend.detect_sdp()`/`detect_cdc()` используют spsdk
+> напрямую (`SdpUSBInterface.scan()` / `MbootUSBInterface.scan()`, HID-транспорт
+> через `libusbsio`). CDC firmware_test и M5StampPLC резолвятся через
+> `pyserial` (`usb_ports.py::resolve_serial_port()`, `m5_client.py`).
 
 ---
 
@@ -103,7 +105,7 @@ stateDiagram-v2
     WAITING --> DIAGNOSING : VID:PID 1996:00AD\n+ ping→pong по CDC
 
     FLASHING --> POST_FLASH : firmware_test прошит успешно
-    FLASHING --> WAITING    : Production/Custom прошит, ошибка,\nили потеря USB в простое
+    FLASHING --> WAITING    : Production/Custom прошит,\nили потеря USB (в простое ИЛИ во время операции)
 
     POST_FLASH --> WAITING : оператор подтвердил / таймаут 40с
 
@@ -114,6 +116,13 @@ stateDiagram-v2
 Состояния соответствуют `AppMode` в `models.py`; переключение экранов —
 `ServiceApp.push_screen()`/`switch_screen()` в `app.py`, реагирующий на
 сообщения `DeviceDetected`/`FlashDone`/`DiagDone`.
+
+> **Важная деталь, не показанная на диаграмме**:
+> `FLASHING --> WAITING` по стрелке «ошибка» срабатывает **только** при
+> физическом обрыве USB (`FlashResult.connection_lost=True`). Логическая
+> ошибка (файл не найден, битый custom-бинарь) — плата на месте, экран
+> остаётся на `FLASHING` (нет перехода состояния вообще, поэтому на
+> диаграмме это не отдельная стрелка). См. §6.
 
 ---
 
@@ -154,9 +163,7 @@ flowchart TD
 
 **Гарантия таймаута:** `Orchestrator.run_tests()` всегда завершается ровно
 одним событием `SUMMARY` — настоящим от firmware или синтетическим
-(`aborted: true`), если чтение порта оборвалось по таймауту. Без этой гарантии
-зависший тест блокировал бы кнопки "Выйти" и повторного запуска навсегда
-(исторический баг, см. `CHANGELOG.md`).
+(`aborted: true`), если чтение порта оборвалось по таймауту.
 
 ---
 
@@ -184,11 +191,6 @@ flowchart TD
   PID — при детекте ориентироваться на `just host::m5-scan`, а не на
   документацию, если она когда-либо разойдётся с кодом.
 
-**Важно на будущее:** документация (`HIL_BENCH.md`/`HIL_HOW_TO.md`) местами не
-успевает за изменениями `agent.py`. При любых будущих изменениях протокола
-агента (новые команды, смена формата ответа) — сверяться напрямую через
-`grep` по `tools/hil/m5/agent.py`, а не полагаться только на документацию.
-
 ---
 
 ## 6. Мониторинг соединения и разрыв сессии
@@ -197,22 +199,41 @@ flowchart TD
 `FlashScreen` и `DiagScreen`: каждые 1.5с проверяет, виден ли таргет на шине.
 
 - **На `FlashScreen`** — проверка приостановлена во время активной
-  прошивки/erase (обрыв обнаружит сам `flash_usb.py` subprocess).
+  прошивки/erase (`self._flashing == True`).
 - **На `DiagScreen`** — проверка приостановлена во время прогона тестов
   (обрыв надёжнее детектирует таймаут чтения порта внутри `Orchestrator`, не
   просто исчезновение устройства из списка).
-- При срабатывании — `ConnectionLost` message → экран постит
-  `FlashDone(success=False, target=None)` / `DiagDone(reason=...)` →
-  `ServiceApp` разрывает сессию (`FirmwareClient.disconnect()`) и переключает
-  на `WaitingScreen(disconnect_reason=...)`. `FlashDone` в этой ветке не несёт
-  `preset` — «липкий» выбор (см. §8) сохраняется отдельно, в момент нажатия
-  «Загрузить», а не при завершении прошивки.
-- `WaitingScreen` показывает причину возврата баннером на 4 секунды, затем
-  продолжает обычный автодетект.
 
-Архитектурное решение: **сессия никогда не восстанавливается** — после
+**Три независимых механизма детекта обрыва**:
+
+1. **`ConnectionWatcherMixin` в простое** — периодический опрос шины.
+2. **`flash_backend.py` во время активной операции** — spsdk бросает
+   `SPSDKConnectionError`/`SPSDKTimeoutError` (оба ловятся явным кортежем
+   `_CONNECTION_LOST_EXCEPTIONS` — `SPSDKTimeoutError` НЕ наследует
+   `SPSDKConnectionError`, оба - потомки `SPSDKError`
+3. **Вариант B** — некоторые команды spsdk (`flash_erase_all`,
+   `write_memory` и т.п.) при таймауте не бросают исключение, а тихо
+   возвращают `False`. `_fail_command()` в этом случае сам проверяет
+   `_sdp_still_present()`: плата пропала с шины → `ConnectionLostError`;
+   плата на месте → обычная `FlashBackendError`.
+
+Оба механизма 2 и 3 транслируются в `Flasher.flash()`/`erase_chip()` как
+`FlashResult(ok: bool, connection_lost: bool)` — **не голый `bool`**. Это
+принципиально для `FlashScreen`:
+
+- `connection_lost=True` → `FlashDone(target=None, error_message=...)` →
+  `ServiceApp` переключает на `WaitingScreen(disconnect_reason=...)`.
+- `connection_lost=False` → **экран не покидает себя**.
+  Плата физически на месте, сообщение об ошибке уже в `#flash-log`, кнопки
+  разблокированы (`_set_busy(False)`) — оператор может поправить выбор
+  (другой файл, другой вариант памяти) и повторить, не выдёргивая USB.
+
+`WaitingScreen` показывает причину возврата баннером на 4 секунды, затем
+продолжает обычный автодетект.
+
+**Cессия никогда не восстанавливается** — после
 разрыва TUI не пытается определить, вернулась ли та же плата, просто стартует
-диагностику с нуля.
+заново с нуля.
 
 ---
 
@@ -251,15 +272,14 @@ AppFrame {
 
 ### 8.1 Проблема
 
-Штатные HAB-образы (`firmware_test`/`bootloader`/`app`) собираются
-`nxpimage` заранее (`just build::hab-*`) и всегда идут на плату с W25Q128 —
-для них auto-config Flashloader (`configure-memory 0xC0000007` →
-`0xF000000F`, см. `HOW_TO_FLASH.md`) достаточен. Для сторонних/легаси
-бинарников (старые платы, W25Q256/512) это не так: auto-config Flashloader
-не документирован как надёжный для 4-байтной адресации, а сами бинарники
-приходят «сырыми» (код + таблица векторов, без FCB/IVT/DCD — тот же формат,
-что `inputImageFile` в `hab_*.yaml` до сборки). Решение — собирать HAB
-на лету и писать FCB явно, а не полагаться на auto-config.
+Штатные HAB-образы (`firmware_test`/`bootloader`/`app`) собираются заранее
+(`just build::hab-*`) и всегда идут на плату с W25Q128 — для них auto-config
+Flashloader достаточен. Для сторонних/легаси бинарников (старые платы,
+W25Q256/512) это не так: auto-config Flashloader не документирован как
+надёжный для 4-байтной адресации, а сами бинарники приходят «сырыми» (код +
+таблица векторов, без FCB/IVT/DCD) либо уже готовым HAB-образом — зависит от
+источника. Решение — собирать HAB на лету (если нужно) и писать FCB явно, а
+не полагаться на auto-config.
 
 ### 8.2 Модели (`models.py`)
 
@@ -286,53 +306,44 @@ class FlashPreset:
 одинаковых плат подряд — вставил, TUI уже подставила прошлый выбор файла/
 памяти/DCD, нажал «Загрузить», вынул, вставил следующую.
 
-Рассматривался отдельный режим «массовое программирование» (авто-прошивка
-по факту детекта SDP, без нажатия кнопки на каждую плату) — отклонён:
-в SDP/Flashloader-режиме нет способа прочитать UID платы, авто-старт без
-подтверждения оператора убирает последний шанс заметить, что в руках не та
-плата. Оставлена только «липкая» память выбора (этот раздел).
+**Нужен ли DCD — implementation-defined, зависит от конкретного бинарника,
+не от его формата (сырой/готовый HAB).** Правило «сырой → включить DCD,
+готовый HAB → выключить» **неверно как общее правило**: например, в связке
+`bootloader + tft_app` сам `bootloader` не требует DCD, а часть кастомных
+бинарников (в т.ч. старый загрузчик, используемый на производстве) требует
+DCD независимо от того, в каком виде получен файл. Оператор должен знать
+по конкретному образу, инициализирует ли он SDRAM самостоятельно — TUI не
+может определить это автоматически по содержимому файла.
 
 ### 8.3 Конвейер сборки (`flasher.py`)
 
-```
+```bash 
 Flasher.flash(target=CUSTOM, bin_path, use_dcd, fcb_variant, progress_cb)
-  └── _run_flash_custom()
-        ├── _build_custom_hab(raw_bin, use_dcd, progress_cb)
-        │     ├── генерирует temp .yaml в tools/host/hab/ (по образцу hab_bootloader_*.yaml:
-        │     │     startAddress=0x60000000, ivtOffset=0x1000, initialLoadSize=0x2000,
-        │     │     family=mimxrt1050, + DCDFilePath: ../dcd/dcd.bin если use_dcd)
-        │     ├── uv run nxpimage hab export --force -c <yaml> -o <out>,
-        │     │     cwd=tools/host/hab/ (обязательно — relative DCDFilePath
-        │     │     резолвится от этой директории, как в build.just)
-        │     └── стриминг stdout nxpimage в progress_cb (не только logger.debug —
-        │           иначе во время сборки лог FlashScreen выглядит «зависшим»)
-        └── flash_usb.py --bin-path <hab_bin> --fcb-path tools/host/dcd/{fcb_variant}_fdcb.bin
-              (временный .yaml и собранный HAB-образ удаляются после прошивки)
+└── _flash_custom()
+├── _build_custom_hab(raw_bin, use_dcd, progress_cb)
+│     └── flash_backend.build_custom_hab() — in-process spsdk API:
+│           Config (family=mimxrt1050, startAddress=0x60000000,
+│           ivtOffset=0x1000, initialLoadSize=0x2000,
+│           + DCDFilePath, если use_dcd) → HabImage.export()
+└── _run_flash_op(flash_backend.flash, hab_bin, fcb_path=...)
+временный HAB-образ удаляется после прошивки
+(finally: shutil.rmtree(hab_bin.parent))
 ```
 
-`dcd/dcd.bin` — один и тот же файл независимо от проекта (SEMC/SDRAM-init не
-зависит от того, что именно исполняется), поэтому просто константный путь,
-без вариантов.
+`dcd/dcd.bin` (`tools/host/dcd/dcd.bin`) — один и тот же файл независимо от
+проекта (SEMC/SDRAM-init не зависит от того, что именно исполняется), простой
+константный путь, без вариантов. Резолвится через `flash_backend._host_dcd_dir()`
+— двухрежимный (dev/frozen), см. §14.
 
-### 8.4 `flash_usb.py` — явная запись FCB вместо auto-config
+### 8.4 Явная запись FCB вместо auto-config
 
-```python
-def write_fcb_explicit(fcb_path: Path) -> None:
-    """write-memory 0x60000000 <fcb_path> — буквальная запись 512-байтного
-    FCB-блоба (tag 'FCFB'), а не magic option word 0xF000000F.
-    Обязателен для кастомных бинарей — auto-config Flashloader проверен
-    только для W25Q128."""
-```
+`flash_backend.py::write_fcb_explicit()` — `write_memory(0x60000000, fcb_bin)`,
+буквальная запись 512-байтного FCB-блоба (tag `FCFB`), а не magic option word
+`0xF000000F`. Обязателен для кастомных бинарей — auto-config Flashloader
+проверен только для W25Q128 (см. §Известные открытые вопросы).
 
-Активируется флагом `--fcb-path` (только вместе с `--bin-path`). Штатный
-`--firmware`-путь (три сборки из `BUILD_DIR`) не тронут: без `--fcb-path`
-поведение идентично тому, что было до этой доработки.
-
-Заодно увеличен таймаут `blhost` для `flash-erase-all` (chip erase) —
-`-t 200000` вместо дефолтного: W25Q512 стирается заметно дольше W25Q128,
-дефолтного таймаута `blhost` не хватало. `flash-erase-region` (стирание
-пары секторов под FCB+HAB при обычной прошивке) не трогали — там масштаб
-на порядки меньше, дефолта достаточно независимо от чипа.
+Штатный путь (`firmware_test`/`bootloader`/`app` из `build/<Type>/`) не
+затрагивается — использует auto-config, как и раньше.
 
 ### 8.5 UI (`flash.py`)
 
@@ -347,6 +358,13 @@ def write_fcb_explicit(fcb_path: Path) -> None:
 терминале выталкивала `#flash-log` почти до нулевой высоты. `#flash-log`
 дополнительно защищён `min-height: 6` — лог гарантированно виден даже в
 худшем случае.
+
+**Троттлинг лога:** прогресс-бар обновляется на каждом
+событии `FlashProgress`, но `#flash-log` для фазы `write` пишет только при
+пересечении 10%-границы — без этого запись HAB-образа даёт ~135 строк в лог
+на одну прошивку. Первая строка фазы (`"Запись <имя> (<размер> байт)"`) всегда
+проходит; остальные фазы (`configure`/`erase`/`fcb`/`reset`/`error`) логируются
+без троттлинга — их и так немного.
 
 ---
 
@@ -372,7 +390,7 @@ graph TB
     subgraph Clients["Клиенты"]
         FC["FirmwareClient"]
         M5["M5Client"]
-        FL["Flasher"]
+        FL["Flasher\n(async) + flash_backend\n(spsdk in-process)"]
     end
 
     WS -->|"DeviceDetected(FLASHING)"| FS
@@ -411,7 +429,7 @@ sequenceDiagram
 
     OP->>TUI: запустить service_tui
     TUI->>WS: push_screen()
-    WS->>WS: pyusb poll каждые 1.5 с
+    WS->>WS: USB poll каждые 1.5 с
 
     OP->>FW: подключить плату USB
     WS->>TUI: DeviceDetected(DIAGNOSING)
@@ -471,7 +489,7 @@ sequenceDiagram
 
 ---
 
-## 11. Версионирование firmware
+## 11. Версионирование firmware и TUI
 
 `firmware_test` версионируется через CMake
 (`project(firmware_test VERSION X.Y.Z)`), генерирует `version.h` через
@@ -484,7 +502,10 @@ sequenceDiagram
 отдельно — `waiting.py::_read_app_version()` парсит `[project].version` из
 `pyproject.toml` напрямую через `tomllib` (stdlib). `importlib.metadata`
 сознательно не используется — проект не ставится как пакет
-(`tool.uv.package = false`), метаданных может не быть.
+(`tool.uv.package = false`), метаданных может не быть. Резолв
+`Path(__file__).resolve().parents[2] / "pyproject.toml"` одинаково корректен
+в dev и frozen (относительный от модуля, а не абсолютный) — при условии, что
+`service_tui.spec` кладёт `pyproject.toml` в корень бандла (см. §14).
 
 ---
 
@@ -523,7 +544,9 @@ runtime-зависимостей `boot_art.py` не добавляет). Есл�
   `mount_all()`.
 - **`CSS_PATH` резолвится относительно файла класса**, не относительно корня
   проекта — постоянно расходится при рефакторинге структуры. Решение: один
-  `CSS_PATH` только на `ServiceApp`, все стили в едином `app.tcss`.
+  `CSS_PATH` только на `ServiceApp`, все стили в едином `app.tcss`. Во frozen
+  дополнительно требует, чтобы `app.tcss` физически лежал в бандле по тому же
+  относительному пути (см. §14).
 - **`table.add_columns(*labels)` не принимает `width=`.** Колонка получает
   ширину по умолчанию равную длине заголовка — длинный контент обрезается
   независимо от `height` строки. Нужно использовать `add_column(label,
@@ -547,14 +570,103 @@ runtime-зависимостей `boot_art.py` не добавляет). Есл�
 
 ---
 
+## 14. Упаковка
+
+### 14.1 Структура бандла
+
+```bash
+service-tui-vX.Y.Z-<os>/
+├── service_tui[.exe]
+├── _internal/
+│   ├── data/         ← dcd.bin, *_fdcb.bin, ivt_flashloader.bin, spsdk data
+│   └── ...           ← рантайм PyInstaller, libusbsio (из Analysis)
+├── firmware/
+│   └── <Type>/firmware_test_hab.bin   ← копируется post-build
+└── custom_binaries/  ← пустая, для оператора
+```
+
+Два разных механизма наполнения — не взаимозаменяемы:
+
+- **`_internal/data/`** — через `datas` в `service_tui.spec`
+  (`collect_data_files("spsdk")` + `tools/host/dcd/*.bin`). Резолвится в
+  рантайме через `sys._MEIPASS` (для onedir `_MEIPASS` == `_internal/`).
+- **`firmware/`** — PyInstaller `datas` физически не может положить файл
+  вне `_internal/`, поэтому это отдельный **post-build copy-шаг** в
+  `just host::package-tui` (не часть `.spec`), копирующий `build/<Type>/*_hab.bin`
+  в бандл. Резолвится в рантайме через `Path(sys.executable).resolve().parent`
+  (сиблинг exe, не `_MEIPASS`) — сознательный выбор: HAB-образы должны быть
+  легко заменяемы без пересборки бандла.
+- **`custom_binaries/`** — создаётся дважды, независимо: приложением само
+  при первом запуске (`flasher.py::_resolve_custom_binaries_dir()`,
+  `mkdir(exist_ok=True)`) и заодно явно в `package-tui` (`mkdir -p` перед
+  финальным переименованием) — избыточно, но безвредно, бандл выглядит
+  «полным» ещё до первого запуска.
+
+### 14.2 Двухрежимный резолв путей (`flash_backend.py`)
+
+Все функции, отдающие пути к data-файлам, различают dev/frozen:
+
+| Функция                                                              | Dev                              | Frozen                                      |
+| -------------------------------------------------------------------- | -------------------------------- | ------------------------------------------- |
+| `firmware_hab_path()`                                                | `BUILD_DIR`/`build/<Type>/`      | `sys.executable.parent / "firmware"`        |
+| `_host_dcd_dir()`                                                    | `tools/host/dcd/`                | `sys._MEIPASS / "data"`                     |
+| `flashloader_bin_path()` / `real_dcd_bin_path()` / `fcb_blob_path()` | производные от `_host_dcd_dir()` |                                             |
+| `_resolve_custom_binaries_dir()` (`flasher.py`)                      | рядом с `main.py`                | `sys.executable.parent / "custom_binaries"` |
+
+`main.py::_setup_logging()` и `.env`-загрузка тоже различают режимы:
+лог-файл во frozen пишется рядом с exe (не внутрь `_internal/`); `.env` во
+frozen не подгружается вообще (frozen-сборка работает на fallback-константах
+в коде, не полагаясь на файл, которого в бандле нет).
+
+### 14.3 `service_tui.spec` — сборка (важные детали)
+
+- **onedir, не onefile** — onefile ощутимо медленнее стартует (распаковка во
+  временную директорию при каждом запуске).
+- **`collect_data_files("spsdk")`** — обязателен, не перестраховка: ~380
+  файлов (`data/devices/*/database.yaml` и т.п.), которые реально резолвит
+  `HabImage`/`Config` для `family=mimxrt1050`.
+- **`collect_dynamic_libs("libusbsio")`** — заберёт бинарники **всех**
+  поддерживаемых платформ (`bin/osx_arm64/`, `bin/x64/`, `bin/linux_*` и
+  т.д. — `rglob` без фильтра по текущей ОС). Не баг: сама `libusbsio.py`
+  резолвит нужный файл в рантайме по `platform.system()`/`platform.machine()`,
+  лишние платформы просто раздувают бандл. При необходимости можно
+  отфильтровать под текущую ОС отдельно.
+- **`hiddenimports=["app", "app.app", "app.screens", "app.widgets"]`** —
+  явная подстраховка из-за отсутствия `__init__.py` в `app/` (см. §1).
+  Современный PyInstaller обычно справляется и без этого через анализ
+  импортов из `main.py`, но цена перестраховки нулевая.
+- **`upx=False`** — сознательно, не дефолт PyInstaller: UPX-паковка вместе
+  с нативными HID-либами (libusbsio) — известный источник проблем с
+  загрузкой.
+
+### 14.4 Известные грабли упаковки
+
+- **Windows: `mv`/`rm -rf` в post-build шаге может упасть с
+  `Permission denied`**, если целевая директория из предыдущей сборки ещё
+  содержит заблокированный файл (например, `service_tui.exe` от прошлого
+  запуска, не закрытый перед повторной упаковкой, либо антивирус временно
+  удерживает хендл на свежесозданном `.exe`). Симптом: сообщение об ошибке
+  показывает путь **вложенным** (`dist/service-tui-vX.Y.Z-windows/service_tui`)
+  — это Unix-семантика `mv` в существующую директорию, сигнал, что `rm -rf`
+  не до конца очистил цель. Лечится закрытием запущенного exe перед повторной
+  упаковкой.
+- **`just` + bash-shebang рецепты на Windows** — на некоторых машинах поиск
+  `bash` через PATH может резолвиться в `C:\Windows\System32\bash.exe`
+  (WSL-заглушка) вместо Git Bash, если WSL сконфигурирован некорректно —
+  проявляется как `WSL (...) ERROR: execve(/bin/bash) failed`. Специфично
+  для конкретной машины/PATH, не для рецепта — решается на уровне окружения
+  (порядок PATH, состояние WSL), не в `Justfile`.
+
+---
+
 ## Известные открытые вопросы
 
-- **Release-сборка firmware нестабильна** (медленное мигание — подозрение на
-  проблему с FCB/clock конфигурацией в Release HAB-образе) — TUI временно
-  форсирует Debug через `FIRMWARE_BUILD_TYPE`.
+- **Release-сборка firmware нестабильна** : работает только с оптимизацией уровня O1
 - **`tools/shared/m5_agent.py`** — сознательно не делался: pytest
   HIL-окружение и TUI используют независимые M5-клиенты, признано правильным
-  архитектурным решением, а не техдолгом.
+  архитектурным решением, а не техдолгом. (Устаревшая `just host::service-build`
+  ссылается на несуществующий `tools/shared/` через `--add-data` — рецепт,
+  скорее всего, нерабочий, кандидат на удаление в пользу `package-tui`.)
 - Пункты плана TUI «экспорт результатов в JSON с привязкой к UID» и
   «копирование UID с экрана» — отложены, не начаты.
 - **Массовое программирование** — решено НЕ делать авто-прошивку по факту
@@ -564,7 +676,6 @@ runtime-зависимостей `boot_art.py` не добавляет). Есл�
   идентифицировать по UID.
 - **Auto-config Flashloader для W25Q256/512 не проверялся напрямую** — решили
   не полагаться на него вообще, для кастомных бинарей FCB всегда пишется
-  явно (`--fcb-path`, см. §8.4). Остаётся не до конца понятым, работает ли
+  явно (§8.4). Остаётся не до конца понятым, работает ли
   `configure-memory 0xF000000F` для этих чипов корректно в принципе — вопрос
   снят с повестки архитектурным решением, а не исследован до конца.
-  

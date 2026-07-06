@@ -76,7 +76,6 @@ target_link_libraries(firmware_test PRIVATE bsp_provisioning)
 | `bsp_status` | PUBLIC  | `bsp_status_t` в публичном API  |
 | `bsp_board`  | PRIVATE | Транзитивно: clock, SDK headers |
 
-
 ---
 
 ## Особенности
