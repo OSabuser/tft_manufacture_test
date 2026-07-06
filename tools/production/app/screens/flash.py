@@ -49,7 +49,20 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
     Если плата физически отключена в простое — сессия считается
     недостоверной, экран сразу уходит на WaitingScreen (см. замечание
     №4 отчёта). Во время самой прошивки/erase мониторинг приостановлен —
-    обрыв в этом случае обнаружит и обработает сам flash_usb.py subprocess.
+    обрыв в этом случае обнаруживает сам flash_backend (SPSDKConnectionError
+    → ConnectionLostError, см. Фазу 4) и репортит через #flash-log.
+
+    FlashResult (Фаза 4a, вариант 2) различает физический обрыв от
+    логической ошибки без парсинга текста — см. models.FlashResult:
+      - connection_lost=True  → уходим на WaitingScreen (тот же маркер
+        target=None, что и watcher-детект в простое), текст ошибки
+        прокидывается через FlashDone.error_message, чтобы не терять
+        конкретику ради общего "Соединение с платой потеряно".
+      - connection_lost=False → плата на месте, остаёмся на FlashScreen.
+        Раньше (до варианта 2) любая ошибка уводила на WaitingScreen,
+        который почти мгновенно переоткрывал FlashScreen заново (плата
+        на шине видна) и уничтожал #flash-log раньше, чем оператор
+        успевал прочитать (см. Гейт 4a, п.0 отчёта).
     """
 
     BINDINGS = [
@@ -62,17 +75,25 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
             success: bool,
             target: Optional[FlashTarget] = None,
             preset: Optional[FlashPreset] = None,
+            error_message: Optional[str] = None,
         ) -> None:
             super().__init__()
             self.success = success
             self.target = target
             self.preset = preset
+            # Заполняется только при connection_lost=True — конкретный текст
+            # обрыва вместо общего "Соединение с платой потеряно" в app.py.
+            # При логической ошибке экран никуда не уходит (см. _do_flash),
+            # и это поле не используется.
+            self.error_message = error_message
 
     def __init__(self, preset: Optional[FlashPreset] = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self._flasher = Flasher()
         self._flashing = False
         self._preset = preset or FlashPreset()
+        self._last_error_message: Optional[str] = None
+        self._write_log_bucket: int = -1  # см. _on_progress (Р11)
 
     def compose(self) -> ComposeResult:
         with AppFrame(id="flash-frame"):
@@ -154,6 +175,8 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
     def _check_sdp_present(self) -> bool:
         # Не считаем потерей соединения, если идёт активная операция —
         # flash_usb.py сам обработает реальный обрыв через subprocess.
+        # обрыв в этом случае обнаружит и обработает сам flash_backend
+        # (ConnectionLostError, см. Фазу 4), не watcher.
         if self._flashing:
             return True
         return Flasher.detect_sdp()
@@ -214,10 +237,12 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
     async def _do_flash(
         self, target: FlashTarget, bin_path: Optional[Path], preset: FlashPreset
     ) -> None:
+        self._last_error_message = None
+        self._write_log_bucket = -1
         self._set_busy(True)
         self._show_progress(True)
         self._log(f"▶ Прошивка: {target.value}")
-        ok = await self._flasher.flash(
+        result = await self._flasher.flash(
             target=target,
             bin_path=bin_path,
             use_dcd=preset.use_dcd,
@@ -225,19 +250,47 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
             progress_cb=self._on_progress,
         )
         self._set_busy(False)
-        self._finish_progress(ok)
-        self._log("✅ Готово" if ok else "❌ Ошибка")
-        self.post_message(self.FlashDone(success=ok, target=target, preset=preset))
+        self._finish_progress(result.ok)
+        self._log("✅ Готово" if result.ok else "❌ Ошибка")
+
+        if result.ok:
+            self.post_message(
+                self.FlashDone(success=True, target=target, preset=preset)
+            )
+        elif result.connection_lost:
+            # Обрыв во время активной прошивки — watcher в это время приглушён
+            # (см. _check_sdp_present), обрыв обнаружил сам backend. Тот же
+            # маркер target=None, что и у watcher-детекта в простое (Гейт 4a).
+            self.post_message(
+                self.FlashDone(
+                    success=False,
+                    target=None,
+                    preset=preset,
+                    error_message=self._last_error_message,
+                )
+            )
+        # else: логическая ошибка, плата на месте (вариант 2, Гейт 4a) —
+        # остаёмся на FlashScreen. Сообщение уже в #flash-log (_on_progress),
+        # кнопки уже разблокированы (_set_busy(False) выше).
 
     @work(exclusive=True, thread=False)
     async def _do_erase(self) -> None:
+        self._last_error_message = None
         self._set_busy(True)
         self._show_progress(True)
         self._log("⚠ Очистка памяти (~30 с)...")
-        ok = await self._flasher.erase_chip(progress_cb=self._on_progress)
+        result = await self._flasher.erase_chip(progress_cb=self._on_progress)
         self._set_busy(False)
-        self._finish_progress(ok)
-        self._log("✅ Очистка памяти завершена" if ok else "❌ Очистка памяти: ошибка")
+        self._finish_progress(result.ok)
+        self._log(
+            "✅ Очистка памяти завершена" if result.ok else "❌ Очистка памяти: ошибка"
+        )
+        if result.connection_lost:
+            self.post_message(
+                self.FlashDone(
+                    success=False, target=None, error_message=self._last_error_message
+                )
+            )
 
     # ── Вспомогательные ───────────────────────────────────────────────────────
 
@@ -269,7 +322,20 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
     async def _on_progress(self, progress: FlashProgress) -> None:
         bar = self.query_one("#flash-progress-bar", ProgressBar)
         bar.update(total=100, progress=progress.percent)
+
+        if progress.phase == "write":
+            # Р11: без троттлинга запись HAB-образа даёт ~135 строк в лог
+            # (progress_callback spsdk дёргается на каждый пакет). Бар выше
+            # обновляется на КАЖДОМ событии — плавность не теряется,
+            # троттлинг только для #flash-log и только для фазы "write".
+            bucket = min(progress.percent // 10, 10)
+            if bucket == self._write_log_bucket:
+                return
+            self._write_log_bucket = bucket
+
         self._log(progress.message)
+        if progress.phase == "error":
+            self._last_error_message = progress.message
 
     def _show_progress(self, visible: bool) -> None:
         """Показать/скрыть прогресс-бар. Скрыт в простое — без анимации."""

@@ -64,16 +64,24 @@ class ServiceApp(App):
         """
         После прошивки:
           - firmware_test + успех → PostFlashScreen (промпт смены BootMode)
-          - всё остальное (production/custom, либо ошибка) → WaitingScreen
-          - target=None — маркер потери соединения (см. ConnectionWatcherMixin)
-            → WaitingScreen с явной причиной возврата
+          - production/custom + успех → WaitingScreen
+          - target=None — обрыв USB (watcher в простое ИЛИ backend во время
+            активной операции, см. models.FlashResult, Фаза 4a вариант 2)
+            → WaitingScreen с причиной (конкретный текст, если есть, иначе
+            общий fallback)
+
+        Логическая ошибка (плата на месте) сюда не долетает вовсе —
+        FlashScreen в этом случае не покидает себя (см. _do_flash/_do_erase).
         """
         if event.preset is not None:
             self._last_flash_preset = event.preset
 
         if event.target is None and not event.success:
             self.switch_screen(
-                WaitingScreen(disconnect_reason="Соединение с платой потеряно")
+                WaitingScreen(
+                    disconnect_reason=event.error_message
+                    or "Соединение с платой потеряно"
+                )
             )
             return
 

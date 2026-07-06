@@ -566,3 +566,53 @@ service-build:
         --add-data "../shared:shared" \
         main.py
     echo "  ✅  dist/service_tui ready"
+
+# =============================================================================
+# ГРУППА: package — сборка service-tui в исполняемый бандл (PyInstaller)
+# =============================================================================
+
+_prod_dir := justfile_directory() / 'tools/production'
+_prod_build_dir := env('BUILD_DIR', justfile_directory() / 'build')
+
+[doc('Собрать service-tui в PyInstaller-бандл + скопировать firmware/*_hab.bin')]
+[group('package')]
+package-tui:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cd "{{ _prod_dir }}"
+    echo "  📦  Running PyInstaller..."
+    uv run pyinstaller service_tui.spec --noconfirm
+
+    DIST="dist/service_tui"
+
+    echo "  📦  Copying firmware HAB images (build/<Type>/*_hab.bin)..."
+    found=0
+    for type_dir in "{{ _prod_build_dir }}"/Debug "{{ _prod_build_dir }}"/Release; do
+        [[ -d "$type_dir" ]] || continue
+        type_name=$(basename "$type_dir")
+        for hab in "$type_dir"/*_hab.bin; do
+            [[ -f "$hab" ]] || continue
+            mkdir -p "$DIST/firmware/$type_name"
+            cp "$hab" "$DIST/firmware/$type_name/"
+            found=1
+        done
+    done
+    if [[ "$found" -eq 0 ]]; then
+        echo "  ⚠️   Ни один *_hab.bin не найден в {{ _prod_build_dir }} — соберите"
+        echo "       прошивки заранее (just build::hab-all-release / hab-all-debug)."
+    fi
+
+    VERSION=$(grep -m1 '^version' pyproject.toml | sed -E 's/.*"(.+)".*/\1/')
+    case "$(uname -s)" in
+        Linux*)               OS_TAG="linux"   ;;
+        Darwin*)              OS_TAG="macos"   ;;
+        MINGW*|MSYS*|CYGWIN*) OS_TAG="windows" ;;
+        *)                    OS_TAG="unknown" ;;
+    esac
+    RELEASE_NAME="service-tui-v${VERSION}-${OS_TAG}"
+
+    rm -rf "dist/${RELEASE_NAME}"
+    mkdir -p "dist/${RELEASE_NAME}/custom_binaries"
+    mv "$DIST" "dist/${RELEASE_NAME}"
+    echo "  ✅  dist/${RELEASE_NAME}"

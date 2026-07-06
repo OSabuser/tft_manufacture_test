@@ -254,10 +254,10 @@ static void handle_cmd_run(const char *p_line)
  */
 static void handle_cmd_run_selected(const char *p_line)
 {
-    /* Максимальный размер реестра — не более 16 тестов */
-    const size_t MAX_SELECTED = 16U;
-    char id_bufs[16][TEST_ID_MAX_SIZE];
-    const char *id_ptrs[16];
+    /* Общий "потолок системы" — TEST_REGISTRY_MAX_SIZE (test_module.h),
+     * тот же, что ограничивает test_runner.c::g_s_selected[]. */
+    char id_bufs[TEST_REGISTRY_MAX_SIZE][TEST_ID_MAX_SIZE];
+    const char *id_ptrs[TEST_REGISTRY_MAX_SIZE];
 
     const char *tests_key = strstr(p_line, K_FIELD_TESTS);
     if (tests_key == NULL)
@@ -267,7 +267,7 @@ static void handle_cmd_run_selected(const char *p_line)
     }
 
     size_t count =
-        parse_string_array(tests_key + sizeof(K_FIELD_TESTS) - 1U, id_bufs, MAX_SELECTED);
+        parse_string_array(tests_key + sizeof(K_FIELD_TESTS) - 1U, id_bufs, TEST_REGISTRY_MAX_SIZE);
 
     if (count == 0U)
     {

@@ -18,8 +18,8 @@
 DEFINE_FFF_GLOBALS;
 
 #include "clock_config.h"
+#include "fsl_clock.h"
 #include "fsl_flexcan.h"
-
 /* ══════════════════════════════════════════════════════════════════════
  *  fff-фейки SDK-функций
  * ══════════════════════════════════════════════════════════════════════ */
@@ -46,6 +46,9 @@ FAKE_VOID_FUNC(FLEXCAN_ClearMbStatusFlags, CAN_Type *, uint64_t);
 
 /* bsp_tick — управляемый «таймер» для тестов таймаутов */
 FAKE_VALUE_FUNC(uint32_t, bsp_tick_get_ms);
+
+/* ERRATA 50235 workaround (см. bsp_can_init()) */
+FAKE_VOID_FUNC(CLOCK_EnableClock, clock_ip_name_t);
 
 /* ══════════════════════════════════════════════════════════════════════
  *  Тестируемый модуль (после всех фейков!)
@@ -132,6 +135,7 @@ void setUp(void)
     RESET_FAKE(FLEXCAN_GetMbStatusFlags);
     RESET_FAKE(FLEXCAN_ClearMbStatusFlags);
     RESET_FAKE(bsp_tick_get_ms);
+    RESET_FAKE(CLOCK_EnableClock);
     FFF_RESET_HISTORY();
 
     s_mb_flags_call_count = 0U;
@@ -162,6 +166,8 @@ void test_init_success(void)
     TEST_ASSERT_EQUAL(1, FLEXCAN_Init_fake.call_count);
     /* MB0 = reserved (ERR005829), MB1 = TX */
     TEST_ASSERT_EQUAL(1, FLEXCAN_SetTxMbConfig_fake.call_count);
+    TEST_ASSERT_EQUAL(1, CLOCK_EnableClock_fake.call_count);
+    TEST_ASSERT_EQUAL(kCLOCK_Lpuart1, CLOCK_EnableClock_fake.arg0_val);
 }
 
 void test_init_null_config(void)

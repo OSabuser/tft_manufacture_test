@@ -58,6 +58,12 @@ extern size_t g_unit_test_registry_size;
 
 #define RUNNER_CONFIRM_ID_SIZE 32U
 
+#ifndef UNIT_TEST
+_Static_assert(
+    REGISTRY_SIZE <= TEST_REGISTRY_MAX_SIZE,
+    "k_registry вырос за пределы TEST_REGISTRY_MAX_SIZE (test_module.h) — увеличь константу");
+#endif
+
 /* ── Типы ──────────────────────────────────────────────────────────────── */
 
 typedef enum runner_state_e
@@ -92,12 +98,10 @@ static uint8_t g_s_skipped;
 static bool g_s_critical_failed;
 
 /* Маска выбранных тестов для RUNNER_MODE_SELECTED */
-static bool g_s_selected[REGISTRY_SIZE];
+static bool g_s_selected[TEST_REGISTRY_MAX_SIZE];
 
 /* ── Forward declaration ───────────────────────────────────────────────── */
-
 static void start_test_at(size_t idx);
-
 /* ── Внутренние вспомогательные функции ────────────────────────────────── */
 
 /**

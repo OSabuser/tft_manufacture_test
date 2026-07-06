@@ -21,6 +21,23 @@
 /** @brief Максимальная длина идентификатора теста (включая NUL). */
 #define TEST_ID_MAX_SIZE 24U
 
+/**
+ * @brief Верхняя граница числа тест-модулей в системе.
+ *
+ * Общий "потолок" для двух независимых мест:
+ *  - test_runner.c: compile-time ёмкость g_s_selected[] (маска выбора
+ *    для RUNNER_MODE_SELECTED). REGISTRY_SIZE в UNIT_TEST-сборке —
+ *    runtime-значение (g_unit_test_registry_size), не может быть
+ *    границей массива со static storage duration.
+ *  - cli.c: максимальный размер входящего массива "tests" в команде
+ *    run_selected (handle_cmd_run_selected()).
+ *
+ * Реальный реестр (non-UNIT_TEST, k_registry) — 8 модулей, запас есть.
+ * При добавлении нового теста, если REGISTRY_SIZE превысит эту границу,
+ * сборка упадёт на _Static_assert в test_runner.c — увеличивать здесь.
+ */
+#define TEST_REGISTRY_MAX_SIZE 16U
+
 /* ── Типы результата ───────────────────────────────────────────────────── */
 
 /**

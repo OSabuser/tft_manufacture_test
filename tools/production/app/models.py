@@ -131,6 +131,26 @@ class ConfirmRequest:
 class FlashProgress:
     """Прогресс прошивки."""
 
-    phase: str  # "sdphost" | "blhost" | "done" | "error"
+    phase: str  # "load_flashloader" | "configure" | "erase" | "fcb" | "write"
+    # | "reset" | "hab_build" | "done" | "error"
     percent: int  # 0..100
     message: str
+
+
+@dataclass(frozen=True)
+class FlashResult:
+    """Результат Flasher.flash()/erase_chip() (Фаза 4a, вариант 2).
+
+    Раньше публичный API Flasher() возвращал голый bool — экран не мог
+    отличить физический обрыв USB от логической ошибки (файл не найден,
+    битый custom-бинарь, ошибка сборки HAB) и одинаково уводил оператора
+    на WaitingScreen в обоих случаях, хотя при логической ошибке плата
+    остаётся на месте и разумнее остаться на FlashScreen.
+
+    connection_lost транслируется из FlashBackendError.connection_lost
+    (см. flash_backend.py) без парсинга текста сообщения — тот же принцип,
+    что и там.
+    """
+
+    ok: bool
+    connection_lost: bool = False

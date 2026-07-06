@@ -1,10 +1,26 @@
 """
-flasher.py — обёртка над tools/host/flash_usb.py для TUI.
+flasher.py — async-обёртка над app/flash_backend.py для TUI.
 
-Запускает flash_usb.py как subprocess, парсит stdout для прогресса,
-пробрасывает события через asyncio.Queue в TUI.
+Фаза 2: внутренности переведены с subprocess (flash_usb.py) на прямые
+вызовы синхронного app/flash_backend.py через asyncio.to_thread. Публичный
+API класса Flasher не менялся с Фазы 0 — сигнатуры те же, что в исходной
+subprocess-версии.
 
-Не дублирует spsdk-окружение — переиспользует tools/host/ uv-проект.
+Мост sync → async для прогресса: flash_backend отдаёт события через
+синхронный callback (вызывается из worker-потока asyncio.to_thread), здесь
+он оборачивается в asyncio.run_coroutine_threadsafe(...).result() —
+согласовано с автором проекта (Фаза 2, вопрос 1): блокирующий .result()
+внутри worker-потока гарантирует, что события прогресса приходят в TUI
+строго по порядку.
+
+Отмена прошивки посреди операции НЕ поддерживается и не должна
+поддерживаться (согласовано, Фаза 2, вопрос 2) — если стирание/запись уже
+начались, они обязаны докрутиться до конца (успешно или с ошибкой).
+Специального кода для этого не потребовалось: Python-поток, запущенный
+через asyncio.to_thread, нельзя прервать снаружи — если ожидающая
+корутина в TUI получит CancelledError, сам поток всё равно продолжит
+работу в фоне до естественного завершения flash_backend.flash()/
+erase_chip(). Это и есть требуемое поведение, а не обходной путь.
 
 Публичный API:
     Flasher.flash(target, bin_path, progress_cb) — async, прогресс через callback
@@ -18,31 +34,24 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import re
+import shutil
 import sys
-import tempfile
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
-from .models import FcbVariant, FlashProgress, FlashTarget
+from . import flash_backend
+from .models import FcbVariant, FlashProgress, FlashResult, FlashTarget
 
 logger = logging.getLogger(__name__)
-
-# VID/PID констант — читаются из env, fallback на известные значения
-_BOOTROM_VID = int(os.environ.get("BOOTROM_VID", "0x1fc9"), 16)
-_BOOTROM_PID = int(os.environ.get("BOOTROM_PID", "0x0130"), 16)
-_CDC_VID = int(os.environ.get("SERVICE_CDC_VID", "0x1996"), 16)
-_CDC_PID = int(os.environ.get("SERVICE_CDC_PID", "0x00ad"), 16)
 
 # Тип сборки firmware_test для прошивки (Debug | Release).
 # Release временно нестабилен (см. отчёт о тестировании) — по умолчанию Debug.
 _FIRMWARE_BUILD_TYPE = os.environ.get("FIRMWARE_BUILD_TYPE", "Debug")
 
-# Путь до flash_usb.py относительно корня репозитория
-_FLASH_USB_SCRIPT = Path(__file__).parents[3] / "tools" / "host" / "flash_usb.py"
-_HOST_TOOLS_DIR = _FLASH_USB_SCRIPT.parent
-_HAB_DIR = _HOST_TOOLS_DIR / "hab"
-_DCD_DIR = _HOST_TOOLS_DIR / "dcd"
+
+def _firmware_hab_path(firmware: str) -> Path:
+    """Делегирование в backend (Р6): dev/frozen резолв живёт там."""
+    return flash_backend.firmware_hab_path(firmware, _FIRMWARE_BUILD_TYPE)
 
 
 def _resolve_custom_binaries_dir() -> Path:
@@ -67,103 +76,152 @@ def _resolve_custom_binaries_dir() -> Path:
 
 CUSTOM_BINARIES_DIR = _resolve_custom_binaries_dir()
 
-# Паттерны stdout flash_usb.py для извлечения прогресса
-_RE_PERCENT = re.compile(r"(\d{1,3})\s*%")
-_RE_PHASE = re.compile(r"(sdphost|blhost|Writing|Erasing|Verifying)", re.IGNORECASE)
-
 ProgressCallback = Callable[[FlashProgress], Awaitable[None]]
 
 
-def _detect_usb(vid: int, pid: int) -> bool:
+def _make_sync_progress_cb(
+    progress_cb: Optional[ProgressCallback],
+    loop: asyncio.AbstractEventLoop,
+) -> Optional[flash_backend.ProgressCallback]:
+    """Мост sync (flash_backend, вызывается из worker-потока) → async (TUI).
+
+    .result() — намеренно блокирующий вызов внутри worker-потока: гарантирует
+    доставку событий прогресса в порядке их возникновения (см. docstring
+    модуля). Исключения из progress_cb (например, если экран уже закрыт)
+    логируются и не прерывают саму операцию прошивки — см. договорённость
+    по отмене (Фаза 2, вопрос 2): прошивка должна докрутиться до конца
+    независимо от состояния UI.
     """
-    Проверить наличие USB-устройства по VID/PID (синхронно).
+    if progress_cb is None:
+        return None
 
-    Два метода детекта:
-    1. pyusb (usb.core) — видит все USB-устройства включая SDP bulk/HID.
-       На macOS SDP-устройство (1FC9:0130) не создаёт serial-порт
-       и невидимо через serial.tools.list_ports.
-    2. serial.tools.list_ports — fallback для CDC ACM устройств.
+    def _sync_cb(progress: FlashProgress) -> None:
+        future = asyncio.run_coroutine_threadsafe(progress_cb(progress), loop)
+        try:
+            future.result()
+        except Exception:
+            logger.exception("progress_cb выбросил исключение из TUI-потока")
+
+    return _sync_cb
+
+
+def _format_error_message(exc: BaseException) -> str:
+    """Человекочитаемое сообщение для FlashProgress(phase="error").
+
+    Для ConnectionLostError (и любого FlashBackendError с connection_lost=True)
+    добавляет явный префикс — вариант А (согласовано): специального перехода
+    экрана нет, но в #flash-log причина должна читаться однозначно, без
+    необходимости лезть в общий лог-файл за трейсбеком.
     """
-    # Метод 1: pyusb — работает для SDP и CDC
-    try:
-        import usb.core
-
-        dev = usb.core.find(idVendor=vid, idProduct=pid)
-        if dev is not None:
-            return True
-    except Exception:
-        pass
-
-    # Метод 2: serial list_ports — fallback для CDC ACM
-    try:
-        import serial.tools.list_ports
-
-        for info in serial.tools.list_ports.comports():
-            if info.vid == vid and info.pid == pid:
-                return True
-    except Exception:
-        pass
-
-    return False
+    connection_lost = getattr(exc, "connection_lost", False)
+    if connection_lost:
+        return f"Соединение с платой потеряно: {exc}"
+    return str(exc)
 
 
 class Flasher:
     """
-    Async-обёртка над flash_usb.py.
+    Async-обёртка над app/flash_backend.py.
 
     Пример::
 
         flasher = Flasher()
-        await flasher.flash(
-            target=FlashTarget.FIRMWARE_TEST,
-            progress_cb=lambda p: print(p.message),
-        )
+
+        async def on_progress(p: FlashProgress) -> None:
+            print(p.message)
+
+        await flasher.flash(target=FlashTarget.FIRMWARE_TEST, progress_cb=on_progress)
     """
 
-    def __init__(self) -> None:
-        self._proc: Optional[asyncio.subprocess.Process] = None
-
-    # ── Detection ───────────────────────────────────────────────────────────
+    # ── Detection (делегируется в flash_backend, см. Р7) ──────────────────
 
     @staticmethod
     def detect_sdp() -> bool:
-        """True если виден BootROM SDP (1FC9:0130)."""
-        return _detect_usb(_BOOTROM_VID, _BOOTROM_PID)
+        """True если виден BootROM SDP."""
+        return flash_backend.detect_sdp()
 
     @staticmethod
     def detect_cdc() -> bool:
-        """True если виден CDC firmware_test (1996:00AD)."""
-        return _detect_usb(_CDC_VID, _CDC_PID)
+        """True если виден CDC firmware_test."""
+        return flash_backend.detect_cdc()
 
     @staticmethod
     def list_custom_binaries() -> list[Path]:
         """Отсканировать custom_binaries/ на *.bin, отсортировано по имени."""
         return sorted(CUSTOM_BINARIES_DIR.glob("*.bin"))
 
-    # ── Erase ────────────────────────────────────────────────────────────────
+    # ── Общий раннер: flash_backend-операция в потоке + перевод ошибок ────
+
+    async def _run_flash_op(
+        self,
+        func: Callable[..., None],
+        *args: object,
+        async_progress_cb: Optional[ProgressCallback],
+        sync_progress_cb: Optional[flash_backend.ProgressCallback],
+        **kwargs: object,
+    ) -> FlashResult:
+        """Выполнить flash_backend.flash()/erase_chip() в потоке.
+
+        flash_backend поднимает FlashBackendError (включая ConnectionLostError,
+        см. Фазу 4) вместо возврата False — здесь это конвертируется обратно
+        в контракт Flasher (FlashResult + событие phase="error"). connection_lost
+        транслируется из exc.connection_lost (Фаза 4a, вариант 2) — экран
+        различает физический обрыв от логической ошибки без парсинга текста.
+
+        Отдельный except Exception — safety net (Фаза 4, согласовано):
+        любое непредвиденное исключение из worker-потока (не только
+        FlashBackendError) обязано вернуть управление в TUI с ok=False,
+        а не оставить кнопки заблокированными навсегда. KeyboardInterrupt/
+        SystemExit/CancelledError не перехватываются — это BaseException,
+        не Exception, пробрасываются как есть
+        """
+        try:
+            await asyncio.to_thread(func, *args, progress_cb=sync_progress_cb, **kwargs)
+            return FlashResult(ok=True)
+        except flash_backend.FlashBackendError as exc:
+            logger.error("%s: %s", getattr(func, "__name__", func), exc)
+            if async_progress_cb is not None:
+                await async_progress_cb(
+                    FlashProgress(
+                        phase="error", percent=0, message=_format_error_message(exc)
+                    )
+                )
+            return FlashResult(ok=False, connection_lost=exc.connection_lost)
+        except Exception as exc:  # noqa: BLE001 — safety net, см. docstring
+            logger.exception(
+                "%s: непредвиденная ошибка", getattr(func, "__name__", func)
+            )
+            if async_progress_cb is not None:
+                await async_progress_cb(
+                    FlashProgress(
+                        phase="error",
+                        percent=0,
+                        message=f"Непредвиденная ошибка: {exc}",
+                    )
+                )
+            return FlashResult(ok=False, connection_lost=False)
+
+    # ── Erase ────────────────────────────────────────────────────────────
 
     async def erase_chip(
         self,
         progress_cb: Optional[ProgressCallback] = None,
-    ) -> bool:
+    ) -> FlashResult:
         """
-        Chip erase Flash через USB SDP (flash_usb.py --erase-chip).
+        Chip erase Flash через USB SDP (flash_backend.erase_chip).
         Занимает ~30 с для W25Q128. FCB будет стёрт.
 
-        :return: True при успехе.
+        :return: FlashResult(ok, connection_lost) — см. models.FlashResult.
         """
-        cmd = [
-            "uv",
-            "run",
-            "--directory",
-            str(_HOST_TOOLS_DIR),
-            "python",
-            str(_FLASH_USB_SCRIPT),
-            "--erase-chip",
-        ]
-        return await self._run_cmd(cmd, "erase", progress_cb)
+        loop = asyncio.get_running_loop()
+        sync_cb = _make_sync_progress_cb(progress_cb, loop)
+        return await self._run_flash_op(
+            flash_backend.erase_chip,
+            async_progress_cb=progress_cb,
+            sync_progress_cb=sync_cb,
+        )
 
-    # ── Flash ────────────────────────────────────────────────────────────────
+    # ── Flash ────────────────────────────────────────────────────────────
 
     async def flash(
         self,
@@ -172,259 +230,141 @@ class Flasher:
         bin_path: Optional[Path] = None,
         use_dcd: bool = False,
         fcb_variant: FcbVariant = FcbVariant.W25Q128,
-    ) -> bool:
+    ) -> FlashResult:
         """
-        Запустить прошивку через flash_usb.py.
+        Запустить прошивку через flash_backend.
 
         :param target:      Что прошиваем (firmware_test, production или custom).
         :param progress_cb: Async callback с FlashProgress (может быть None).
-        :param bin_path:    Путь к бинарю (обязателен для CUSTOM).
+        :param bin_path:    Путь к бинарю (обязателен для CUSTOM; для
+                             FIRMWARE_TEST — опционален, уже готовый HAB-образ
+                             вместо штатной сборки из BUILD_DIR).
         :param use_dcd:     Только для CUSTOM — включить DCDFilePath (SDRAM-init)
-                             при сборке HAB-образа через nxpimage.
+                             при сборке HAB-образа через HabImage.
         :param fcb_variant: Только для CUSTOM — какой явный FCB-блоб (dcd/*_fdcb.bin)
                              записать в Flash[0x60000000] вместо auto-config.
-        :return: True при успехе.
+        :return: FlashResult(ok, connection_lost) — см. models.FlashResult.
         """
+        loop = asyncio.get_running_loop()
+        sync_cb = _make_sync_progress_cb(progress_cb, loop)
+
         if target == FlashTarget.FIRMWARE_TEST:
-            if bin_path is not None:
-                return await self._run_flash_bin(bin_path, progress_cb)
-            return await self._run_flash("firmware_test", progress_cb)
+            hab_bin = (
+                bin_path.resolve()
+                if bin_path is not None
+                else _firmware_hab_path("firmware_test")
+            )
+            return await self._run_flash_op(
+                flash_backend.flash,
+                hab_bin,
+                async_progress_cb=progress_cb,
+                sync_progress_cb=sync_cb,
+            )
+
         elif target == FlashTarget.PRODUCTION:
-            ok = await self._run_flash("bootloader", progress_cb)
-            if ok:
-                ok = await self._run_flash("app", progress_cb)
-            return ok
+            result = await self._run_flash_op(
+                flash_backend.flash,
+                _firmware_hab_path("bootloader"),
+                async_progress_cb=progress_cb,
+                sync_progress_cb=sync_cb,
+            )
+            if result.ok:
+                result = await self._run_flash_op(
+                    flash_backend.flash,
+                    _firmware_hab_path("app"),
+                    async_progress_cb=progress_cb,
+                    sync_progress_cb=sync_cb,
+                )
+            return result
+
         elif target == FlashTarget.CUSTOM:
             if bin_path is None:
                 raise ValueError("FlashTarget.CUSTOM требует bin_path")
-            return await self._run_flash_custom(
-                bin_path, use_dcd, fcb_variant, progress_cb
+            return await self._flash_custom(
+                bin_path, use_dcd, fcb_variant, progress_cb, sync_cb
             )
-        return False
 
-    async def _run_flash_custom(
+        return FlashResult(ok=False)
+
+    async def _flash_custom(
         self,
         raw_bin_path: Path,
         use_dcd: bool,
         fcb_variant: FcbVariant,
         progress_cb: Optional[ProgressCallback],
-    ) -> bool:
+        sync_cb: Optional[flash_backend.ProgressCallback],
+    ) -> FlashResult:
         """
         Прошить «сырой» (не-HAB) кастомный бинарник из custom_binaries/.
 
         Два шага:
           1. Собрать HAB-образ (IVT + опционально DCD, БЕЗ FCB) через
-             nxpimage — так же, как just build::hab-* собирает штатные
-             прошивки, только конфиг генерируется на лету под выбранный файл.
-          2. Прошить получившийся HAB-образ через flash_usb.py --bin-path,
-             подставив явный FCB-блоб (--fcb-path) под выбранный тип памяти —
-             см. FcbVariant.
-        """
-        if progress_cb is not None:
-            await progress_cb(
-                FlashProgress(
-                    phase="nxpimage", percent=0, message="Сборка HAB-образа..."
-                )
-            )
+             flash_backend.build_custom_hab() (HabImage, см. Фазу 0) — сам
+             эмитит phase="hab_build" 0%/100% через sync_cb, отдельно
+             дублировать здесь не нужно.
+          2. Прошить получившийся HAB-образ через flash_backend.flash(),
+             подставив явный FCB-блоб под выбранный тип памяти (FcbVariant).
 
-        hab_bin = await self._build_custom_hab(raw_bin_path, use_dcd, progress_cb)
+        Временная директория build_custom_hab() (tempfile.mkdtemp) целиком
+        удаляется в finally — не только *.bin, как было в subprocess-версии.
+        """
+        hab_bin = await self._build_custom_hab(
+            raw_bin_path, use_dcd, progress_cb, sync_cb
+        )
         if hab_bin is None:
+            # Ошибка сборки HAB — чисто локальная операция (HabImage,
+            # временный файл), к USB-соединению отношения не имеет.
+            return FlashResult(ok=False)
+
+        fcb_path = flash_backend.fcb_blob_path(fcb_variant.fcb_filename)
+        try:
+            return await self._run_flash_op(
+                flash_backend.flash,
+                hab_bin,
+                fcb_path=fcb_path,
+                async_progress_cb=progress_cb,
+                sync_progress_cb=sync_cb,
+            )
+        finally:
+            shutil.rmtree(hab_bin.parent, ignore_errors=True)
+
+    async def _build_custom_hab(
+        self,
+        raw_bin_path: Path,
+        use_dcd: bool,
+        progress_cb: Optional[ProgressCallback],
+        sync_cb: Optional[flash_backend.ProgressCallback],
+    ) -> Optional[Path]:
+        """Обёртка над flash_backend.build_custom_hab() в потоке.
+
+        :return: путь к собранному *.hab.bin, либо None при ошибке.
+        """
+        try:
+            return await asyncio.to_thread(
+                flash_backend.build_custom_hab,
+                raw_bin_path,
+                use_dcd,
+                progress_cb=sync_cb,
+            )
+        except flash_backend.FlashBackendError as exc:
+            logger.error("build_custom_hab: %s", exc)
             if progress_cb is not None:
                 await progress_cb(
                     FlashProgress(
                         phase="error",
                         percent=0,
-                        message="Ошибка сборки HAB-образа (nxpimage)",
+                        message=f"Ошибка сборки HAB-образа: {_format_error_message(exc)}",
                     )
                 )
-            return False
-
-        fcb_path = _DCD_DIR / fcb_variant.fcb_filename
-        try:
-            cmd = [
-                "uv",
-                "run",
-                "--directory",
-                str(_HOST_TOOLS_DIR),
-                "python",
-                str(_FLASH_USB_SCRIPT),
-                "--bin-path",
-                str(hab_bin),
-                "--fcb-path",
-                str(fcb_path),
-            ]
-            return await self._run_cmd(cmd, raw_bin_path.stem, progress_cb)
-        finally:
-            hab_bin.unlink(missing_ok=True)
-
-    async def _build_custom_hab(
-        self,
-        raw_bin: Path,
-        use_dcd: bool,
-        progress_cb: Optional[ProgressCallback] = None,
-    ) -> Optional[Path]:
-        """
-        Собрать HAB-образ из сырого бинарника через nxpimage.
-
-        Временный YAML пишется прямо в tools/host/hab/ (как и штатные
-        hab_*.yaml) и nxpimage запускается с cwd=tools/host/hab/ — это
-        обязательно: относительный DCDFilePath ("../dcd/dcd.bin") в
-        существующих конфигах резолвится именно так (см. build.just,
-        группа hab_image_gen — `cd tools/host/hab && uv run nxpimage ...`).
-        Отходить от этой схемы рискованно — nxpimage не документирует
-        явно, от чего резолвит относительные пути.
-
-        :return: путь к собранному *.hab.bin, либо None при ошибке nxpimage.
-        """
-        yaml_f = tempfile.NamedTemporaryFile(
-            dir=_HAB_DIR, suffix=".yaml", prefix="_tui_custom_", delete=False
-        )
-        yaml_path = Path(yaml_f.name)
-        out_path = yaml_path.with_suffix(".hab.bin")
-
-        lines = [
-            "options:",
-            "  flags: 0x00",
-            "  startAddress: 0x60000000",
-            "  ivtOffset: 0x1000",
-            "  initialLoadSize: 0x2000",
-            "  family: mimxrt1050",
-        ]
-        if use_dcd:
-            lines.append("  DCDFilePath: ../dcd/dcd.bin")
-        lines.append(f'inputImageFile: "{raw_bin.resolve()}"')
-        lines.append("sections: []")
-
-        try:
-            yaml_f.write("\n".join(lines).encode("utf-8"))
-            yaml_f.close()
-
-            cmd = [
-                "uv",
-                "run",
-                "nxpimage",
-                "hab",
-                "export",
-                "--force",
-                "-c",
-                str(yaml_path),
-                "-o",
-                str(out_path),
-            ]
-            logger.info("Building custom HAB image: %s", " ".join(cmd))
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=str(_HAB_DIR),
-            )
-            assert proc.stdout is not None
-            async for raw_line in proc.stdout:
-                line = raw_line.decode("utf-8", errors="replace").rstrip()
-                logger.debug("nxpimage: %s", line)
-                if progress_cb is not None and line:
-                    await progress_cb(
-                        FlashProgress(phase="nxpimage", percent=0, message=line)
-                    )
-            await proc.wait()
-
-            if proc.returncode != 0 or not out_path.exists():
-                logger.error("nxpimage hab export failed (rc=%s)", proc.returncode)
-                return None
-            return out_path
-        finally:
-            yaml_path.unlink(missing_ok=True)
-
-    async def _run_flash(
-        self,
-        firmware: str,
-        progress_cb: Optional[ProgressCallback],
-    ) -> bool:
-        """Запустить flash_usb.py для одного бинаря (стандартный firmware)."""
-        cmd = [
-            "uv",
-            "run",
-            "--directory",
-            str(_HOST_TOOLS_DIR),
-            "python",
-            str(_FLASH_USB_SCRIPT),
-            "--firmware",
-            firmware,
-            "--build-type",
-            _FIRMWARE_BUILD_TYPE,
-        ]
-        return await self._run_cmd(cmd, firmware, progress_cb)
-
-    async def _run_flash_bin(
-        self,
-        bin_path: Path,
-        progress_cb: Optional[ProgressCallback],
-    ) -> bool:
-        """Запустить flash_usb.py для произвольного бинаря."""
-        cmd = [
-            "uv",
-            "run",
-            "--directory",
-            str(_HOST_TOOLS_DIR),
-            "python",
-            str(_FLASH_USB_SCRIPT),
-            "--bin-path",
-            str(bin_path.resolve()),
-        ]
-        return await self._run_cmd(cmd, bin_path.stem, progress_cb)
-
-    async def _run_cmd(
-        self,
-        cmd: list[str],
-        label: str,
-        progress_cb: Optional[ProgressCallback],
-    ) -> bool:
-        """Общий subprocess runner для всех операций flash_usb.py."""
-        logger.info("Running: %s", " ".join(cmd))
-        try:
-            self._proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=str(_HOST_TOOLS_DIR),
-            )
-            assert self._proc.stdout is not None
-            async for raw_line in self._proc.stdout:
-                line = raw_line.decode("utf-8", errors="replace").rstrip()
-                logger.debug("flash_usb [%s]: %s", label, line)
-                if progress_cb is not None:
-                    progress = _parse_progress(line)
-                    if progress is not None:
-                        await progress_cb(progress)
-            await self._proc.wait()
-            success = self._proc.returncode == 0
-            if progress_cb is not None:
-                phase = "done" if success else "error"
-                msg = "Завершено" if success else "Ошибка"
-                await progress_cb(FlashProgress(phase=phase, percent=100, message=msg))
-            return success
-        except Exception as exc:
-            logger.error("Subprocess error [%s]: %s", label, exc)
+            return None
+        except Exception as exc:  # noqa: BLE001 — safety net, см. _run_flash_op
+            logger.exception("build_custom_hab: непредвиденная ошибка")
             if progress_cb is not None:
                 await progress_cb(
-                    FlashProgress(phase="error", percent=0, message=str(exc))
+                    FlashProgress(
+                        phase="error",
+                        percent=0,
+                        message=f"Непредвиденная ошибка сборки HAB-образа: {exc}",
+                    )
                 )
-            return False
-        finally:
-            self._proc = None
-
-
-def _parse_progress(line: str) -> Optional[FlashProgress]:
-    """
-    Извлечь прогресс из строки stdout flash_usb.py.
-    Возвращает None если строка не несёт прогресс-информации.
-    """
-    percent_m = _RE_PERCENT.search(line)
-    phase_m = _RE_PHASE.search(line)
-
-    if percent_m is None and phase_m is None:
-        return None
-
-    percent = int(percent_m.group(1)) if percent_m else 0
-    phase = phase_m.group(1).lower() if phase_m else "flash"
-    return FlashProgress(phase=phase, percent=percent, message=line.strip())
+            return None

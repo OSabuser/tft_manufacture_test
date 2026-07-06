@@ -18,14 +18,14 @@ import logging
 import tomllib
 from pathlib import Path
 from typing import Optional
-
+from textual import on
 from textual.app import ComposeResult
-from textual.containers import Center
+from textual.containers import Center, Horizontal
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import Screen
 from textual.timer import Timer
-from textual.widgets import Static
+from textual.widgets import Button, Static
 
 from ..boot_art import LOGO_ART
 from ..flasher import Flasher
@@ -92,6 +92,10 @@ class WaitingScreen(Screen):
             yield Static("", id="waiting-reason", classes="hidden")
             yield Static("Подключите плату индикатора к USB...", id="waiting-hint")
             yield Static(_SPINNER_FRAMES[0], id="waiting-spinner")
+            with Horizontal(id="waiting-btn-row"):
+                yield Button(
+                    "✕ Выйти из приложения", id="waiting-btn-quit", variant="default"
+                )
 
     def on_mount(self) -> None:
         self._detect_timer = self.set_interval(_DETECT_INTERVAL_S, self._poll_usb)
@@ -101,6 +105,12 @@ class WaitingScreen(Screen):
 
     def on_unmount(self) -> None:
         self._stop_timers()
+
+    # ── Обработчики ───────────────────────────────────────────────────────────
+
+    @on(Button.Pressed, "#waiting-btn-quit")
+    def _on_quit_pressed(self) -> None:
+        self.app.exit()
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
