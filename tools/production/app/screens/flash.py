@@ -93,6 +93,7 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
         self._flashing = False
         self._preset = preset or FlashPreset()
         self._last_error_message: Optional[str] = None
+        self._write_log_bucket: int = -1  # см. _on_progress (Р11)
 
     def compose(self) -> ComposeResult:
         with AppFrame(id="flash-frame"):
@@ -237,6 +238,7 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
         self, target: FlashTarget, bin_path: Optional[Path], preset: FlashPreset
     ) -> None:
         self._last_error_message = None
+        self._write_log_bucket = -1
         self._set_busy(True)
         self._show_progress(True)
         self._log(f"▶ Прошивка: {target.value}")
@@ -320,6 +322,17 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
     async def _on_progress(self, progress: FlashProgress) -> None:
         bar = self.query_one("#flash-progress-bar", ProgressBar)
         bar.update(total=100, progress=progress.percent)
+
+        if progress.phase == "write":
+            # Р11: без троттлинга запись HAB-образа даёт ~135 строк в лог
+            # (progress_callback spsdk дёргается на каждый пакет). Бар выше
+            # обновляется на КАЖДОМ событии — плавность не теряется,
+            # троттлинг только для #flash-log и только для фазы "write".
+            bucket = min(progress.percent // 10, 10)
+            if bucket == self._write_log_bucket:
+                return
+            self._write_log_bucket = bucket
+
         self._log(progress.message)
         if progress.phase == "error":
             self._last_error_message = progress.message

@@ -77,8 +77,11 @@ class ServiceApp(App):
             self._last_flash_preset = event.preset
 
         if event.target is None and not event.success:
-            WaitingScreen(
-                disconnect_reason=event.error_message or "Соединение с платой потеряно"
+            self.switch_screen(
+                WaitingScreen(
+                    disconnect_reason=event.error_message
+                    or "Соединение с платой потеряно"
+                )
             )
             return
 

@@ -110,7 +110,11 @@ def test_load_flashloader_no_sdp_device(monkeypatch):
 def test_load_flashloader_missing_bin(monkeypatch):
     monkeypatch.setattr(fb.MbootUSBInterface, "scan", Mock(return_value=[]))
     monkeypatch.setattr(fb.SdpUSBInterface, "scan", Mock(return_value=[Mock()]))
-    monkeypatch.setattr(fb, "FLASHLOADER_BIN", Mock(exists=Mock(return_value=False)))
+    monkeypatch.setattr(
+        fb,
+        "flashloader_bin_path",
+        Mock(return_value=Mock(exists=Mock(return_value=False))),
+    )
 
     with pytest.raises(fb.FlashBackendError, match="Не найден"):
         fb.load_flashloader()
@@ -126,7 +130,7 @@ def test_load_flashloader_happy_path(monkeypatch, events):
     fake_bin = Mock(
         exists=Mock(return_value=True), read_bytes=Mock(return_value=b"\x00" * 16)
     )
-    monkeypatch.setattr(fb, "FLASHLOADER_BIN", fake_bin)
+    monkeypatch.setattr(fb, "flashloader_bin_path", Mock(return_value=fake_bin))
 
     mock_sdp_ctx = MagicMock()
     mock_sdp_ctx.__enter__.return_value = mock_sdp_ctx
@@ -405,8 +409,9 @@ def test_build_custom_hab_no_dcd(tmp_path, events):
 
 
 def test_build_custom_hab_with_dcd(tmp_path):
-    if not fb.REAL_DCD_BIN.exists():
-        pytest.skip(f"Реальный DCD не найден: {fb.REAL_DCD_BIN}")
+    real_dcd = fb.real_dcd_bin_path()
+    if not real_dcd.exists():
+        pytest.skip(f"Реальный DCD не найден: {real_dcd}")
     raw = _dummy_bin(tmp_path)
     out = fb.build_custom_hab(raw, use_dcd=True)
     assert out.exists()
@@ -415,7 +420,9 @@ def test_build_custom_hab_with_dcd(tmp_path):
 
 def test_build_custom_hab_dcd_requested_but_missing(monkeypatch, tmp_path):
     raw = _dummy_bin(tmp_path)
-    monkeypatch.setattr(fb, "REAL_DCD_BIN", tmp_path / "nonexistent_dcd.bin")
+    monkeypatch.setattr(
+        fb, "real_dcd_bin_path", Mock(return_value=tmp_path / "nonexistent_dcd.bin")
+    )
 
     with pytest.raises(fb.HabBuildError, match="DCD"):
         fb.build_custom_hab(raw, use_dcd=True)
@@ -461,6 +468,34 @@ def test_firmware_hab_path_frozen(monkeypatch, tmp_path):
     assert p == exe.parent / "firmware" / "Debug" / "firmware_test_hab.bin"
 
 
+# ─── _host_dcd_dir() / flashloader_bin_path() / real_dcd_bin_path() ──────
+# Двухрежимный резолв (Р6), симметричный firmware_hab_path() — Фаза 5.
+
+
+def test_host_dcd_dir_dev_default():
+    assert fb._host_dcd_dir() == fb.REPO_ROOT / "tools" / "host" / "dcd"
+
+
+def test_host_dcd_dir_frozen(monkeypatch, tmp_path):
+    meipass = tmp_path / "_internal"
+    meipass.mkdir()
+    monkeypatch.setattr(fb.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(fb.sys, "_MEIPASS", str(meipass), raising=False)
+    assert fb._host_dcd_dir() == meipass / "data"
+
+
+def test_flashloader_bin_path_frozen(monkeypatch, tmp_path):
+    meipass = tmp_path / "_internal"
+    meipass.mkdir()
+    monkeypatch.setattr(fb.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(fb.sys, "_MEIPASS", str(meipass), raising=False)
+    assert fb.flashloader_bin_path() == meipass / "data" / "ivt_flashloader.bin"
+
+
+def test_real_dcd_bin_path_dev_default():
+    assert fb.real_dcd_bin_path() == fb.REPO_ROOT / "tools" / "host" / "dcd" / "dcd.bin"
+
+
 # ─── Фаза 4a: типизация обрыва USB ───────────────────────────────────────
 #
 # Три проявления обрыва (RELEASE_ROADMAP.md):
@@ -504,9 +539,12 @@ def test_load_flashloader_timeout_is_connection_lost(monkeypatch):
     monkeypatch.setattr(fb.SdpUSBInterface, "scan", Mock(return_value=[Mock()]))
     monkeypatch.setattr(
         fb,
-        "FLASHLOADER_BIN",
+        "flashloader_bin_path",
         Mock(
-            exists=Mock(return_value=True), read_bytes=Mock(return_value=b"\x00" * 16)
+            return_value=Mock(
+                exists=Mock(return_value=True),
+                read_bytes=Mock(return_value=b"\x00" * 16),
+            )
         ),
     )
     sdp_ctx = MagicMock()

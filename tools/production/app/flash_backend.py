@@ -51,14 +51,34 @@ ProgressCallback = Callable[[FlashProgress], None]
 # ─── Пути ────────────────────────────────────────────────────────────────
 # tools/production/app/flash_backend.py → корень репозитория
 REPO_ROOT = Path(__file__).resolve().parents[3]
-_HOST_DCD_DIR = REPO_ROOT / "tools" / "host" / "dcd"
-FLASHLOADER_BIN = _HOST_DCD_DIR / "ivt_flashloader.bin"
-REAL_DCD_BIN = _HOST_DCD_DIR / "dcd.bin"
+
+
+def _host_dcd_dir() -> Path:
+    """Каталог с data-блобами (dcd.bin, ivt_flashloader.bin, *_fdcb.bin) —
+    двухрежимный резолв (Р6), симметричный firmware_hab_path() (Фаза 5).
+
+    Dev: tools/host/dcd/ (единый источник, использует и flash_usb.py).
+    Frozen: sys._MEIPASS/data — см. service_tui.spec, который кладёт эти
+    же файлы в 'data/' внутри бандла (для onedir _MEIPASS == _internal/).
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "data"
+    return REPO_ROOT / "tools" / "host" / "dcd"
+
+
+def flashloader_bin_path() -> Path:
+    """Путь к ivt_flashloader.bin (двухрежимный резолв, см. _host_dcd_dir)."""
+    return _host_dcd_dir() / "ivt_flashloader.bin"
+
+
+def real_dcd_bin_path() -> Path:
+    """Путь к dcd.bin (двухрежимный резолв, см. _host_dcd_dir)."""
+    return _host_dcd_dir() / "dcd.bin"
 
 
 def fcb_blob_path(fcb_filename: str) -> Path:
     """Путь к готовому FCB-блобу (tools/host/dcd/w25q128_fdcb.bin и т.п.)."""
-    return _HOST_DCD_DIR / fcb_filename
+    return _host_dcd_dir() / fcb_filename
 
 
 def firmware_hab_path(firmware: str, build_type: str) -> Path:
@@ -269,8 +289,9 @@ def load_flashloader(
         raise DeviceNotFoundError(
             f"SDP-устройство не найдено ({_SDP_DEVICE_ID}). Плата в BootROM-режиме?"
         )
-    if not FLASHLOADER_BIN.exists():
-        raise FlashBackendError(f"Не найден: {FLASHLOADER_BIN}")
+    flashloader_bin = flashloader_bin_path()
+    if not flashloader_bin.exists():
+        raise FlashBackendError(f"Не найден: {flashloader_bin}")
 
     _emit(
         progress_cb,
@@ -278,7 +299,7 @@ def load_flashloader(
         0,
         f"Загрузка Flashloader через SDP ({_SDP_DEVICE_ID})",
     )
-    data = FLASHLOADER_BIN.read_bytes()
+    data = flashloader_bin.read_bytes()
     try:
         with SDP(sdp_devices[0]) as sdp:
             sdp.write_file(FLASHLOADER_LOAD_ADDR, data)
@@ -491,7 +512,7 @@ def build_custom_hab(
     """
     _emit(progress_cb, "hab_build", 0, "Сборка HAB-образа (HabImage)")
 
-    dcd_bin = REAL_DCD_BIN if use_dcd else None
+    dcd_bin = real_dcd_bin_path() if use_dcd else None
     if use_dcd and not dcd_bin.exists():
         raise HabBuildError(f"DCD запрошен, но файл не найден: {dcd_bin}")
 
