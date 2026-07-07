@@ -74,6 +74,30 @@ GitHub имеет смысл положить оба HAB-образа отдел
    Debug**-образ как основной asset, Release не публикуется до починки
    FCB/clock-проблемы. Требует подтверждения.
 
+   → **Решено:** только Debug.
+6. **(Добавилось по ходу, не было в исходном плане)** Помимо самого
+   `datas`/`binaries` в spec, ужесточили сборку двумя хардфейлами вместо
+   тихих warning'ов:
+   - `service_tui.spec` теперь падает с `FileNotFoundError`, если в
+     `tools/host/dcd/` нет хотя бы одного из
+     `dcd.bin`/`ivt_flashloader.bin`/`w25q128_fdcb.bin`/`w25q512_fdcb.bin`;
+   - `just host::package-tui` падает с `exit 1`, если не нашёлся Debug
+     `*_hab.bin` в `build/Debug` (Release остаётся необязательным).
+   Заодно поправлен баг расположения `custom_binaries/` — recipe создавал
+   пустую декоративную папку рядом с `service_tui/`, а не внутри неё, хотя
+   `flasher._resolve_custom_binaries_dir()` смотрит именно внутрь (рядом с
+   исполняемым файлом); теперь `custom_binaries/` создаётся в правильном
+   месте и сразу наполняется `TFT_BOOTLOADER_NEW.bin`/`TFT_BOOTLOADER_OLD.bin`
+   из `tools/production/custom_binaries/`.
+
+   **TODO (отложено, не забыть перед шагом 2):** актуализировать
+   `tools/production/README.md` и `tools/production/docs/DEV_ARCH.md` §14 —
+   они всё ещё описывают старое поведение (в частности, блок «Расхождение
+   spec/факт» в DEV_ARCH.md §14 уже неактуален, spec восстановлен и
+   ужесточён). Сознательно отложено до ручной валидации сборки на
+   macOS/Windows (пункт 4) — чтобы задокументировать то, что реально
+   проверено на железе, а не то, что должно было бы работать.
+
 ---
 
 ## Шаг 2 — Версия и тег

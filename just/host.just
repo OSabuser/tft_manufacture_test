@@ -587,7 +587,7 @@ package-tui:
     DIST="dist/service_tui"
 
     echo "  📦  Copying firmware HAB images (build/<Type>/*_hab.bin)..."
-    found=0
+    found_debug=0
     for type_dir in "{{ _prod_build_dir }}"/Debug "{{ _prod_build_dir }}"/Release; do
         [[ -d "$type_dir" ]] || continue
         type_name=$(basename "$type_dir")
@@ -595,12 +595,14 @@ package-tui:
             [[ -f "$hab" ]] || continue
             mkdir -p "$DIST/firmware/$type_name"
             cp "$hab" "$DIST/firmware/$type_name/"
-            found=1
+            [[ "$type_name" == "Debug" ]] && found_debug=1
         done
     done
-    if [[ "$found" -eq 0 ]]; then
-        echo "  ⚠️   Ни один *_hab.bin не найден в {{ _prod_build_dir }} — соберите"
-        echo "       прошивки заранее (just build::hab-all-release / hab-all-debug)."
+    if [[ "$found_debug" -eq 0 ]]; then
+        echo "  ❌  Не найден Debug *_hab.bin в {{ _prod_build_dir }}/Debug — соберите"
+        echo "      прошивку заранее (just build::hab-firmware-test-debug)."
+        echo "      Бандл TUI без Debug-образа нерабочий (см. README/DEV_ARCH.md)."
+        exit 1
     fi
 
     VERSION=$(grep -m1 '^version' pyproject.toml | sed -E 's/.*"(.+)".*/\1/')
@@ -613,6 +615,11 @@ package-tui:
     RELEASE_NAME="service-tui-v${VERSION}-${OS_TAG}"
 
     rm -rf "dist/${RELEASE_NAME}"
-    mkdir -p "dist/${RELEASE_NAME}/custom_binaries"
-    mv "$DIST" "dist/${RELEASE_NAME}"
+    mkdir -p "dist/${RELEASE_NAME}"
+    mv "$DIST" "dist/${RELEASE_NAME}/"
+
+    echo "  📦  Seeding custom_binaries/ from tools/production/custom_binaries/..."
+    mkdir -p "dist/${RELEASE_NAME}/service_tui/custom_binaries"
+    cp "{{ _prod_dir }}/custom_binaries/"*.bin "dist/${RELEASE_NAME}/service_tui/custom_binaries/"
+
     echo "  ✅  dist/${RELEASE_NAME}"

@@ -77,3 +77,4 @@ tools/host/.venv-host/
 tools/host/.venv-host-win/
 .zed/
 project_tree.txt
+tools/production/dist/
