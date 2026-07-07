@@ -20,7 +20,7 @@ COM-порт (`/dev/ttyACM*` на Linux/macOS, `COMx` на Windows). Испол�
 PHY калибровка: `D_CAL=0x0C`, `TXCAL45DP=0x06`, `TXCAL45DM=0x06`.
 
 **VID/PID**: `0x1996` / `0x00AD` (`usb_device_descriptor.h`) — тот же
-идентификатор, что `tools/production/` (service-tui) использует для
+идентификатор, что `tools/service_tui/` (service-tui) использует для
 детекта CDC-порта firmware_test (`SERVICE_CDC_VID`/`SERVICE_CDC_PID`).
 
 ---

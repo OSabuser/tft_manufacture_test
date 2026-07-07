@@ -200,7 +200,7 @@ flowchart LR
 │   │
 │   ├── production/               ← service-tui: TUI сервисного инженера (Textual)
 │   │                                прошивка/диагностика готовых плат, см.
-│   │                                tools/production/README.md + DEV_ARCH.md
+│   │                                tools/service_tui/README.md + DEV_ARCH.md
 │   │
 │   └── hil/                      ← HIL pytest-окружение
 │       ├── conftest.py           ← фикстуры: m5, loaded_<n>, uart_<n>

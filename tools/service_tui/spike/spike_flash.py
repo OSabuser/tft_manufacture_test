@@ -40,7 +40,7 @@ from spsdk.mboot import McuBoot, MbootUSBInterface
 from spsdk.mboot.properties import PropertyTag
 from spsdk.sdp import SDP, SdpUSBInterface
 
-# tools/production/spike/spike_flash.py → корень репозитория
+# tools/service_tui/spike/spike_flash.py → корень репозитория
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FLASHLOADER_BIN = REPO_ROOT / "tools" / "host" / "dcd" / "ivt_flashloader.bin"
 

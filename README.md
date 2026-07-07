@@ -21,7 +21,7 @@
 
 | Инструмент         | Путь                | Назначение                                                                                                   |
 | ------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Сервисный TUI      | `tools/production/` | Диагностика и прошивка готовых плат сервисным инженером (Textual, standalone-бинарь). [README](tools/production/README.md) |
+| Сервисный TUI      | `tools/service_tui/` | Диагностика и прошивка готовых плат сервисным инженером (Textual, standalone-бинарь). [README](tools/service_tui/README.md) |
 | Прошивка (dev-CLI) | `tools/host/`       | USB SDP / SWD прошивка при разработке (`sdphost`/`blhost`/`nxpimage`/`pyOCD`). [README](tools/host/README.md) |
 | HIL-тесты          | `tools/hil/`        | pytest-окружение аппаратных тестов (pyOCD + M5StampPLC). [README](tools/hil/README.md)                        |
 
@@ -76,7 +76,7 @@ just host::debug-server                 # GDB-сервер для отладки
 | Unity, fff, SEGGER RTT                        | vendored             |
 | pyOCD, pyserial, pytest, mpremote             | `tools/hil/uv.lock`  |
 | spsdk (nxpimage, blhost, sdphost — dev-CLI)   | `tools/host/uv.lock` |
-| spsdk (McuBoot/SDP/HabImage — прямой Python API), Textual | `tools/production/uv.lock` |
+| spsdk (McuBoot/SDP/HabImage — прямой Python API), Textual | `tools/service_tui/uv.lock` |
 
 Всё что не меняется — vendored. Сборка работает после `git clone` без интернета
 (кроме Python-зависимостей).

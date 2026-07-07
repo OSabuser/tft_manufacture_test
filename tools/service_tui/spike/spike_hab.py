@@ -55,7 +55,7 @@ import pytest
 from spsdk.image.hab.hab_image import HabImage
 from spsdk.utils.config import Config
 
-# tools/production/spike/spike_hab.py → корень репозитория
+# tools/service_tui/spike/spike_hab.py → корень репозитория
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_DCD_BIN = REPO_ROOT / "tools" / "host" / "dcd" / "dcd.bin"
 
@@ -108,7 +108,7 @@ def _require_nxpimage() -> str:
     path = shutil.which("nxpimage")
     if path is None:
         raise RuntimeError(
-            "nxpimage не найден в PATH — активирован ли venv tools/production "
+            "nxpimage не найден в PATH — активирован ли venv tools/service_tui "
             "(spsdk кладёт nxpimage как console_script)?"
         )
     return path
@@ -146,7 +146,7 @@ def _run_golden(work_dir: Path, dcd_bin: Optional[Path]) -> tuple[bytes, bytes]:
 
 # ── pytest: остаётся навсегда как регрессия на апгрейды spsdk (Гейт 0) ──
 # Примечание: сейчас лежит в spike/ (временная директория по плану Фазы 0);
-# в Фазе 1 у tools/production/ появляется tests/ — тогда этот файл стоит
+# в Фазе 1 у tools/service_tui/ появляется tests/ — тогда этот файл стоит
 # туда перенести (или вынести тесты в отдельный test_hab_golden.py).
 
 

@@ -161,7 +161,7 @@
 
 | Файл | Тип правки |
 | --- | --- |
-| `tools/production/service_tui.spec` | новый — PyInstaller spec |
+| `tools/service_tui/service_tui.spec` | новый — PyInstaller spec |
 | `app/screens/waiting.py` | правки: кнопка «Выйти из приложения» (Предложение 2) |
 | just-рецепт | новый — имя задачи согласовать, **не изобретаю** |
 | `app/app.tcss` | правки при необходимости — стиль кнопки Quit на Waiting |
@@ -228,7 +228,7 @@ service-tui-vX.Y.Z-<os>/
 | `RELEASE_PLAN.md` | правки: закрыть шаг 3 ссылкой на V4/этот roadmap |
 | `docs/DEV_ARCH.md` | правки: §2 (убрать subprocess из диаграммы), §8.3 (новый конвейер) |
 | `HOW_TO_FLASH.md` | правки |
-| `tools/production/README.md` | правки |
+| `tools/service_tui/README.md` | правки |
 | `.env.example` | правки: по Р9 (+`SERVICE_M5_VID/PID`, `FIRMWARE_BUILD_TYPE`, `SERVICE_LOG_LEVEL`) |
 
 ### Содержание
@@ -315,7 +315,7 @@ RT1052, LVGL, SDK HAL, C11, Doxygen, `.clang-tidy`/`.clang-format`,
 CMake) написаны под **C/прошивочную** часть монорепо (`firmware_test`).
 
 **Вся работа этого roadmap (4a→4b→5→6) — Python/spsdk/Textual** в
-`tools/production`. Поэтому:
+`tools/service_tui`. Поэтому:
 
 | Правило | Применимо к Python-работе roadmap? |
 | --- | --- |
@@ -345,7 +345,7 @@ CMake) написаны под **C/прошивочную** часть моно�
 
 ## C. Файлы, которые нужно предоставить — по фазам
 
-Пути относительно `tools/production/`, если не указано иное. Пометка
+Пути относительно `tools/service_tui/`, если не указано иное. Пометка
 **[есть в этом треде]** — файл уже фигурировал и его актуальная версия
 известна; в новом треде его всё равно нужно приложить заново.
 
@@ -364,13 +364,13 @@ CMake) написаны под **C/прошивочную** часть моно�
 | --- | --- |
 | `app/main.py` **[правится]** | уровни логгеров + env-переключатель DEBUG (Р12) |
 | `app/screens/flash.py` **[правится]** | троттлинг `#flash-log` в `_on_progress` (Р11) |
-| `.env` / `.env.example` (`tools/production/`) | согласовать имя `SERVICE_LOG_LEVEL` с существующими переменными |
+| `.env` / `.env.example` (`tools/service_tui/`) | согласовать имя `SERVICE_LOG_LEVEL` с существующими переменными |
 
 ### Фаза 5 — упаковка PyInstaller + UI
 
 | Файл | Зачем |
 | --- | --- |
-| `pyproject.toml` (`tools/production/`) | зависимости, версия, `requires-python` — база для spec |
+| `pyproject.toml` (`tools/service_tui/`) | зависимости, версия, `requires-python` — база для spec |
 | `Justfile` + все `*.just` (корневой и подключаемые: `build.just`, `ci.just`, `host.just`) | **согласовать имя задачи упаковки, НЕ изобретать** — критично по правилу проекта |
 | `app/main.py` | entry point для PyInstaller |
 | `app/app.py` | `CSS_PATH="app.tcss"` — как резолвится во frozen |
@@ -378,7 +378,7 @@ CMake) написаны под **C/прошивочную** часть моно�
 | `app/screens/waiting.py` **[правится]** | кнопка «Выйти» (Предложение 2) |
 | `app/flasher.py`, `app/flash_backend.py` | frozen-резолв путей (`firmware_hab_path`, `_resolve_custom_binaries_dir`) — проверить против структуры бандла |
 | дерево `tools/host/dcd/` (список файлов) | что кладём в `datas` (`dcd.bin`, `*_fdcb.bin`, `ivt_flashloader.bin`) |
-| `project_tree.txt` или `ls -R tools/production` | реальная структура пакета `app/` для spec |
+| `project_tree.txt` или `ls -R tools/service_tui` | реальная структура пакета `app/` для spec |
 | существующий `.spec`, если уже есть | не изобретать заново |
 
 ### Фаза 6 — документация и релиз
@@ -389,7 +389,7 @@ CMake) написаны под **C/прошивочную** часть моно�
 | `RELEASE_PLAN.md` | закрыть шаг 3 ссылкой на этот roadmap |
 | `docs/DEV_ARCH.md` | §2 (диаграмма без subprocess), §8.3 (новый конвейер) |
 | `HOW_TO_FLASH.md` | актуализировать под TUI-backend |
-| `tools/production/README.md` | ограничение О3, POST-1, разделение dev-CLI / production-TUI |
+| `tools/service_tui/README.md` | ограничение О3, POST-1, разделение dev-CLI / production-TUI |
 | `.env.example` | по Р9 (+`SERVICE_M5_VID/PID`, `FIRMWARE_BUILD_TYPE`, `SERVICE_LOG_LEVEL`) |
 | `app/flash_backend.py`, `app/flasher.py`, `app/screens/flash.py`, `app/models.py` | финальная зачистка комментариев (grep-cleanup Гейта 4) |
 | `tools/host/flash_usb.py` | сверка при зачистке — что dev-CLI и правда не тронут (Р2) |
@@ -400,13 +400,13 @@ CMake) написаны под **C/прошивочную** часть моно�
 дробить по фазам. Актуальные (пост-Фаза-4) версии:
 
 ```
-tools/production/
+tools/service_tui/
 ├── pyproject.toml
 ├── app/
 │   ├── __init__.py
 │   ├── app.py
 │   ├── app.tcss
-│   ├── main.py                    (точка входа — фактически в tools/production/main.py, см. pyproject scripts)
+│   ├── main.py                    (точка входа — фактически в tools/service_tui/main.py, см. pyproject scripts)
 │   ├── models.py
 │   ├── flasher.py                 ← Фаза 2/4, актуальная версия
 │   ├── flash_backend.py           ← Фаза 1/4, актуальная версия (41 тест)
@@ -447,7 +447,7 @@ tools/host/                        (dev-CLI, Р2 — НЕ трогается)
 
 > Примечание: `main.py` в `pyproject.toml` прописан как
 > `service-tui = "main:main"` — точка входа лежит в
-> `tools/production/main.py` (не в `app/`), а `app/app.py` содержит
+> `tools/service_tui/main.py` (не в `app/`), а `app/app.py` содержит
 > `ServiceApp`. Уточнить фактическое расположение при старте Фазы 4b/5.
 
 ## E. Что уже решено и не пересматривается (сводка для нового треда)

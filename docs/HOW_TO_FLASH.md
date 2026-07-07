@@ -79,7 +79,7 @@ auto-config не подтверждена — см. 1.5.
 
 ### 1.5 Нестандартная память (W25Q256/512) и сторонние бинарники
 
-`service-tui` (`tools/production/`) умеет прошивать бинарники, собранные не
+`service-tui` (`tools/service_tui/`) умеет прошивать бинарники, собранные не
 в этом репозитории (например, старые платы с W25Q512), тем же способом
 (USB SDP), но с двумя отличиями от штатного пути. Это **отдельная
 реализация**, не связанная с `flash_usb.py`/`nxpimage` CLI — TUI прошивает
@@ -93,7 +93,7 @@ in-process через Python API `spsdk` (`app/flash_backend.py`: `HabImage`,
   `configure-memory 0xF000000F`) — auto-config для 4-байтной адресации не
   проверялся, решили на него не полагаться
 
-Подробности конвейера — в [tools/production/docs/DEV_ARCH.md](../tools/production/docs/DEV_ARCH.md),
+Подробности конвейера — в [tools/service_tui/docs/DEV_ARCH.md](../tools/service_tui/docs/DEV_ARCH.md),
 §8. Штатный путь (`--firmware`, три сборки этого репозитория, что через
 `just host::flash`, что через `service-tui`) не меняется и по-прежнему
 использует auto-config Flashloader, как описано в 1.4.

@@ -9,12 +9,12 @@
 
 `firmware_test` (C, i.MX RT1052, версия `0.1.2` из
 `firmware/test/CMakeLists.txt`) и `service-tui` (Python/Textual, версия
-`0.2.0` из `tools/production/pyproject.toml`) — независимо версионируемые
+`0.2.0` из `tools/service_tui/pyproject.toml`) — независимо версионируемые
 проекты, но релиз одного без другого бесполезен сервисному инженеру:
 `service-tui` — это инструмент, которым он *прошивает* плату диагностической
 прошивкой, и HAB-образ `firmware_test` кладётся внутрь бандла TUI как
 `firmware/<Type>/firmware_test_hab.bin` (см. `just host::package-tui`,
-`tools/production/docs/DEV_ARCH.md` §14). Поэтому релиз собирается как один
+`tools/service_tui/docs/DEV_ARCH.md` §14). Поэтому релиз собирается как один
 комплект, даже если версии независимые.
 
 Известное ограничение (задокументировано в `README.md`/`DEV_ARCH.md`):
@@ -34,7 +34,7 @@ GitHub имеет смысл положить оба HAB-образа отдел
 | `firmware_test` | Собирается, HAB-образ генерируется (`just build::hab-firmware-test-{debug,release}`), Release нестабилен |
 | `service-tui` | v0.2.0, PyInstaller onedir, alpha-бандлы уже вручную собраны и прогнаны на живом железе macOS+Windows (коммиты `c694258`/`bfe4dd6`) |
 | `service_tui.spec` | **Устарел относительно того, чем реально собраны протестированные alpha-бандлы** — не содержит `datas` для `spsdk`, `dcd/*.bin`, `pyproject.toml` (задокументировано в `DEV_ARCH.md` §14 и `CHANGELOG.md`「Известные ограничения」) |
-| `tools/production/dist/service-tui-v0.2.0-{macos,windows}/` | Закоммичены в git (906 файлов, ~96 МБ суммарно) и **устарели относительно HEAD** — собраны до коммитов `2dbe3e6`/`22c4077`/`31e3237` (фиксы моков тестов, рефакторинг докстрингов) |
+| `tools/service_tui/dist/service-tui-v0.2.0-{macos,windows}/` | Закоммичены в git (906 файлов, ~96 МБ суммарно) и **устарели относительно HEAD** — собраны до коммитов `2dbe3e6`/`22c4077`/`31e3237` (фиксы моков тестов, рефакторинг докстрингов) |
 | CI (`.github/workflows/ci.yml`) | Только `build`+`test` в devcontainer на `ubuntu-latest`; не собирает `service-tui`, нет macOS/Windows раннеров, нет release-пайплайна, нет тегов в репозитории |
 | `just/ci.just` | Есть рецепт `release` (→ `just build::hab-all-release`) — только firmware, ничего про упаковку TUI или публикацию на GitHub |
 | Ветки | `feature-tui-monolith` на 15 коммитов впереди `dev`, ещё не смёржена; в репозитории также есть `main` — политика, какая ветка режет релизы, явно не зафиксирована |
@@ -47,19 +47,19 @@ GitHub имеет смысл положить оба HAB-образа отдел
 провалидировано на железе, — а «релиз, который не воспроизводим из
 исходников» хуже отсутствия релиза.
 
-1. **Актуализировать `tools/production/service_tui.spec`** — добавить
+1. **Актуализировать `tools/service_tui/service_tui.spec`** — добавить
    `collect_data_files("spsdk")` (+ `SPSDK_DATA_FOLDER` если понадобится),
    `collect_dynamic_libs("libusbsio")`, `datas` для
    `tools/host/dcd/{dcd.bin,w25q128_fdcb.bin,w25q512_fdcb.bin,ivt_flashloader.bin}`
    и `pyproject.toml`. Ориентир — реальное содержимое уже собранных
    alpha-бандлов в `dist/` (их можно инспектировать перед удалением из git,
    см. следующий пункт).
-2. **Убрать `tools/production/dist/` из git**: `git rm -r --cached
-   tools/production/dist` + добавить `tools/production/dist/` в
+2. **Убрать `tools/service_tui/dist/` из git**: `git rm -r --cached
+   tools/service_tui/dist` + добавить `tools/service_tui/dist/` в
    `.gitignore`. Собранные бандлы — это build-артефакты, их место в GitHub
    Release assets или CI-артефактах, не в истории репозитория.
 3. **(Дёшево, но не блокирует)** Убрать мёртвую зависимость `pyusb` из
-   `tools/production/pyproject.toml` — детект давно переведён на
+   `tools/service_tui/pyproject.toml` — детект давно переведён на
    `spsdk`/`serial.tools.list_ports` (Р7), ни один модуль `app/` её не
    импортирует.
 4. **Пересобрать бандлы локально** с исправленным spec из актуального HEAD
@@ -88,10 +88,10 @@ GitHub имеет смысл положить оба HAB-образа отдел
    `flasher._resolve_custom_binaries_dir()` смотрит именно внутрь (рядом с
    исполняемым файлом); теперь `custom_binaries/` создаётся в правильном
    месте и сразу наполняется `TFT_BOOTLOADER_NEW.bin`/`TFT_BOOTLOADER_OLD.bin`
-   из `tools/production/custom_binaries/`.
+   из `tools/service_tui/custom_binaries/`.
 
    **TODO (отложено, не забыть перед шагом 2):** актуализировать
-   `tools/production/README.md` и `tools/production/docs/DEV_ARCH.md` §14 —
+   `tools/service_tui/README.md` и `tools/service_tui/docs/DEV_ARCH.md` §14 —
    они всё ещё описывают старое поведение (в частности, блок «Расхождение
    spec/факт» в DEV_ARCH.md §14 уже неактуален, spec восстановлен и
    ужесточён). Сознательно отложено до ручной валидации сборки на
@@ -137,7 +137,7 @@ GitHub имеет смысл положить оба HAB-образа отдел
 | Job | Раннер | Что делает |
 | --- | --- | --- |
 | `firmware` | `ubuntu-latest` (тот же devcontainer-подход, что в `ci.yml`) | `just ci::release` → `hab-all-release` (по факту нужен только `firmware_test`, Debug+Release); выгрузить `firmware_test_hab.bin` (оба типа) как артефакт |
-| `service-tui-macos` | `macos-latest` | скачать firmware-артефакт из job `firmware`; `uv sync` в `tools/production`; `just host::package-tui`; заархивировать `dist/service-tui-vX.Y.Z-macos/` |
+| `service-tui-macos` | `macos-latest` | скачать firmware-артефакт из job `firmware`; `uv sync` в `tools/service_tui`; `just host::package-tui`; заархивировать `dist/service-tui-vX.Y.Z-macos/` |
 | `service-tui-windows` | `windows-latest` | то же самое, PowerShell-совместимые команды (`just`/`uv` доступны на Windows) |
 | `publish-release` | `ubuntu-latest`, `needs: [firmware, service-tui-macos, service-tui-windows]` | скачать все артефакты, создать GitHub Release через `gh release create` / `softprops/action-gh-release@v2`, прикрепить `firmware_test_hab.bin` (Debug, + Release с пометкой experimental, если решение по шагу 1.5 — «класть оба»), `service-tui-vX.Y.Z-macos.zip`, `service-tui-vX.Y.Z-windows.zip` |
 
@@ -165,7 +165,7 @@ GitHub имеет смысл положить оба HAB-образа отдел
    5: детект SDP → прошивка `firmware_test` → диагностика на обеих ОС.
    Цель — убедиться, что CI-сборка не разошлась с уже провалидированной
    локальной.
-2. Обновить `tools/production/README.md`/корневой `README.md` — ссылка на
+2. Обновить `tools/service_tui/README.md`/корневой `README.md` — ссылка на
    релиз/инструкция «откуда скачать сервисному инженеру».
 
 ## Шаг 5 — Публикация

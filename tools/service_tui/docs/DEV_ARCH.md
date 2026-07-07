@@ -1,6 +1,6 @@
 # service-tui — техническая архитектура
 
-> Компонент: `tools/production/` — TUI сервисного инженера (диагностика и
+> Компонент: `tools/service_tui/` — TUI сервисного инженера (диагностика и
 > прошивка платы MIMXRT1052CVJ5B).
 > Документ описывает внутреннее устройство: структуру модулей, протокол
 > взаимодействия с firmware/M5, экранную архитектуру Textual, известные
@@ -13,7 +13,7 @@
 ## 1. Структура проекта
 
 ```bash
-tools/production/
+tools/service_tui/
 ├── main.py                              ← точка входа: логирование (Р12) + ServiceApp().run()
 ├── pyproject.toml                       ← зависимости uv (включая spsdk==3.7.0)
 ├── uv.lock
@@ -676,8 +676,8 @@ service-tui-vX.Y.Z-<os>/
 | --- | --- | --- |
 | `flash_backend._host_dcd_dir()` | `tools/host/dcd/` | `sys._MEIPASS/data` |
 | `flash_backend.firmware_hab_path()` | `$BUILD_DIR/<Type>/*_hab.bin` (репо `build/`) | `<exe_dir>/firmware/<Type>/*_hab.bin` |
-| `flasher._resolve_custom_binaries_dir()` | `tools/production/custom_binaries/` | `<exe_dir>/custom_binaries/` (override — `SERVICE_CUSTOM_BINARIES_DIR`) |
-| `waiting._read_app_version()` | `tools/production/pyproject.toml` | тот же путь — `pyproject.toml` кладётся в `datas` спека (нужен для парсинга версии во frozen) |
+| `flasher._resolve_custom_binaries_dir()` | `tools/service_tui/custom_binaries/` | `<exe_dir>/custom_binaries/` (override — `SERVICE_CUSTOM_BINARIES_DIR`) |
+| `waiting._read_app_version()` | `tools/service_tui/pyproject.toml` | тот же путь — `pyproject.toml` кладётся в `datas` спека (нужен для парсинга версии во frozen) |
 | `main._setup_logging()` | рядом с `main.py` | рядом с исполняемым файлом (`sys.executable.parent`) |
 
 `sys.executable` (не `sys._MEIPASS`) — единственный путь, одинаково
@@ -691,7 +691,7 @@ service-tui-vX.Y.Z-<os>/
 > **Расхождение spec/факт:** закоммиченный `service_tui.spec` объявляет в
 > `datas` только `('../shared', 'shared')` — без `dcd/*.bin`,
 > `pyproject.toml` или `spsdk`-данных. Тем не менее уже собранные релизные
-> бандлы в `tools/production/dist/service-tui-v0.2.0-{macos,windows}/`
+> бандлы в `tools/service_tui/dist/service-tui-v0.2.0-{macos,windows}/`
 > фактически содержат `_internal/data/{dcd.bin,*_fdcb.bin,ivt_flashloader.bin}`,
 > `_internal/pyproject.toml` и `_internal/spsdk/` — то есть сборки, тестировавшиеся
 > на железе (Фаза 5, гейт по macOS/Windows), были собраны с более полным

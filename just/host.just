@@ -538,21 +538,21 @@ production: flash-production
 # ГРУППА: service — TUI сервисного инженера
 # =============================================================================
 
-PRODUCTION_DIR := justfile_directory() / 'tools/production'
+SERVICE_TUI_DIR := justfile_directory() / 'tools/service_tui'
 
 [doc('Установить/обновить зависимости TUI сервисного инженера')]
 [group('service')]
 service-setup:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "  📦  Syncing tools/production deps..."
-    cd "{{ PRODUCTION_DIR }}" && uv sync
-    echo "  ✅  tools/production deps installed"
+    echo "  📦  Syncing tools/service_tui deps..."
+    cd "{{ SERVICE_TUI_DIR }}" && uv sync
+    echo "  ✅  tools/service_tui deps installed"
 
 [doc('Запустить TUI сервисного инженера')]
 [group('service')]
 service-tui:
-    uv run --directory {{ PRODUCTION_DIR }} python main.py
+    uv run --directory {{ SERVICE_TUI_DIR }} python main.py
 
 [doc('Собрать standalone-бинарь TUI (PyInstaller → dist/service_tui)')]
 [group('service')]
@@ -560,7 +560,7 @@ service-build:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "  🔨  Building standalone service-tui..."
-    cd "{{ PRODUCTION_DIR }}" && uv run pyinstaller \
+    cd "{{ SERVICE_TUI_DIR }}" && uv run pyinstaller \
         --onefile \
         --name service_tui \
         --add-data "../shared:shared" \
@@ -571,7 +571,7 @@ service-build:
 # ГРУППА: package — сборка service-tui в исполняемый бандл (PyInstaller)
 # =============================================================================
 
-_prod_dir := justfile_directory() / 'tools/production'
+_service_dir := justfile_directory() / 'tools/service_tui'
 _prod_build_dir := env('BUILD_DIR', justfile_directory() / 'build')
 
 [doc('Собрать service-tui в PyInstaller-бандл + скопировать firmware/*_hab.bin')]
@@ -580,7 +580,7 @@ package-tui:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    cd "{{ _prod_dir }}"
+    cd "{{ _service_dir }}"
     echo "  📦  Running PyInstaller..."
     uv run pyinstaller service_tui.spec --noconfirm
 
@@ -618,8 +618,8 @@ package-tui:
     mkdir -p "dist/${RELEASE_NAME}"
     mv "$DIST" "dist/${RELEASE_NAME}/"
 
-    echo "  📦  Seeding custom_binaries/ from tools/production/custom_binaries/..."
+    echo "  📦  Seeding custom_binaries/ from tools/service_tui/custom_binaries/..."
     mkdir -p "dist/${RELEASE_NAME}/service_tui/custom_binaries"
-    cp "{{ _prod_dir }}/custom_binaries/"*.bin "dist/${RELEASE_NAME}/service_tui/custom_binaries/"
+    cp "{{ _service_dir }}/custom_binaries/"*.bin "dist/${RELEASE_NAME}/service_tui/custom_binaries/"
 
     echo "  ✅  dist/${RELEASE_NAME}"

@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[FlashProgress], None]
 
 # ─── Пути ────────────────────────────────────────────────────────────────
-# tools/production/app/flash_backend.py → корень репозитория
+# tools/service_tui/app/flash_backend.py → корень репозитория
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 

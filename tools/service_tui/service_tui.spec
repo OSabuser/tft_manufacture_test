@@ -17,7 +17,7 @@ service_tui.spec — PyInstaller spec для service-tui (Фаза 5, RELEASE_RO
     └── custom_binaries/  ← создаётся приложением само при первом запуске
                              (flasher.py::_resolve_custom_binaries_dir), не этим spec
 
-Запуск: uv run --directory tools/production pyinstaller service_tui.spec
+Запуск: uv run --directory tools/service_tui pyinstaller service_tui.spec
 (все относительные пути ниже считаются от расположения этого файла — SPECPATH).
 """
 
@@ -26,8 +26,8 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
-_SPEC_DIR = Path(SPECPATH)  # tools/production/ — переменная предоставлена PyInstaller
-_REPO_ROOT = _SPEC_DIR.parents[1]  # tools/production -> tools -> корень репозитория
+_SPEC_DIR = Path(SPECPATH)  # tools/service_tui/ — переменная предоставлена PyInstaller
+_REPO_ROOT = _SPEC_DIR.parents[1]  # tools/service_tui -> tools -> корень репозитория
 _DCD_DIR = _REPO_ROOT / "tools" / "host" / "dcd"
 
 # Иконка .exe — только Windows: на macOS без обёртки в BUNDLE() (.app) icon=

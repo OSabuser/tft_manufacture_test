@@ -255,7 +255,7 @@ FIRMWARE_BUILD_TYPE=Debug
 ### Из монорепозитория (разработчик)
 
 ```bash
-just host::service-setup   # установить зависимости tools/production/
+just host::service-setup   # установить зависимости tools/service_tui/
 just host::service-tui     # запустить TUI
 ```
 
@@ -263,7 +263,7 @@ just host::service-tui     # запустить TUI
 
 ```bash
 just host::package-tui
-# → tools/production/dist/service-tui-vX.Y.Z-<os>/
+# → tools/service_tui/dist/service-tui-vX.Y.Z-<os>/
 ```
 
 Бандл (PyInstaller, onedir) самодостаточен — прошивка идёт напрямую через
@@ -298,7 +298,7 @@ flash_usb.py` — независимый dev-CLI для `just host::flash*`, TUI
 ## Логирование
 
 ```bash
-tools/production/service_tui.log   ← по умолчанию (dev) / рядом с exe (frozen)
+tools/service_tui/service_tui.log   ← по умолчанию (dev) / рядом с exe (frozen)
 $SERVICE_LOG_DIR/service_tui.log   ← если задан в .env
 ```
 
