@@ -4,7 +4,13 @@
 >
 > Документ описывает протокол обмена между диагностической прошивкой
 > (`firmware_test`) и хостовым ПО сервисного инженера.
-> Актуален для: `firmware_test v0.1.0+`, `protocol.h v2`.
+> Актуален для: `firmware_test v0.1.2+`, `protocol.h v2`.
+>
+> Полный справочник по каждому тесту (потоки, коды `detail`, таблица HIL
+> реле) — в [firmware/test/README.md](../../firmware/test/README.md) и
+> [firmware/test/src/tests/README.md](../../firmware/test/src/tests/README.md).
+> Этот документ — сжатый протокольный обзор с точки зрения хостового ПО
+> (TUI/pytest), а не полное описание тест-логики.
 
 ---
 
@@ -79,7 +85,7 @@ sequenceDiagram
     participant T as Таргет
 
     Note over T: прошивка загружена через USB SDP
-    T-->>H: {"type":"session_start","fw":"0.1.0","target":"IMXRT1052","uptime_ms":0}
+    T-->>H: {"type":"session_start","fw":"0.1.2","target":"IMXRT1052","uptime_ms":0}
 
     H->>T: {"type":"cmd","cmd":"ping"}
     T-->>H: {"type":"pong"}
@@ -169,6 +175,17 @@ sequenceDiagram
 ← {"ok":false,"error":"UID_READ_ERR"}
 ```
 
+### `get_version` — чтение версии прошивки
+
+```json
+→ {"type":"cmd","cmd":"get_version"}
+← {"type":"version_response","fw":"0.1.2"}
+```
+
+Дублирует значение `"fw"` из `session_start` — полезно, если хост
+подключился уже после того, как `session_start` был отправлен (может быть
+пропущен, это одноразовое событие сразу после старта).
+
 ### `run_selected` — запуск подмножества тестов
 
 Запускает тесты по списку ID. Порядок выполнения — по реестру таргета,
@@ -199,7 +216,7 @@ sequenceDiagram
 ### `session_start`
 
 ```json
-{"type":"session_start","fw":"0.1.0","target":"IMXRT1052","uptime_ms":0}
+{"type":"session_start","fw":"0.1.2","target":"IMXRT1052","uptime_ms":0}
 ```
 
 ### `test_begin`
@@ -222,6 +239,11 @@ sequenceDiagram
 
 `detail` — ASCII-строка до 95 символов. При `pass` — пустая.
 
+### `test_list`
+
+Ответ на `list_tests` — массив дескрипторов теста (`id`, `name`,
+`critical`, `requires_hil`), см. пример в разделе `list_tests` выше.
+
 ### `progress`
 
 ```json
@@ -229,6 +251,11 @@ sequenceDiagram
 ```
 
 Промежуточные шаги внутри теста. Используется в `usd`.
+
+### `uid_response` / `version_response`
+
+Ответы на `get_uid`/`get_version` — см. описание соответствующих команд
+выше.
 
 ### `confirm_request`
 
@@ -270,25 +297,30 @@ sequenceDiagram
 | `UNKNOWN_TEST`  | Поле `"id"` в `run` или `"tests"` в `run_selected` содержит неизвестный ID |
 | `LINE_TOO_LONG` | Входящая строка превысила 128 байт                                         |
 | `BUSY`          | Таргет выполняет тест, новая команда отклонена                             |
+| `UID_READ_ERR`  | `bsp_prov_read_uid()` вернул ошибку (ответ на `get_uid`)                    |
 
 ---
 
 ## Матрица тестов
 
-| ID         | Название              | Тип                | Critical | HIL (M5) | Интерактивный      |
-| ---------- | --------------------- | ------------------ | -------- | -------- | ------------------ |
-| `sdram`    | SDRAM 32 MB           | self               | ✅        | ❌        | ❌                  |
-| `qspi`     | QSPI Flash 8 MB       | self               | ✅        | ❌        | ❌                  |
-| `usd`      | uSD (SDIO)            | self + interactive | ❌        | ❌        | ✅ (вставить карту) |
-| `display`  | Display RGB888        | interactive        | ❌        | ❌        | ✅ (цвета R/G/B/W)  |
-| `buttons`  | Кнопки Test_But_1/2   | interactive        | ❌        | ❌        | ✅ (нажать кнопки)  |
-| `can`      | CAN                   | HIL                | ❌        | ✅        | ❌                  |
-| `uart_ttl` | UART TTL              | HIL                | ❌        | ✅        | ❌                  |
-| `uart_iso` | UART ISO / RS_RX Opto | HIL                | ❌        | ✅        | ❌                  |
-| `opto`     | Opto-in EXT_IN1/IN2   | HIL                | ❌        | ✅        | ❌                  |
+Порядок — как в реестре `k_registry[]` (`test_runner.c`); полная версия с
+кодами `detail` и HIL-таблицей реле — в
+[firmware/test/README.md §Матрица тестов](../../firmware/test/README.md#матрица-тестов).
+
+| ID        | Название            | Тип                | Critical | HIL (M5) | Интерактивный        |
+| --------- | ------------------- | ------------------ | -------- | -------- | --------------------- |
+| `sdram`   | SDRAM 32 MB         | self               | ✅        | ❌        | ❌                     |
+| `qspi`    | QSPI Flash W25Qxx   | self               | ✅        | ❌        | ❌                     |
+| `usd`     | microSD (SDIO)      | self + interactive | ❌        | ❌        | ✅ (вставить карту)     |
+| `display` | TFT Display RGB888  | interactive        | ❌        | ❌        | ✅ (6 шагов, см. ниже)  |
+| `buttons` | Test Buttons        | interactive        | ❌        | ❌        | ✅ (нажать кнопки)      |
+| `opto`    | Opto Inputs         | HIL                | ❌        | ✅        | ❌ (авто, 6 шагов)      |
+| `can`     | CAN loopback        | HIL                | ❌        | ✅        | ❌ (авто, 2 шага)       |
+| `mqs`     | MQS Audio Out       | interactive        | ❌        | ❌        | ✅ (слышимость тона)    |
 
 **Типы:** **self** — таргет тестирует периферию самостоятельно; **interactive** —
-требует `confirm_request`; **HIL** — требует M5StampPLC.
+требует `confirm_request`, отвечает оператор; **HIL** — требует M5StampPLC,
+confirm автоматический (без оператора).
 
 ---
 
@@ -320,6 +352,10 @@ sequenceDiagram
 
 ### Display (RGB888)
 
+Шесть шагов: Red → Green → Blue → White, затем два ротационных (диагностика
+непропаянных LR/UD пинов на TFT7/8/10). Тест прерывается на **первом**
+неподтверждённом шаге.
+
 ```mermaid
 sequenceDiagram
     participant H as Хост
@@ -333,9 +369,35 @@ sequenceDiagram
     T-->>H: {"type":"confirm_request","id":"display_blue","prompt":"Экран залит синим?","timeout_ms":15000}
     H->>T: {"type":"confirm","id":"display_blue","confirmed":true}
     T-->>H: {"type":"confirm_request","id":"display_white","prompt":"Экран залит белым?","timeout_ms":15000}
-    H->>T: {"type":"confirm","id":"display_white","confirmed":false}
-    T-->>H: {"type":"test_result","id":"display","status":"fail","ms":22103,"detail":"display_white not confirmed"}
+    H->>T: {"type":"confirm","id":"display_white","confirmed":true}
+    T-->>H: {"type":"confirm_request","id":"display_rot0","prompt":"Слева КРАСНЫЙ, справа СИНИЙ?","timeout_ms":15000}
+    H->>T: {"type":"confirm","id":"display_rot0","confirmed":true}
+    T-->>H: {"type":"confirm_request","id":"display_rot_base","prompt":"Красный/синий поменялись сторонами?","timeout_ms":15000}
+    H->>T: {"type":"confirm","id":"display_rot_base","confirmed":true}
+    T-->>H: {"type":"test_result","id":"display","status":"pass","ms":42310,"detail":""}
 ```
+
+При отказе/таймауте на любом шаге: `status:"fail"`,
+`detail:"<id> not confirmed"` (например, `"display_white not confirmed"`).
+
+### MQS Audio Out
+
+Таргет ~4с играет мелодию через MQS + усилитель, затем запрашивает
+подтверждение слышимости — единственный тест с аудио-confirm:
+
+```mermaid
+sequenceDiagram
+    participant H as Хост
+    participant T as Таргет
+
+    T-->>H: {"type":"test_begin","id":"mqs",...}
+    Note over T: ~4с воспроизведение тона (A4, затем E5)
+    T-->>H: {"type":"confirm_request","id":"mqs_tone","prompt":"Do you hear a tone?","timeout_ms":15000}
+    H->>T: {"type":"confirm","id":"mqs_tone","confirmed":true}
+    T-->>H: {"type":"test_result","id":"mqs","status":"pass","ms":19240,"detail":""}
+```
+
+Отказ/таймаут → `status:"fail"`, `detail:"operator: no sound"`.
 
 ### Кнопки
 
@@ -393,32 +455,15 @@ firmware/test/src/
     ├── test_usd.c
     ├── test_display.c
     ├── test_buttons.c
+    ├── test_opto.c
     ├── test_can.c
-    ├── test_uart_ttl.c
-    ├── test_uart_iso.c
-    └── test_opto.c
+    └── test_mqs.c
 ```
 
 ### Добавление нового теста
 
-1. Создать `firmware/test/src/tests/test_foo.c`.
-2. Объявить дескриптор:
-
-```c
-const test_module_t k_test_foo = {
-    .id                 = "foo",
-    .name               = "Foo Peripheral",
-    .critical           = false,
-    .requires_hil       = false,
-    .pre_confirm_prompt = NULL,
-    .init               = NULL,
-    .run                = test_foo_run,
-    .deinit             = NULL,
-};
-```
-
-1. Добавить `&k_test_foo` в реестр `test_runner.c`.
-2. Добавить `tests/test_foo.c` в `CMakeLists.txt` таргета.
+Пошаговый гайд с шаблонами (self-тест, интерактивный, pre-confirm) —
+[firmware/test/README.md §Как добавить новый тест](../../firmware/test/README.md#как-добавить-новый-тест).
 
 ---
 

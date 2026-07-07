@@ -11,9 +11,21 @@
 
 | Проект              | Путь                   | Описание                                                                               |
 | ------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
-| Тестовая прошивка   | `firmware/test/`       | Входной контроль платы: CAN, UART, SDRAM, QSPI, SDIO, RGB, оптовходы, LED, кнопки, MQS |
-| Загрузчик           | `firmware/bootloader/` | A/B обновление через uSD. Обновляется только через USB ROM + blhost / SWD              |
-| Production прошивка | `firmware/tft_app/`    | Приложение с реализацией логики лифтового индикатора. Обновляется загрузчиком          |
+| Тестовая прошивка (✅ реализована) | `firmware/test/`       | Входной контроль платы: CAN, UART, SDRAM, QSPI, SDIO, RGB, оптовходы, LED, кнопки, MQS |
+| Загрузчик (⏳ запланирован) | `firmware/bootloader/` | A/B обновление через uSD. Обновляется только через USB ROM + blhost / SWD              |
+| Production прошивка (⏳ запланирован) | `firmware/tft_app/`    | Приложение с реализацией логики лифтового индикатора. Обновляется загрузчиком          |
+
+`bootloader`/`tft_app` пока не реализованы.
+
+---
+
+## Инструменты (`tools/`)
+
+| Инструмент         | Путь                | Назначение                                                                                                   |
+| ------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Сервисный TUI      | `tools/production/` | Диагностика и прошивка готовых плат сервисным инженером (Textual, standalone-бинарь). [README](tools/production/README.md) |
+| Прошивка (dev-CLI) | `tools/host/`       | USB SDP / SWD прошивка при разработке (`sdphost`/`blhost`/`nxpimage`/`pyOCD`). [README](tools/host/README.md) |
+| HIL-тесты          | `tools/hil/`        | pytest-окружение аппаратных тестов (pyOCD + M5StampPLC). [README](tools/hil/README.md)                        |
 
 ---
 
@@ -65,7 +77,8 @@ just host::debug-server                 # GDB-сервер для отладки
 | NXP MCUXpresso SDK, FreeRTOS, FatFS, LittleFS | vendored             |
 | Unity, fff, SEGGER RTT                        | vendored             |
 | pyOCD, pyserial, pytest, mpremote             | `tools/hil/uv.lock`  |
-| spsdk (nxpimage, blhost, sdphost)             | `tools/host/uv.lock` |
+| spsdk (nxpimage, blhost, sdphost — dev-CLI)   | `tools/host/uv.lock` |
+| spsdk (McuBoot/SDP/HabImage — прямой Python API), Textual | `tools/production/uv.lock` |
 
 Всё что не меняется — vendored. Сборка работает после `git clone` без интернета
 (кроме Python-зависимостей).

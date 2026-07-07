@@ -44,12 +44,16 @@ flowchart TD
 
 ```c
 bsp_status_t bsp_uart_host_init(uint32_t baud);
+void         bsp_uart_host_deinit(void);
 
 bsp_status_t bsp_uart_host_write(const uint8_t *p_data, size_t len);
 bsp_status_t bsp_uart_host_write_str(const char *p_str);
 
 size_t  bsp_uart_host_read(uint8_t *p_buf, size_t len, uint32_t timeout_ms);
 int32_t bsp_uart_host_read_byte(uint32_t timeout_ms);
+
+size_t  bsp_uart_host_rx_available(void);   /* байт в RX-буфере прямо сейчас */
+void    bsp_uart_host_rx_flush(void);       /* сбросить содержимое RX-буфера */
 ```
 
 `bsp_uart_host_read()` возвращает фактически прочитанное количество байт —

@@ -210,6 +210,7 @@ flowchart LR
 │       ├── 01_test_uart.py       ← HIL тест bsp_uart_host (без M5)
 │       ├── 02_test_opto.py       ← HIL тест bsp_opto (через M5StampPLC)
 │       ├── 03_test_can.py        ← HIL тест bsp_can
+│       ├── 04_test_button.py     ← HIL тест bsp_button (интерактивный, оператор)
 │       ├── 05_test_usb_cdc.py    ← HIL тест USB CDC (bsp_usb_cdc, UART CLI)
 │       ├── 06_test_firmware_opto.py ← HIL тест opto через firmware_test CDC
 │       ├── 06_test_firmware_can.py  ← HIL тест CAN через firmware_test CDC

@@ -81,16 +81,21 @@ auto-config не подтверждена — см. 1.5.
 
 `service-tui` (`tools/production/`) умеет прошивать бинарники, собранные не
 в этом репозитории (например, старые платы с W25Q512), тем же способом
-(USB SDP), но с двумя отличиями от штатного пути:
+(USB SDP), но с двумя отличиями от штатного пути. Это **отдельная
+реализация**, не связанная с `flash_usb.py`/`nxpimage` CLI — TUI прошивает
+in-process через Python API `spsdk` (`app/flash_backend.py`: `HabImage`,
+`McuBoot`, `SDP`), без единого subprocess:
 
 - HAB-образ (IVT + опционально DCD) собирается из **сырого** бинарника на
-  лету через `nxpimage`, а не заранее через `just build::hab-*`
-- FCB пишется **явно** (`flash_usb.py --fcb-path tools/host/dcd/w25qXXX_fdcb.bin`,
-  буквальный `write-memory` вместо `configure-memory 0xF000000F`) — auto-config
-  для 4-байтной адресации не проверялся, решили на него не полагаться
+  лету через `HabImage` (spsdk), а не заранее через `just build::hab-*`
+- FCB пишется **явно** (`mboot.write_memory()` с готовым блобом
+  `tools/host/dcd/w25qXXX_fdcb.bin`, буквальная запись вместо
+  `configure-memory 0xF000000F`) — auto-config для 4-байтной адресации не
+  проверялся, решили на него не полагаться
 
-Подробности конвейера — в `tools/production/DEV_ARCH.md`, §8. Штатный путь
-(`--firmware`, три сборки этого репозитория) не меняется и по-прежнему
+Подробности конвейера — в [tools/production/docs/DEV_ARCH.md](../tools/production/docs/DEV_ARCH.md),
+§8. Штатный путь (`--firmware`, три сборки этого репозитория, что через
+`just host::flash`, что через `service-tui`) не меняется и по-прежнему
 использует auto-config Flashloader, как описано в 1.4.
 
 ---
