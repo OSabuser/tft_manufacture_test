@@ -50,8 +50,6 @@ class ServiceApp(App):
         self.push_screen(WaitingScreen())
 
     # ── Переходы между экранами ───────────────────────────────────────────────
-
-    @on(WaitingScreen.DeviceDetected)
     @on(WaitingScreen.DeviceDetected)
     def _on_device_detected(self, event: WaitingScreen.DeviceDetected) -> None:
         if event.mode == AppMode.FLASHING:
@@ -97,7 +95,6 @@ class ServiceApp(App):
 
     @on(DiagScreen.DiagDone)
     def _on_diag_done(self, event: DiagScreen.DiagDone) -> None:
-        """После диагностики — отключиться, вернуться в Waiting."""
         self._disconnect()
         self.switch_screen(WaitingScreen(disconnect_reason=event.reason))
 

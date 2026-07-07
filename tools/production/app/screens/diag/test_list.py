@@ -24,7 +24,6 @@ class TestListPanel(Widget):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        # test_id → Checkbox для быстрого доступа
         self._checkboxes: dict[str, Checkbox] = {}
         # test_id → True если HIL-тест недоступен без M5 (постоянное состояние,
         # не зависящее от прогона). Отдельно от Checkbox.disabled, который

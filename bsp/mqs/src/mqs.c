@@ -110,11 +110,6 @@ static void mqs_edma_callback(I2S_Type *p_base, sai_edma_handle_t *p_handle, sta
 /* --------------------------------------------------------------------------
  * Публичный API
  * ----------------------------------------------------------------------- */
-/*
- * AUDIO PLL setting: Frequency = Fref * (DIV_SELECT + NUM / DENOM)
- *                              = 24 * (32 + 768/1000)
- *                              = 786.432 MHz
- */
 
 bsp_status_t bsp_mqs_init(void)
 {

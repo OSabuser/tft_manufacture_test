@@ -161,18 +161,15 @@ static uint32_t poll_rx_mailboxes(void)
 
         uint8_t mb_idx = RX_MB_FIRST + i;
 
-        /* Проверяем флаг готовности MB. */
         uint64_t mb_flag = (uint64_t) 1U << mb_idx;
         if (FLEXCAN_GetMbStatusFlags(BSP_CAN_BASE, mb_flag) == 0U)
         {
             continue;
         }
 
-        /* Читаем фрейм из MB. */
         flexcan_frame_t sdk_frame;
         status_t sdk_status = FLEXCAN_ReadRxMb(BSP_CAN_BASE, mb_idx, &sdk_frame);
 
-        /* Очищаем флаг. */
         FLEXCAN_ClearMbStatusFlags(BSP_CAN_BASE, mb_flag);
 
         if ((sdk_status == kStatus_Success) || (sdk_status == kStatus_FLEXCAN_RxOverflow))
@@ -180,7 +177,6 @@ static uint32_t poll_rx_mailboxes(void)
             bsp_can_frame_t bsp_frame;
             frame_from_sdk(&sdk_frame, &bsp_frame);
 
-            /* Сериализуем фрейм побайтово в ring buffer. */
             ring_buffer_write(&g_s_rx_ring, (const uint8_t *) &bsp_frame, sizeof(bsp_frame));
             received++;
         }
@@ -222,16 +218,13 @@ bsp_status_t bsp_can_init(const bsp_can_config_t *p_config)
         return BSP_ERR_PARAM;
     }
 
-    /* Если уже инициализирован — сначала деинициализируем. */
     if (g_s_initialized)
     {
         bsp_can_deinit();
     }
 
-    /* Инициализация ring buffer. */
     ring_buffer_init(&g_s_rx_ring, g_s_rx_ring_storage, RX_RING_SIZE);
 
-    /* Конфигурация FlexCAN. */
     flexcan_config_t flexcan_cfg;
     FLEXCAN_GetDefaultConfig(&flexcan_cfg);
 
@@ -306,7 +299,6 @@ bsp_status_t bsp_can_set_filter(uint8_t index, uint32_t can_id, uint32_t mask, b
 
     uint8_t mb_idx = RX_MB_FIRST + index;
 
-    /* Конфигурация RX MB. */
     flexcan_rx_mb_config_t rx_mb_cfg;
     rx_mb_cfg.type = kFLEXCAN_FrameTypeData;
 
@@ -422,14 +414,12 @@ bsp_status_t bsp_can_send(const bsp_can_frame_t *p_frame, uint32_t timeout_ms)
     flexcan_frame_t sdk_frame;
     frame_to_sdk(p_frame, &sdk_frame);
 
-    /* Записать фрейм в TX MB. */
     status_t wr_status = FLEXCAN_WriteTxMb(BSP_CAN_BASE, TX_MB_IDX, &sdk_frame);
     if (wr_status != kStatus_Success)
     {
         return BSP_ERR_BUSY;
     }
 
-    /* Ждать завершения передачи с таймаутом. */
     uint64_t tx_flag  = (uint64_t) 1U << TX_MB_IDX;
     uint32_t start_ms = bsp_tick_get_ms();
 
@@ -442,7 +432,6 @@ bsp_status_t bsp_can_send(const bsp_can_frame_t *p_frame, uint32_t timeout_ms)
         }
     }
 
-    /* Очистить флаг завершения. */
     FLEXCAN_ClearMbStatusFlags(BSP_CAN_BASE, tx_flag);
 
     return BSP_OK;
@@ -471,16 +460,13 @@ bsp_status_t bsp_can_receive(bsp_can_frame_t *p_frame, uint32_t timeout_ms)
 
     for (;;)
     {
-        /* Опросить все активные MB, сложить в ring buffer. */
         poll_rx_mailboxes();
 
-        /* Попробовать извлечь фрейм. */
         if (try_dequeue_frame(p_frame))
         {
             return BSP_OK;
         }
 
-        /* Проверить таймаут. */
         uint32_t elapsed = bsp_tick_get_ms() - start_ms;
         if (elapsed >= timeout_ms)
         {

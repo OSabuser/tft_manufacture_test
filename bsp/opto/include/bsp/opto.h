@@ -12,7 +12,6 @@
  *   Пин LOW  (тока нет)  → BSP_OPTO_STATE_INACTIVE
  *
  * Режимы каналов (bsp_opto_ch_mode_t):
- * ы
  *   BSP_OPTO_MODE_LEVEL  — IN1, IN2
  *     Детектирование уровня с программным дебаунсом.
  *     ISR переключает направление прерывания (RISING↔FALLING) после каждого фронта,

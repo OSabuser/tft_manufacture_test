@@ -36,7 +36,7 @@ extern "C"
  *
  * @pre board_hw_init() вызван (MPU настроен, NonCacheable регион активен).
  *
- * @return BSP_OK при успехе, BSP_ERR_HW при ошибке  инициализациистека.
+ * @return BSP_OK при успехе, BSP_ERR_HW при ошибке инициализации стека.
  */
     bsp_status_t bsp_usb_cdc_init(void);
 

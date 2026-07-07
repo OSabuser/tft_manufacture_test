@@ -163,7 +163,6 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # ── Проверить FCB ─────────────────────────────────────────────────────────
     if not args.fcb.exists():
         print(f"  ❌  FCB not found: {args.fcb}", file=sys.stderr)
         print(
@@ -174,7 +173,6 @@ def main() -> int:
         )
         return 1
 
-    # ── Найти HAB-образ ───────────────────────────────────────────────────────
     hab_name = HAB_NAMES[args.firmware]
     hab_path = BUILD_DIR / args.build_type / hab_name
 
@@ -195,7 +193,6 @@ def main() -> int:
     print(f"  Target    : {args.target}")
     print(f"  Frequency : {args.frequency} Hz\n")
 
-    # ── Собрать объединённый образ ────────────────────────────────────────────
     image = build_full_image(args.fcb, hab_path)
 
     if args.dry_run:
@@ -205,7 +202,6 @@ def main() -> int:
         print(f"\n  Dry run — image saved to {out}")
         return 0
 
-    # ── Записать во Flash через pyOCD ─────────────────────────────────────────
     with tempfile.NamedTemporaryFile(
         suffix=f"_{args.firmware}_full.bin", delete=False
     ) as tmp:

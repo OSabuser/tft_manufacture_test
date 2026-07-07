@@ -191,7 +191,7 @@ static size_t parse_string_array(const char *p_array_start, char (*p_out_bufs)[T
     {
         return 0U;
     }
-    p++; /* пропустить '[' */
+    p++;
 
     size_t count = 0U;
     while (count < max_items)
@@ -285,8 +285,6 @@ static void handle_cmd_run_selected(const char *p_line)
 
 /**
  * @brief Обработать сообщение {"type":"cmd",...}.
- *
- * Команды: ping → pong, run_all → test_runner, run → test_runner.
  */
 static void handle_cmd(const char *p_line)
 {

@@ -84,17 +84,14 @@ bsp_status_t bsp_uart_host_init(uint32_t baud_rate)
         return BSP_ERR_INIT;
     }
 
-    /* Инициализация кольцевого буфера. */
     if (!ring_buffer_init(&g_s_rx_ring, g_s_rx_buf, BSP_UART_HOST_RX_BUFFER_SIZE))
     {
         /* Размер не степень двойки — ошибка конфигурации. */
         return BSP_ERR_INIT;
     }
 
-    /* Тактирование LPUART1. */
     CLOCK_EnableClock(kCLOCK_Lpuart1);
 
-    /* Настройка периферии. */
     lpuart_config_t config;
     LPUART_GetDefaultConfig(&config);
     config.baudRate_Bps = baud_rate;
@@ -191,7 +188,6 @@ size_t bsp_uart_host_read(uint8_t *p_buf, size_t len, uint32_t timeout_ms)
             continue;
         }
 
-        /* Буфер пуст — проверяем таймаут. */
         if (timeout_ms == 0U)
         {
             break;

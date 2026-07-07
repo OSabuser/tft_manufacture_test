@@ -51,12 +51,10 @@ from .models import ConfirmRequest, TestResult, TestStatus
 
 logger = logging.getLogger(__name__)
 
-# Задержки для HIL
 _RELAY_ON_S = 0.15
 _RELAY_OFF_S = 0.50
 
-# Карта confirm_id → реле M5 для opto-теста
-# Формат: confirm_id → (relay_num, target_state)
+# confirm_id → (relay_num, target_state)
 _OPTO_RELAY_MAP: dict[str, tuple[int, bool]] = {
     "opto_in1_active": (3, True),
     "opto_in1_inactive": (3, False),
@@ -66,7 +64,6 @@ _OPTO_RELAY_MAP: dict[str, tuple[int, bool]] = {
     "opto_rs_inactive": (2, False),
 }
 
-# CAN параметры
 _CAN_RX_ID = 0x100
 _CAN_RX_DATA = [0xDE, 0xAD, 0xBE, 0xEF]
 _CAN_TX_ID = 0x200
@@ -80,13 +77,13 @@ _TIMEOUT_EVENT_TYPE = "_timeout"
 
 
 class OrchestratorEventType(Enum):
-    TEST_BEGIN = auto()  # тест начался
-    TEST_RESULT = auto()  # тест завершился
+    TEST_BEGIN = auto()
+    TEST_RESULT = auto()
     TEST_PROGRESS = auto()  # внутришаговый прогресс долгого теста (usd и т.п.)
     CONFIRM_NEEDED = auto()  # нужен ответ оператора (standalone)
     CONFIRM_RESOLVED = auto()  # HIL confirm выполнен автоматически
     BUTTONS_PROMPT = auto()  # показать инструкцию для buttons (без confirm)
-    SUMMARY = auto()  # итог всей сессии
+    SUMMARY = auto()
     ERROR = auto()  # ошибка протокола, M5, или обрыв по таймауту
 
 

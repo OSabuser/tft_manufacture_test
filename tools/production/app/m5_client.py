@@ -30,7 +30,6 @@ import serial.tools.list_ports
 
 logger = logging.getLogger(__name__)
 
-# VID/PID M5StampPLC
 _M5_VID = int(os.environ.get("SERVICE_M5_VID", "0x303A"), 16)
 _M5_PID = int(os.environ.get("SERVICE_M5_PID", "0x4001"), 16)
 
