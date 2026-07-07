@@ -566,8 +566,6 @@ bsp_status_t bsp_usb_cdc_init(void)
 
     USB_DeviceIsrEnable();
 
-    /* FIXME:Задержка для стабилизации DP pull-down. */
-    //SDK_DelayAtLeastUs(USB_ATTACH_DELAY_US, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY);
     bsp_delay(USB_ATTACH_DELAY_US / 1000);
     USB_DeviceRun(g_usbDeviceHandle);
 

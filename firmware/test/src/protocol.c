@@ -115,7 +115,6 @@ void protocol_send_confirm_request(const confirm_params_t *p_params)
 
 void protocol_send_test_list(const test_module_t *const *p_pp_registry, size_t count)
 {
-    /* Заголовок массива */
     cli_send("{\"type\":\"test_list\",\"tests\":[");
 
     for (size_t i = 0U; i < count; i++)

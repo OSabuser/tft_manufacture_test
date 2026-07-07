@@ -1,19 +1,21 @@
 /**
  * @file  bsp_mqs.c
- * @brief BSP MQS: SAI1 TX + eDMA + MQS для MIMXRT1052CVJ5B.
+ * @brief BSP MQS: SAI3 TX + eDMA + MQS для MIMXRT1052CVJ5B.
  *
  * Тактирование:
- *   SAI1_CLK_ROOT = SysPLL × (18/27) / (SAI1_CLK_PRED+1=4) / (SAI1_CLK_PODF+1=2)
- *                 ≈ 63 529 411 Гц  (BOARD_BOOTCLOCKRUN_SAI1_CLK_ROOT)
+ *   Audio PLL     = 24 МГц × (30 + 66/625) = 722.534 МГц
+ *   SAI3_CLK_ROOT = Audio PLL / 8 / 8 = 11 289 600 Гц
+ *                 (kCLOCK_Sai3Mux=2, Sai3PreDiv=7, Sai3Div=7,
+ *                  BOARD_BOOTCLOCKRUN_SAI3_CLK_ROOT)
  *   Bit clock     = 44100 × 16 × 2 = 1 411 200 Гц
- *   MCLK делитель = 63 529 411 / 1 411 200 ≈ 45.0  (погрешность ~0.5 %)
+ *   MCLK делитель = 11 289 600 / 1 411 200 = 8 (точно, без погрешности)
  *
  * MQS oversample = 32, уже выставлен в BOARD_BootClockRUN() через
  *   IOMUXC_MQSConfig(IOMUXC_GPR, kIOMUXC_MqsPwmOverSampleRate32, 0).
  *
  * Пин: GPIO_AD_B0_04 → MQS_RIGHT — замультиплексирован в BOARD_InitPins().
  *
- * eDMA: DMA0 канал 0, DMAMUX source kDmaRequestMuxSai1Tx.
+ * eDMA: DMA0 канал 0, DMAMUX source kDmaRequestMuxSai3Tx.
  *   Канал 0 зарезервирован за bsp_mqs. Прочие модули — каналы 1+.
  *
  * SAI API (SDK 2.4.7 / fsl_sai.h, fsl_sai_edma.h 2.7.3):
@@ -47,17 +49,17 @@
 #define MQS_SAI_CLOCK_GATE kCLOCK_Sai3
 #define MQS_SAI_CLK_FREQ   BOARD_BOOTCLOCKRUN_SAI3_CLK_ROOT
 
-/** eDMA канал, выделенный под SAI1 TX. */
+/** eDMA канал, выделенный под SAI3 TX. */
 #define MQS_DMA_CHANNEL (0U)
 
-/** DMAMUX запрос для SAI1 TX. */
+/** DMAMUX запрос для SAI3 TX. */
 #define MQS_DMAMUX_SOURCE kDmaRequestMuxSai3Tx
 
 /** Приоритет прерывания DMA (ниже USB = 3, выше нормальных задач). */
 #define MQS_DMA_IRQ_PRIORITY (5U)
 #define MQS_HMCLK_GATE       kCLOCK_Mqs
 /**
- * FIFO watermark — половина глубины FIFO SAI1.
+ * FIFO watermark — половина глубины FIFO SAI3.
  * FSL_FEATURE_SAI_FIFO_COUNTn(x) принимает экземпляр SAI и возвращает
  * глубину FIFO в словах (32 для RT1052). Деление на 2 даёт оптимальную
  * латентность DMA: запрос формируется когда в FIFO остаётся место для
@@ -108,11 +110,6 @@ static void mqs_edma_callback(I2S_Type *p_base, sai_edma_handle_t *p_handle, sta
 /* --------------------------------------------------------------------------
  * Публичный API
  * ----------------------------------------------------------------------- */
-/*
- * AUDIO PLL setting: Frequency = Fref * (DIV_SELECT + NUM / DENOM)
- *                              = 24 * (32 + 768/1000)
- *                              = 786.432 MHz
- */
 
 bsp_status_t bsp_mqs_init(void)
 {
@@ -121,7 +118,7 @@ bsp_status_t bsp_mqs_init(void)
         return BSP_OK;
     }
 
-    /* --- Тактирование SAI1 --- */
+    /* --- Тактирование SAI3 --- */
     CLOCK_EnableClock(MQS_SAI_CLOCK_GATE);
 
     /* --- Тактирование MQS (CCGR0[CG2]) --- */
@@ -132,10 +129,10 @@ bsp_status_t bsp_mqs_init(void)
     IOMUXC_MQSEnterSoftwareReset(IOMUXC_GPR, false);
     IOMUXC_MQSEnable(IOMUXC_GPR, true);
 
-    /* --- SAI1: базовая инициализация (снимает reset, включает clock gate) --- */
+    /* --- SAI3: базовая инициализация (снимает reset, включает clock gate) --- */
     SAI_Init(MQS_SAI_BASE);
 
-    /* --- SAI1 TX: классический I2S, master, 16 бит, стерео, канал 0. --- */
+    /* --- SAI3 TX: классический I2S, master, 16 бит, стерео, канал 0. --- */
     sai_transceiver_t sai_cfg;
 
     SAI_GetLeftJustifiedConfig(&sai_cfg, kSAI_WordWidth16bits, kSAI_Stereo,
@@ -159,7 +156,7 @@ bsp_status_t bsp_mqs_init(void)
     EDMA_Init(DMA0, &dma_cfg);
     EDMA_CreateHandle(&s_dma_handle, DMA0, MQS_DMA_CHANNEL);
 
-    /* --- DMAMUX: канал 0 → SAI1 TX --- */
+    /* --- DMAMUX: канал 0 → SAI3 TX --- */
     DMAMUX_Init(DMAMUX);
     DMAMUX_SetSource(DMAMUX, MQS_DMA_CHANNEL, (uint8_t) MQS_DMAMUX_SOURCE);
     DMAMUX_EnableChannel(DMAMUX, MQS_DMA_CHANNEL);
@@ -188,7 +185,7 @@ void bsp_mqs_deinit(void)
     }
 
     SAI_TransferTerminateSendEDMA(MQS_SAI_BASE, &s_sai_tx_handle);
-    /* SAI_TxReset() — сброс logic + FIFO (аналог kSAI_ResetAll).
+    /* SAI_TxReset() — сброс logic + FIFO (аналог kSAI_ResetAll) для SAI3.
      * SAI_TxSoftwareReset() отсутствует в данной версии SDK. */
     SAI_TxReset(MQS_SAI_BASE);
     IOMUXC_MQSEnable(IOMUXC_GPR, false);

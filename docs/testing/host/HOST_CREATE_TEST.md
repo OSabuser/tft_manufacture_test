@@ -1,232 +1,193 @@
-# Отладка прошивок через SWD + GDB
+# Добавление нового host unit-теста
 
-## Обзор архитектуры
+Пошаговый гайд для разработчика. Полный справочник по Unity/FFF API,
+структуре stub-хедеров и типичным ловушкам — в
+[tests/host/README.md](../../../tests/host/README.md). Этот документ —
+только про шаги добавления нового теста в сборку.
 
-Отладка построена на пробросе GDB-сервера с хоста в devcontainer по TCP. Это
-позволяет держать весь инструментарий сборки и языковой сервер внутри контейнера,
-не проводя USB-пробник внутрь Docker.
+---
+
+## Обзор стека
 
 ```mermaid
 flowchart LR
-    subgraph Host["Хост (macOS / Linux)"]
-        DS["just host::debug-server\npyocd gdbserver :3333"]
-        ML["MCU-Link (CMSIS-DAP)"]
-        DS --> ML
+    subgraph DC["Devcontainer (единственное место запуска)"]
+        C["tests/host/&lt;dir&gt;/test_&lt;name&gt;.c\nUnity [+ fff]"]
+        CP["CMakePresets.json\nhost-debug / host-release"]
+        JB["just/build.just\ntest-host"]
+        C --> CP --> JB
     end
-
-    subgraph DC["Devcontainer"]
-        CD["cortex-debug\n(VSCode F5)"]
-        GDB["arm-none-eabi-gdb\nсимволы из .elf"]
-        CD --> GDB
-    end
-
-    Board["MIMXRT1052\nFlash / SDRAM\nSEGGER RTT буфер"]
-
-    GDB -->|"TCP host.docker.internal:3333"| DS
-    ML -->|"SWD"| Board
 ```
 
-**Ключевой принцип:** `pyocd gdbserver` слушает на `0.0.0.0:3333`. Из контейнера
-GDB подключается через `host.docker.internal:3333` — специальный DNS-алиас Docker,
-резолвится в IP хост-машины.
+Host-тесты компилируются `clang-17` **на хосте** (не ARM GCC), исполняются
+как обычные нативные бинарники под `ctest`. Никакого железа не требуется —
+в отличие от HIL-тестов (см. [../hil/HIL_CREATE_TEST.md](../hil/HIL_CREATE_TEST.md)).
 
 ---
 
-## Компоненты
+## Шаг 0 — Определить категорию модуля
 
-### На хосте
+| Категория                                | Инструментарий    | Пример                             |
+| ----------------------------------------- | ------------------ | ----------------------------------- |
+| **A** — платформонезависимый             | Только Unity       | `protocol.c`, `test_runner.c`, `ring_buffer.c` |
+| **B** — BSP-модуль (зависит от NXP SDK)  | Unity + fff + stub-хедеры | `bsp/led`, `bsp/opto`, `bsp/can`, `bsp/button` |
 
-| Компонент                         | Роль                            | Источник                   |
-| --------------------------------- | ------------------------------- | -------------------------- |
-| `pyocd`                           | GDB-сервер + flash-программатор | `tools/hil/uv.lock`        |
-| `MCU-Link`                        | CMSIS-DAP v2 пробник            | USB к плате                |
-| `just host::debug-server`         | Запуск GDB-сервера              | `just/host.just`           |
-| `just host::flash-swd-*`          | Прошивка через SWD              | `just/host.just`           |
-| `tools/host/flash_swd.py`         | Сборка FCB+HAB образа и запись  | `tools/host/`              |
-| `tools/host/dcd/w25q128_fdcb.bin` | FCB для W25Q128 (Quad SPI)      | NXP SecureProvisioningTool |
-
-### В devcontainer
-
-| Компонент                              | Роль                                           |
-| -------------------------------------- | ---------------------------------------------- |
-| `arm-none-eabi-gdb`                    | GDB клиент, подключается к серверу на хосте    |
-| `cortex-debug` (VSCode extension)      | UI для GDB: брейкпоинты, стек, регистры        |
-| `.vscode/launch.json`                  | Конфигурации запуска отладки                   |
-| `.vscode/tasks.json`                   | `preLaunchTask` — пересборка ELF перед стартом |
-| `build/Debug/*.elf`                    | Символы для GDB (DWARF debug info)             |
-| `bsp/generated/startup/MIMXRT1052.xml` | SVD — описание регистров периферии             |
-
-### Конфигурация
-
-Параметры отладки задаются в `.env`:
-
-```bash
-GDB_PORT=3333
-PYOCD_TARGET=mimxrt1050_quadspi
-PYOCD_FREQUENCY=4000000
-FCB_PATH=tools/host/dcd/w25q128_fdcb.bin
-```
+Полное объяснение разницы и структуры — в
+[tests/host/README.md §1](../../../tests/host/README.md#1-две-категории-тестируемых-модулей).
 
 ---
 
-## Поддерживаемые прошивки
-
-| Конфигурация VSCode           | ELF                             | Особенности                  |
-| ----------------------------- | ------------------------------- | ---------------------------- |
-| `🐛 Debug: firmware_test`      | `build/Debug/firmware_test.elf` | Bare-metal, входной контроль |
-| `🐛 Debug: bootloader`         | `build/Debug/bootloader.elf`    | Bare-metal, A/B обновление   |
-| `🐛 Debug: tft_app (FreeRTOS)` | `build/Debug/app.elf`           | FreeRTOS, task view          |
-
-Все три — XIP-прошивки, исполняются из QuadSPI NOR Flash (`0x60000000`).
-
----
-
-## Режимы запуска отладки
-
-### Режим А — прошивка уже в Flash
+## Шаг 1 — Создать тестовый файл
 
 ```bash
-# 1. Хост — запустить GDB-сервер (оставить в отдельном терминале)
-just host::debug-server
-
-# 2. DevContainer — VSCode
-#    Run & Debug (Ctrl+Shift+D) → выбрать конфигурацию → F5
+mkdir -p tests/host/<name>/
+touch tests/host/<name>/test_<name>.c
 ```
 
-GDB сбрасывает MCU, загружает символы из ELF и останавливается на входе
-в `main`. Flash не перезаписывается.
-
-### Режим Б — прошить через SWD, затем отладить
-
-```bash
-# 1. DevContainer
-just build::hab-firmware-test-debug
-
-# 2. Хост
-just host::flash-swd-test-debug
-
-# 3. ⚡ Power cycle платы (обязательно)
-
-# 4. Хост
-just host::debug-server
-
-# 5. DevContainer — VSCode → 🐛 Debug: firmware_test → F5
-```
-
-### Режим В — прошить через USB SDP, затем отладить
-
-```bash
-# 1. DevContainer
-just build::build-firmware-test-debug
-
-# 2. Хост — перевести плату в SDP-режим, затем:
-just host::flash-test-debug
-
-# 3. Хост
-just host::debug-server
-
-# 4. DevContainer — VSCode → 🐛 Debug: firmware_test → F5
-```
-
----
-
-## Почему flash через SWD требует FCB
-
-При USB SDP ROM-загрузчик инициализирует FlexSPI по DCD из HAB-образа — FCB
-не нужен. При SWD flash-алгоритм pyOCD пишет в NOR Flash напрямую. При
-cold-start Boot ROM сначала читает FCB по адресу `0x60000000`, конфигурирует
-FlexSPI, и только потом ищет IVT. Без FCB бутлоадер не стартует.
-
-`flash_swd.py` решает это, собирая образ перед записью:
-
-```bash
-0x60000000  w25q128_fdcb.bin  (512 байт)  — FCB
-0x60000200  0xFF × 3584 байт             — padding
-0x60001000  firmware_test_hab.bin         — IVT + DCD + код
-```
-
-Весь диапазон `0x60000000–0x6000FFFF` — один 64KB сектор: стирается и
-записывается за одну транзакцию.
-
----
-
-## RTT-логи
-
-SEGGER RTT включён только в Debug-сборках (`SEGGER_RTT_ENABLED=ON`).
-После старта отладки вкладка `TERMINAL → RTT` принимает вывод канала 0.
-`cortex-debug` находит адрес буфера по символу `_SEGGER_RTT` из ELF.
+### Шаблон — категория A (без моков)
 
 ```c
-#include "SEGGER_RTT.h"
-SEGGER_RTT_printf(0, "value = %d\n", value);
+#include "unity.h"
+#include "<модуль>.h"   /* тестируемый модуль */
+
+void setUp(void)    { /* сброс состояния если нужен */ }
+void tearDown(void) { }
+
+void test_something(void)
+{
+    TEST_ASSERT_EQUAL(expected, actual);
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_something);
+    return UNITY_END();
+}
+```
+
+### Шаблон — категория B (с fff-фейками)
+
+```c
+#include "unity.h"
+#include "fff.h"
+
+DEFINE_FFF_GLOBALS; /* ровно один раз на файл */
+
+/* 1. Stub-хедер с типами NXP SDK */
+#include "fsl_gpio.h"
+
+/* 2. Фейки для функций, которые вызывает тестируемый модуль */
+FAKE_VOID_FUNC(GPIO_PinInit, GPIO_Type *, uint32_t, const gpio_pin_config_t *);
+FAKE_VOID_FUNC(GPIO_PinWrite, GPIO_Type *, uint32_t, uint8_t);
+
+/* 3. Тестируемый модуль — ПОСЛЕ фейков */
+#include "bsp/<module>.h"
+
+void setUp(void)
+{
+    RESET_FAKE(GPIO_PinInit);
+    RESET_FAKE(GPIO_PinWrite);
+    FFF_RESET_HISTORY();
+}
+
+void tearDown(void) { }
+
+void test_something(void)
+{
+    TEST_ASSERT_EQUAL_UINT8(0U, GPIO_PinWrite_fake.arg2_val);
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_something);
+    return UNITY_END();
+}
+```
+
+Если тестируемому модулю не хватает stub-хедера (новый SDK-вызов) —
+добавить минимальные типы/сигнатуры в `tests/host/mocks/` (только то, что
+реально используется — не копировать весь SDK-хедер).
+
+---
+
+## Шаг 2 — Зарегистрировать в `tests/host/CMakeLists.txt`
+
+```cmake
+# категория A — платформонезависимый, без MOCKS
+add_host_test(
+  NAME    test_<name>
+  SOURCES <name>/test_<name>.c
+          ${PROJECT_SOURCE_DIR}/<путь-к-модулю>/<module>.c
+  INCLUDES ${PROJECT_SOURCE_DIR}/<путь-к-инклюдам>
+)
+
+# категория B — BSP-модуль, нужны MOCKS
+add_host_test(
+  NAME    test_<name>
+  SOURCES <name>/test_<name>.c
+          ${PROJECT_SOURCE_DIR}/bsp/<name>/src/<name>.c
+  INCLUDES ${PROJECT_SOURCE_DIR}/bsp/<name>/include
+           ${PROJECT_SOURCE_DIR}/bsp/common/include
+  MOCKS   ${BSP_MOCKS_DIR}
+)
+```
+
+`add_host_test()` — вспомогательная CMake-функция, определённая в начале
+того же файла (`NAME`/`SOURCES`/`INCLUDES`/`MOCKS`). Каждый тест — свой
+исполняемый файл; `MOCKS` подключает `tests/host/mocks/` в include path
+**раньше** реального SDK, `INCLUDES` — явные пути, специфичные для теста
+(без скрытых глобальных путей). Если модуль использует `bsp_uart_host` через
+готовый мок — смотри пример `uart_host_mock_example` в том же файле.
+
+Если тест компилируется с seam-макросом (как `test_runner.c` с
+`-DUNIT_TEST`, см. `firmware/test/README.md` §UNIT_TEST seam) — добавить:
+
+```cmake
+target_compile_definitions(test_<name> PRIVATE UNIT_TEST)
 ```
 
 ---
 
-## FreeRTOS task view
-
-Конфигурация `🐛 Debug: tft_app (FreeRTOS)` включает `"rtos": "FreeRTOS"` —
-cortex-debug разбирает структуры планировщика и показывает вкладку `RTOS`
-с таблицей задач: имя, состояние, использование стека, приоритет.
-
----
-
-## Просмотр регистров периферии
-
-Вкладка `Peripherals` показывает все блоки MIMXRT1052 по SVD-файлу
-`bsp/generated/startup/MIMXRT1052.xml`. Значения обновляются при каждой паузе.
-
----
-
-## Ограничения
-
-**MCU-Link монопольный ресурс.** `debug-server` и `flash-swd` не могут
-работать одновременно. Перед `flash-swd` остановите сервер (Ctrl+C).
-
-**HIL-тесты vs отладка.** pyOCD также используется для HIL. Перед
-`just host::hil-run` остановите GDB-сервер.
-
-**Power cycle после flash-swd обязателен.** VECTRESET не реинициализирует
-FlexSPI — только полное отключение питания гарантирует корректный cold-start.
-
-**Только Debug-сборки.** Release компилируется с `-O2` без DWARF-символов.
-
----
-
-## Быстрый старт (первый запуск)
+## Шаг 3 — Собрать и прогнать
 
 ```bash
-# 1. Убедиться что в .devcontainer/devcontainer.json есть (для Linux):
-#    "runArgs": ["--add-host=host.docker.internal:host-gateway"]
+# конфигурация (один раз или после изменения CMakeLists)
+cmake --preset host-debug
 
-# 2. Залить прошивку
-just host::flash-test-debug
+# сборка + тесты одной командой
+just build::test-host
 
-# 3. Хост — запустить GDB-сервер
-just host::debug-server
+# конкретный тест с полным выводом Unity
+ctest --preset host-debug-test -R test_<name> -V
 
-# 4. DevContainer — VSCode
-#    Ctrl+Shift+D → 🐛 Debug: firmware_test → F5
+# напрямую — без обёртки CTest
+./build/host-debug/tests/host/test_<name>
+```
+
+`just build::test-host` собирает под пресетом `host-debug` (`clang-17`,
+без ARM-специфики) и прогоняет весь набор через CTest. `host-release`
+собирает тот же набор с оптимизациями — используется в CI как
+дополнительный гейт.
+
+---
+
+## Чеклист
+
+```bash
+[ ] tests/host/<name>/test_<name>.c   — тест-файл (категория A или B)
+[ ] tests/host/mocks/*.h              — новый stub-хедер, если модуль
+                                         использует ранее не замоканный SDK-вызов
+[ ] tests/host/CMakeLists.txt         — add_host_test(...) для нового теста
+[ ] just build::test-host             — зелёная сборка + прогон
 ```
 
 ---
 
-## Дерево файлов отладки
+## Справочник
 
-```bash
-.
-├── .env                                  # GDB_PORT, PYOCD_TARGET, PYOCD_FREQUENCY, FCB_PATH
-├── .vscode/
-│   ├── launch.json                       # cortex-debug конфигурации (3 проекта)
-│   └── tasks.json                        # preLaunchTask: build:*-debug
-├── bsp/generated/startup/
-│   └── MIMXRT1052.xml                    # SVD — регистры периферии
-├── just/
-│   └── host.just                         # debug-server, flash-swd-*
-└── tools/
-    ├── hil/                              # uv-проект с pyocd
-    └── host/
-        ├── flash_swd.py                  # FCB + HAB → Flash через pyOCD
-        └── dcd/
-            └── w25q128_fdcb.bin          # FCB для W25Q128 Quad SPI
-```
+Полный API Unity (assertion-макросы), fff (создание фейков, `custom_fake`,
+проверка вызовов), работа со stub-хедерами и типичные ловушки (dangling
+pointer из `arg_history`, `static`-функции, `ScopeMismatch`-аналоги для
+host-тестов) — в [tests/host/README.md](../../../tests/host/README.md).

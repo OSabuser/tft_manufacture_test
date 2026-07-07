@@ -1,10 +1,15 @@
 # firmware_test — Руководство по тестированию
 
-Тестовая прошивка входного контроля платы MIMXRT1052CVJ5B.  
+Тестовая прошивка входного контроля платы TFT индикатора.  
 Транспорт: USB CDC ACM (J2). Протокол: JSON-lines v2, один JSON-объект на строку.  
 Загружается в RAM через BootROM USB SDP — без предварительной прошивки загрузчика.
 
-> Версия прошивки: `0.1.4` (`FIRMWARE_TEST_VERSION` в `protocol.h`)
+> Версия прошивки: `0.1.2` — из `project(firmware_test VERSION X.Y.Z)` в
+> `CMakeLists.txt` (через `version.h.in` → `version.h` →
+> `FIRMWARE_TEST_VERSION_STR` в `protocol.h`).
+>
+> Архитектура, сборка, добавление тестов и host unit-тесты — в основном
+> `README.md`. Этот документ — протокольные потоки по каждому тесту.
 
 ---
 
@@ -17,8 +22,10 @@
 | `cmd`     | `{"type":"cmd","cmd":"ping"}`                                  | Проверка канала                      |
 | `cmd`     | `{"type":"cmd","cmd":"run","id":"sdram"}`                      | Запустить один тест по ID            |
 | `cmd`     | `{"type":"cmd","cmd":"run_all"}`                               | Запустить все тесты реестра          |
-| `cmd`     | `{"type":"cmd","cmd":"list_tests"}`                            | Получить реестр тестов с метаданными |
 | `cmd`     | `{"type":"cmd","cmd":"run_selected","tests":["sdram","qspi"]}` | Запустить подмножество тестов        |
+| `cmd`     | `{"type":"cmd","cmd":"list_tests"}`                            | Получить реестр тестов с метаданными |
+| `cmd`     | `{"type":"cmd","cmd":"get_uid"}`                               | Прочитать UID чипа (OCOTP)           |
+| `cmd`     | `{"type":"cmd","cmd":"get_version"}`                           | Прочитать версию прошивки            |
 | `confirm` | `{"type":"confirm","id":"usd","confirmed":true}`               | Ответ оператора на запрос            |
 
 ### Исходящие события (target → host)
@@ -30,8 +37,10 @@
 | `test_begin`                 | `id`, `name`, `critical`                     | Тест запущен                    |
 | `test_result`                | `id`, `status`, `ms`, `detail`               | Результат теста                 |
 | `confirm_request`            | `id`, `prompt`, `timeout_ms`                 | Запрос оператору                |
-| `progress`                   | `test`, `step`, `status`                     | Прогресс внутри теста           |
+| `progress`                   | `test`, `step`, `status`                     | Прогресс внутри теста (usd)      |
 | `summary`                    | `passed`, `failed`, `skipped`, `overall`     | Итог `run_all` / `run_selected` |
+| `uid_response`               | `uid` (16 hex, 8 байт big-endian)            | Ответ на `get_uid`              |
+| `version_response`           | `fw` (`X.Y.Z`)                               | Ответ на `get_version`          |
 | `pong`                       | —                                            | Ответ на `ping`                 |
 | `{"ok":false,"error":"..."}` | `error`                                      | Ошибка протокола                |
 
@@ -39,12 +48,14 @@
 
 **Коды ошибок в `error`:**
 
-| Код            | Причина                                                         |
-| -------------- | --------------------------------------------------------------- |
-| `BUSY`         | Предыдущий тест ещё выполняется                                 |
-| `UNKNOWN_TEST` | ID теста не найден в реестре                                    |
-| `PARSE_ERR`    | Не удалось разобрать JSON (нет поля `type`, `cmd`, `id` и т.д.) |
-| `UNKNOWN_CMD`  | Неизвестный тип сообщения или команда                           |
+| Код             | Причина                                                         |
+| --------------- | --------------------------------------------------------------- |
+| `BUSY`          | Предыдущий тест ещё выполняется                                 |
+| `UNKNOWN_TEST`  | ID теста не найден в реестре                                    |
+| `PARSE_ERR`     | Не удалось разобрать JSON (нет поля `type`, `cmd`, `id` и т.д.) |
+| `UNKNOWN_CMD`   | Неизвестный тип сообщения или команда                           |
+| `LINE_TOO_LONG` | Входящая строка превысила 128 байт (`CLI_LINE_BUF_SIZE`)        |
+| `UID_READ_ERR`  | `bsp_prov_read_uid()` вернул ошибку (ответ на `get_uid`)        |
 
 ---
 
@@ -54,7 +65,7 @@
 После подключения немедленно отправляет `session_start`:
 
 ```bash
-← {"type":"session_start","fw":"0.1.4","target":"IMXRT1052","uptime_ms":1108}
+← {"type":"session_start","fw":"0.1.2","target":"IMXRT1052","uptime_ms":1108}
 ```
 
 ### Проверка канала (ping)
@@ -63,6 +74,19 @@
 → {"type":"cmd","cmd":"ping"}
 ← {"type":"pong"}
 ```
+
+### Идентификация платы (get_uid / get_version)
+
+```bash
+→ {"type":"cmd","cmd":"get_uid"}
+← {"type":"uid_response","uid":"A1B2C3D4E5F60011"}
+
+→ {"type":"cmd","cmd":"get_version"}
+← {"type":"version_response","fw":"0.1.2"}
+```
+
+`uid` — 8 байт (`BSP_PROV_UID_LEN`) big-endian, 16 hex-символов без разделителей.
+При ошибке чтения UID: `{"ok":false,"error":"UID_READ_ERR"}`.
 
 ---
 
@@ -179,7 +203,7 @@ sequenceDiagram
 | Время выполнения | < 1 с после вставки карты |
 
 Оператор вставляет карту по запросу. Тест запускается только после подтверждения.  
-Отказ или таймаут 30 с → `SKIP`.
+Отказ или таймаут 30 с → `SKIP`. confirm id для pre-confirm равен id теста (`usd`).
 
 Пять шагов с `progress`-событиями: card detect → mount → write 4 KB → read/compare → unmount.
 
@@ -246,7 +270,8 @@ sequenceDiagram
 
 **pre-confirm отсутствует** — `test_begin` отправляется сразу после `run`.
 
-Два этапа, каждый шаг требует подтверждения оператора (таймаут 15 с → FAIL):
+Два этапа, каждый шаг требует подтверждения оператора (таймаут 15 с → FAIL);
+тест прерывается на первом неподтверждённом шаге:
 
 - **Этап 1 (все дисплеи):** Red → Green → Blue → White
 - **Этап 2 (TFT7/8/10):** паттерн Red/Blue + горизонтальный флип — диагностика непропаянных LR/UD пинов
@@ -379,8 +404,9 @@ sequenceDiagram
 | Тип              | Interactive (in-run confirm)              |
 | Время выполнения | ~4 с воспроизведение + до 15 с на confirm |
 
-Тест воспроизводит мелодию (~4 с: нота A4 затем E5) через MQS-выход
-(`MQS_RIGHT`, `GPIO_AD_B0_04`) и усилитель LM4875M.
+Тест воспроизводит мелодию (~4 с: нота A4 затем E5, стерео PCM16 44100 Гц)
+через MQS-выход (`MQS_RIGHT`, `GPIO_AD_B0_04`) и усилитель LM4875M.
+Буфер — статический в некэшируемой секции (OCRAM NonCacheable), L == R.
 Оператор подтверждает слышимость тона.
 
 ```mermaid
@@ -422,147 +448,6 @@ sequenceDiagram
 
 ---
 
-## Запуск всего набора (run_all)
-
-Тесты запускаются строго в порядке реестра. При провале критичного теста
-(`sdram` или `qspi`) все последующие тесты получают `SKIP` с `detail:"critical test failed"`.
-
-```bash
-→ {"type":"cmd","cmd":"run_all"}
-← {"type":"test_begin","id":"sdram","name":"SDRAM 32 MB","critical":true}
-← {"type":"test_result","id":"sdram","status":"pass","ms":15304,"detail":""}
-← {"type":"test_begin","id":"qspi","name":"QSPI Flash W25Qxx","critical":true}
-← {"type":"test_result","id":"qspi","status":"pass","ms":86,"detail":""}
-← {"type":"confirm_request","id":"usd","prompt":"Insert microSD card and press OK","timeout_ms":30000}
-  ... оператор вставляет карту и подтверждает ...
-← {"type":"test_begin","id":"usd","name":"microSD (SDIO)","critical":false}
-  ...progress events...
-← {"type":"test_result","id":"usd","status":"pass","ms":874,"detail":""}
-← {"type":"test_begin","id":"display","name":"TFT Display RGB888","critical":false}
-  ...confirm цикл 6 шагов...
-← {"type":"test_result","id":"display","status":"pass","ms":42310,"detail":""}
-← {"type":"test_begin","id":"buttons","name":"Test Buttons","critical":false}
-← {"type":"confirm_request","id":"btn1_press","prompt":"Press Test_But_1","timeout_ms":10000}
-  ...
-← {"type":"test_result","id":"buttons","status":"pass","ms":6200,"detail":""}
-← {"type":"test_begin","id":"mqs","name":"MQS Audio Out","critical":false}
-← {"type":"confirm_request","id":"mqs_tone","prompt":"Do you hear a tone?","timeout_ms":15000}
-  ... оператор слышит и подтверждает ...
-← {"type":"test_result","id":"mqs","status":"pass","ms":19240,"detail":""}
-← {"type":"test_begin","id":"opto","name":"Opto Inputs","critical":false}
-  ...confirm цикл 6 HIL шагов...
-← {"type":"test_result","id":"opto","status":"pass","ms":3210,"detail":""}
-← {"type":"test_begin","id":"can","name":"CAN loopback","critical":false}
-  ...confirm цикл 2 HIL шагов...
-← {"type":"test_result","id":"can","status":"pass","ms":1240,"detail":""}
-← {"type":"summary","passed":8,"failed":0,"skipped":0,"overall":"pass"}
-```
-
-**SKIP-каскад при critical fail:**
-
-```bash
-← {"type":"test_result","id":"sdram","status":"fail","ms":1203,"detail":"addr=0x80200001..."}
-← {"type":"test_begin","id":"qspi",...}
-← {"type":"test_result","id":"qspi","status":"skip","ms":0,"detail":"critical test failed"}
-← {"type":"test_begin","id":"usd",...}
-← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"critical test failed"}
-  ...
-← {"type":"summary","passed":0,"failed":1,"skipped":7,"overall":"fail"}
-```
-
----
-
-## Реестр тестов — порядок выполнения
-
-| №   | ID        | Название           | Critical | HIL | Тип                          |
-| --- | --------- | ------------------ | -------- | --- | ---------------------------- |
-| 1   | `sdram`   | SDRAM 32 MB        | ✅        | ❌   | Self-test                    |
-| 2   | `qspi`    | QSPI Flash W25Qxx  | ✅        | ❌   | Self-test                    |
-| 3   | `usd`     | microSD (SDIO)     | ❌        | ❌   | Interactive (pre-confirm)    |
-| 4   | `display` | TFT Display RGB888 | ❌        | ❌   | Interactive (in-run confirm) |
-| 5   | `buttons` | Test Buttons       | ❌        | ❌   | Interactive (physical)       |
-| 6   | `mqs`     | MQS Audio Out      | ❌        | ❌   | Interactive (in-run confirm) |
-| 7   | `opto`    | Opto Inputs        | ❌        | ✅   | HIL (M5StampPLC RLY2/3/4)    |
-| 8   | `can`     | CAN loopback       | ❌        | ✅   | HIL (M5StampPLC CAN)         |
-
----
-
-## Диагностика — строки detail
-
-| Тест      | Значение `detail`                               | Диагноз                                     |
-| --------- | ----------------------------------------------- | ------------------------------------------- |
-| `sdram`   | `addr=0x... exp=0x.. got=0x..`                  | Сбой ячейки по адресу                       |
-| `sdram`   | `SEMC not ready — DCD failed?`                  | DCD не инициализировал SEMC                 |
-| `qspi`    | `JEDEC: mfr=0xFF exp=0xEF`                      | Чип не отвечает / не пропаян                |
-| `qspi`    | `JEDEC: unknown cap=0x..`                       | Неизвестный тип чипа                        |
-| `qspi`    | `erase verify failed at 0x...`                  | Сектор не стирается                         |
-| `qspi`    | `rw mismatch at 0x... exp=0x.. got=0x..`        | Ошибка записи или чтения                    |
-| `qspi`    | `addr alias: 0x... mirrors 0x... (3-byte wrap)` | Dedicated 4-byte opcodes не работают        |
-| `usd`     | `no card detected`                              | Карта не вставлена в слот                   |
-| `usd`     | `mount failed: <N>`                             | `f_mount()` вернул FRESULT N                |
-| `usd`     | `write failed: <N>`                             | `f_write()` вернул FRESULT N                |
-| `usd`     | `compare failed at offset <N>`                  | Данные после чтения не совпадают            |
-| `display` | `display init failed`                           | `bsp_display_init()` вернул ошибку          |
-| `display` | `<id> not confirmed`                            | Оператор не подтвердил / истёк таймаут 15 с |
-| `buttons` | `btn1_press timeout`                            | Test_But_1 не нажата за 10 с                |
-| `buttons` | `btn2_press timeout`                            | Test_But_2 не нажата за 10 с                |
-| `mqs`     | `mqs play error`                                | SAI3/DMA не запустился                      |
-| `mqs`     | `operator: no sound`                            | Нет звука / усилитель не работает           |
-| `opto`    | `<id> mismatch: expected ACTIVE got INACTIVE`   | Реле не переключило оптовход                |
-| `can`     | `can_rx_ready: no frame received`               | M5 не отправил фрейм / CAN не подключён     |
-| `can`     | `rx id mismatch: expected 0x100 got 0x...`      | Неверный ID принятого фрейма                |
-| `can`     | `rx data mismatch: got XX XX XX XX`             | Данные фрейма не совпадают                  |
-| `can`     | `tx failed: bsp_can_send returned <N>`          | TX timeout или шина недоступна              |
-| `can`     | `can_tx_verify: M5 did not confirm tx frame`    | M5 не получил фрейм от таргета              |
-| любой     | `confirm timeout`                               | pre-confirm не получен за 30 с              |
-| любой     | `operator declined`                             | Получен `"confirmed":false`                 |
-| любой     | `critical test failed`                          | Предшествующий критичный тест провалился    |
-
----
-
-## list_tests — получить реестр тестов
-
-```bash
-→ {"type":"cmd","cmd":"list_tests"}
-← {"type":"test_list","tests":[
-     {"id":"sdram","name":"SDRAM 32 MB","critical":true,"requires_hil":false},
-     {"id":"qspi","name":"QSPI Flash W25Qxx","critical":true,"requires_hil":false},
-     {"id":"usd","name":"microSD (SDIO)","critical":false,"requires_hil":false},
-     {"id":"display","name":"TFT Display RGB888","critical":false,"requires_hil":false},
-     {"id":"buttons","name":"Test Buttons","critical":false,"requires_hil":false},
-     {"id":"mqs","name":"MQS Audio Out","critical":false,"requires_hil":false},
-     {"id":"opto","name":"Opto Inputs","critical":false,"requires_hil":true},
-     {"id":"can","name":"CAN loopback","critical":false,"requires_hil":true}
-   ]}
-```
-
-TUI использует этот ответ для динамического построения списка тестов.
-HIL-тесты (`requires_hil=true`) недоступны если M5StampPLC не подключён.
-
----
-
-## run_selected — запустить подмножество тестов
-
-```bash
-→ {"type":"cmd","cmd":"run_selected","tests":["sdram","opto"]}
-← {"type":"test_begin","id":"sdram","name":"SDRAM 32 MB","critical":true}
-← {"type":"test_result","id":"sdram","status":"pass","ms":15304,"detail":""}
-← {"type":"test_begin","id":"opto","name":"Opto Inputs","critical":false}
-  ...confirm цикл 6 шагов (HIL)...
-← {"type":"test_result","id":"opto","status":"pass","ms":3210,"detail":""}
-← {"type":"summary","passed":2,"failed":0,"skipped":0,"overall":"pass"}
-```
-
-Порядок выполнения — как в реестре таргета, не как в запросе.
-Если хотя бы один ID не найден — вся команда отклоняется:
-
-```bash
-→ {"type":"cmd","cmd":"run_selected","tests":["sdram","unknown_test"]}
-← {"ok":false,"error":"UNKNOWN_TEST"}
-```
-
----
-
 ## Оптоизолированные входы (HIL)
 
 | Параметр         | Значение                         |
@@ -583,7 +468,8 @@ HIL-тесты (`requires_hil=true`) недоступны если M5StampPLC н
 | 6   | `opto_rs_inactive`  | RLY2 OFF    | `BSP_OPTO_CH_RS == INACTIVE`  |
 
 HIL confirm полностью автоматический — TUI командует M5 и отправляет confirm
-без участия оператора.
+без участия оператора. После confirm тест выжидает settle (~30 мс, перекрывает
+debounce 10 мс) и читает состояние через `bsp_opto_force_read()`.
 
 ```bash
 → {"type":"cmd","cmd":"run","id":"opto"}
@@ -622,6 +508,150 @@ HIL confirm полностью автоматический — TUI команд
 → {"type":"confirm","id":"can_tx_verify","confirmed":true}
 ← {"type":"test_result","id":"can","status":"pass","ms":1240,"detail":""}
 ```
+
+---
+
+## list_tests — получить реестр тестов
+
+```bash
+→ {"type":"cmd","cmd":"list_tests"}
+← {"type":"test_list","tests":[
+     {"id":"sdram","name":"SDRAM 32 MB","critical":true,"requires_hil":false},
+     {"id":"qspi","name":"QSPI Flash W25Qxx","critical":true,"requires_hil":false},
+     {"id":"usd","name":"microSD (SDIO)","critical":false,"requires_hil":false},
+     {"id":"display","name":"TFT Display RGB888","critical":false,"requires_hil":false},
+     {"id":"buttons","name":"Test Buttons","critical":false,"requires_hil":false},
+     {"id":"opto","name":"Opto Inputs","critical":false,"requires_hil":true},
+     {"id":"can","name":"CAN loopback","critical":false,"requires_hil":true},
+     {"id":"mqs","name":"MQS Audio Out","critical":false,"requires_hil":false}
+   ]}
+```
+
+TUI использует этот ответ для динамического построения списка тестов.
+HIL-тесты (`requires_hil=true`) недоступны если M5StampPLC не подключён.
+Порядок в ответе — порядок реестра `k_registry[]` (см. ниже).
+
+---
+
+## run_selected — запустить подмножество тестов
+
+```bash
+→ {"type":"cmd","cmd":"run_selected","tests":["sdram","opto"]}
+← {"type":"test_begin","id":"sdram","name":"SDRAM 32 MB","critical":true}
+← {"type":"test_result","id":"sdram","status":"pass","ms":15304,"detail":""}
+← {"type":"test_begin","id":"opto","name":"Opto Inputs","critical":false}
+  ...confirm цикл 6 шагов (HIL)...
+← {"type":"test_result","id":"opto","status":"pass","ms":3210,"detail":""}
+← {"type":"summary","passed":2,"failed":0,"skipped":0,"overall":"pass"}
+```
+
+Порядок выполнения — как в реестре таргета, не как в запросе.
+Если хотя бы один ID не найден — вся команда отклоняется:
+
+```bash
+→ {"type":"cmd","cmd":"run_selected","tests":["sdram","unknown_test"]}
+← {"ok":false,"error":"UNKNOWN_TEST"}
+```
+
+---
+
+## Запуск всего набора (run_all)
+
+Тесты запускаются строго в порядке реестра. При провале критичного теста
+(`sdram` или `qspi`) все последующие тесты получают `SKIP` с `detail:"critical test failed"`.
+
+```bash
+→ {"type":"cmd","cmd":"run_all"}
+← {"type":"test_begin","id":"sdram","name":"SDRAM 32 MB","critical":true}
+← {"type":"test_result","id":"sdram","status":"pass","ms":15304,"detail":""}
+← {"type":"test_begin","id":"qspi","name":"QSPI Flash W25Qxx","critical":true}
+← {"type":"test_result","id":"qspi","status":"pass","ms":86,"detail":""}
+← {"type":"confirm_request","id":"usd","prompt":"Insert microSD card and press OK","timeout_ms":30000}
+  ... оператор вставляет карту и подтверждает ...
+← {"type":"test_begin","id":"usd","name":"microSD (SDIO)","critical":false}
+  ...progress events...
+← {"type":"test_result","id":"usd","status":"pass","ms":874,"detail":""}
+← {"type":"test_begin","id":"display","name":"TFT Display RGB888","critical":false}
+  ...confirm цикл 6 шагов...
+← {"type":"test_result","id":"display","status":"pass","ms":42310,"detail":""}
+← {"type":"test_begin","id":"buttons","name":"Test Buttons","critical":false}
+← {"type":"confirm_request","id":"btn1_press","prompt":"Press Test_But_1","timeout_ms":10000}
+  ...
+← {"type":"test_result","id":"buttons","status":"pass","ms":6200,"detail":""}
+← {"type":"test_begin","id":"opto","name":"Opto Inputs","critical":false}
+  ...confirm цикл 6 HIL шагов...
+← {"type":"test_result","id":"opto","status":"pass","ms":3210,"detail":""}
+← {"type":"test_begin","id":"can","name":"CAN loopback","critical":false}
+  ...confirm цикл 2 HIL шагов...
+← {"type":"test_result","id":"can","status":"pass","ms":1240,"detail":""}
+← {"type":"test_begin","id":"mqs","name":"MQS Audio Out","critical":false}
+← {"type":"confirm_request","id":"mqs_tone","prompt":"Do you hear a tone?","timeout_ms":15000}
+  ... оператор слышит и подтверждает ...
+← {"type":"test_result","id":"mqs","status":"pass","ms":19240,"detail":""}
+← {"type":"summary","passed":8,"failed":0,"skipped":0,"overall":"pass"}
+```
+
+**SKIP-каскад при critical fail:**
+
+```bash
+← {"type":"test_result","id":"sdram","status":"fail","ms":1203,"detail":"addr=0x80200001..."}
+← {"type":"test_begin","id":"qspi",...}
+← {"type":"test_result","id":"qspi","status":"skip","ms":0,"detail":"critical test failed"}
+← {"type":"test_begin","id":"usd",...}
+← {"type":"test_result","id":"usd","status":"skip","ms":0,"detail":"critical test failed"}
+  ...
+← {"type":"summary","passed":0,"failed":1,"skipped":7,"overall":"fail"}
+```
+
+---
+
+## Реестр тестов — порядок выполнения
+
+Порядок соответствует `k_registry[]` в `test_runner.c`.
+
+| №   | ID        | Название           | Critical | HIL | Тип                          |
+| --- | --------- | ------------------ | -------- | --- | ---------------------------- |
+| 1   | `sdram`   | SDRAM 32 MB        | ✅        | ❌   | Self-test                    |
+| 2   | `qspi`    | QSPI Flash W25Qxx  | ✅        | ❌   | Self-test                    |
+| 3   | `usd`     | microSD (SDIO)     | ❌        | ❌   | Interactive (pre-confirm)    |
+| 4   | `display` | TFT Display RGB888 | ❌        | ❌   | Interactive (in-run confirm) |
+| 5   | `buttons` | Test Buttons       | ❌        | ❌   | Interactive (physical)       |
+| 6   | `opto`    | Opto Inputs        | ❌        | ✅   | HIL (M5StampPLC RLY2/3/4)    |
+| 7   | `can`     | CAN loopback       | ❌        | ✅   | HIL (M5StampPLC CAN)         |
+| 8   | `mqs`     | MQS Audio Out      | ❌        | ❌   | Interactive (in-run confirm) |
+
+---
+
+## Диагностика — строки detail
+
+| Тест      | Значение `detail`                               | Диагноз                                     |
+| --------- | ----------------------------------------------- | ------------------------------------------- |
+| `sdram`   | `addr=0x... exp=0x.. got=0x..`                  | Сбой ячейки по адресу                       |
+| `sdram`   | `SEMC not ready — DCD failed?`                  | DCD не инициализировал SEMC                 |
+| `qspi`    | `JEDEC: mfr=0xFF exp=0xEF`                      | Чип не отвечает / не пропаян                |
+| `qspi`    | `JEDEC: unknown cap=0x..`                       | Неизвестный тип чипа                        |
+| `qspi`    | `erase verify failed at 0x...`                  | Сектор не стирается                         |
+| `qspi`    | `rw mismatch at 0x... exp=0x.. got=0x..`        | Ошибка записи или чтения                    |
+| `qspi`    | `addr alias: 0x... mirrors 0x... (3-byte wrap)` | Dedicated 4-byte opcodes не работают        |
+| `usd`     | `no card detected`                              | Карта не вставлена в слот                   |
+| `usd`     | `mount failed: <N>`                             | `f_mount()` вернул FRESULT N                |
+| `usd`     | `write failed: <N>`                             | `f_write()` вернул FRESULT N                |
+| `usd`     | `compare failed at offset <N>`                  | Данные после чтения не совпадают            |
+| `display` | `display init failed`                           | `bsp_display_init()` вернул ошибку          |
+| `display` | `<id> not confirmed`                            | Оператор не подтвердил / истёк таймаут 15 с |
+| `buttons` | `btn1_press timeout`                            | Test_But_1 не нажата за 10 с                |
+| `buttons` | `btn2_press timeout`                            | Test_But_2 не нажата за 10 с                |
+| `mqs`     | `mqs play error`                                | SAI3/DMA не запустился                      |
+| `mqs`     | `operator: no sound`                            | Нет звука / усилитель не работает           |
+| `opto`    | `<id> mismatch: expected ACTIVE got INACTIVE`   | Реле не переключило оптовход                |
+| `can`     | `can_rx_ready: no frame received`               | M5 не отправил фрейм / CAN не подключён     |
+| `can`     | `rx id mismatch: expected 0x100 got 0x...`      | Неверный ID принятого фрейма                |
+| `can`     | `rx data mismatch: got XX XX XX XX`             | Данные фрейма не совпадают                  |
+| `can`     | `tx failed: bsp_can_send returned <N>`          | TX timeout или шина недоступна              |
+| `can`     | `can_tx_verify: M5 did not confirm tx frame`    | M5 не получил фрейм от таргета              |
+| любой     | `confirm timeout`                               | pre-confirm не получен за 30 с              |
+| любой     | `operator declined`                             | Получен `"confirmed":false`                 |
+| любой     | `critical test failed`                          | Предшествующий критичный тест провалился    |
 
 ---
 

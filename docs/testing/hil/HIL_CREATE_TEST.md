@@ -166,12 +166,18 @@ ls build/target-debug/tests/target/<name>/test_<name>.elf
 
 ## Шаг 5 — `conftest.py`: добавить фикстуры
 
-### Базовый тест (без M5)
+### Любой тест — фикстура загрузки всегда зависит от `m5`
+
+M5StampPLC управляет питанием таргета (RLY1 → VIN, см. `HIL_BENCH.md`), а
+не только сигнальными реле — поэтому `loaded_<n>` зависит от `m5` **во всех
+случаях**, даже если сам тест не использует реле для сигналов (например,
+`01_test_uart.py`/`loaded_host_uart`). Без этой зависимости pyOCD попытается
+подключиться к обесточенной плате.
 
 ```python
-# 1. Фикстура загрузки
+# 1. Фикстура загрузки — m5 гарантирует, что питание включено до pyOCD
 @pytest.fixture(scope="module")
-def loaded_<n>(request: pytest.FixtureRequest) -> None:
+def loaded_<n>(request: pytest.FixtureRequest, m5: M5Agent) -> None:
     _load_elf(
         request,
         Path(cfg.BUILD_DIR) / "tests/target/<n>/test_<n>.elf",
@@ -184,26 +190,10 @@ _UART_FIXTURE_MAP = {
 }
 ```
 
-### Тест с M5
-
-```python
-# 1. Зависимость от m5 гарантирует что питание включено до загрузки ELF
-@pytest.fixture(scope="module")
-def loaded_<n>(request: pytest.FixtureRequest, m5: M5Agent) -> None:
-    _load_elf(
-        request,
-        Path(cfg.BUILD_DIR) / "tests/target/<n>/test_<n>.elf",
-    )
-
-# 2. UART-фикстура — та же одна строка
-_UART_FIXTURE_MAP = {
-    ...
-    "uart_<n>": "loaded_<n>",
-}
-```
-
-**Правило:** если тест управляет железом через M5 — `loaded_<n>` должен явно
-зависеть от `m5`, иначе pyOCD попытается подключиться до включения питания.
+Различие между «базовым» и «с M5» тестом — не в сигнатуре `loaded_<n>`
+(она всегда одна и та же), а в том, использует ли сам **тест-кейс**
+`m5.opto_set()`/`m5.relay_set()`/`m5.can_*()` для управления сигналами
+помимо включения питания (см. пример «Тест с M5» в Шаге 6 ниже).
 
 ---
 

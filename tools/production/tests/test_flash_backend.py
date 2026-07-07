@@ -329,7 +329,6 @@ def test_flash_write_memory_fails(monkeypatch, events, tmp_path):
     with pytest.raises(fb.FlashBackendError, match="write_memory"):
         fb.flash(hab_bin, progress_cb=_collector(events))
 
-    # reset/done не должны наступить после ошибки записи
     assert "reset" not in _phases(events)
     assert "done" not in _phases(events)
 

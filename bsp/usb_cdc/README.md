@@ -19,7 +19,9 @@ COM-порт (`/dev/ttyACM*` на Linux/macOS, `COMx` на Windows). Испол�
 Скорость: High-Speed (480 Mbit/s), fallback Full-Speed (12 Mbit/s).
 PHY калибровка: `D_CAL=0x0C`, `TXCAL45DP=0x06`, `TXCAL45DM=0x06`.
 
-**VID/PID**: `0x1234` / `0x0001` — placeholder, заменить на производственные.
+**VID/PID**: `0x1996` / `0x00AD` (`usb_device_descriptor.h`) — тот же
+идентификатор, что `tools/production/` (service-tui) использует для
+детекта CDC-порта firmware_test (`SERVICE_CDC_VID`/`SERVICE_CDC_PID`).
 
 ---
 

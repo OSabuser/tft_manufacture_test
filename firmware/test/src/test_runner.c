@@ -91,7 +91,7 @@ static volatile bool g_s_confirm_value;
 static char g_s_pending_confirm_id[RUNNER_CONFIRM_ID_SIZE];
 static uint32_t g_s_confirm_deadline_ms;
 
-/* Счётчики итога (используются только в RUNNER_MODE_ALL) */
+/* Счётчики итога (ALL и SELECTED; в SINGLE не используются) */
 static uint8_t g_s_passed;
 static uint8_t g_s_failed;
 static uint8_t g_s_skipped;

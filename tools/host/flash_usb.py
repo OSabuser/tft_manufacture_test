@@ -387,7 +387,6 @@ def main() -> None:
         ),
     )
 
-    # Группа: что прошивать (взаимоисключающие варианты)
     target_group = parser.add_mutually_exclusive_group()
     target_group.add_argument(
         "--firmware",
@@ -420,9 +419,6 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Валидация: --firmware требует --build-type (уже есть default, но запомним)
-    # --bin-path: build-type игнорируется
-    # --erase-chip: несовместим с --ram-only
     if args.erase_chip and args.ram_only:
         parser.error("--erase-chip несовместим с --ram-only")
 

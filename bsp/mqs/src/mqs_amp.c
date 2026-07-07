@@ -9,7 +9,7 @@
  *   аудио-сигнала на входе (MQS_RIGHT через RC-фильтр → SOUND_OUT).
  *
  * Управление громкостью:
- *   PWM4 SM0 PWM_A, частота 16 кГц, центрально-симметричный режим.
+ *   PWM4 SM0 PWM_A, частота 12 кГц, центрально-симметричный режим.
  *   duty 0%  → DC_VOL ≈ 0 В → усиление минимально (тишина).
  *   duty 50% → DC_VOL ≈ 2.5 В → номинальная громкость.
  *   duty 100%→ DC_VOL ≈ 5 В → максимальное усиление.
@@ -22,7 +22,7 @@
  * Тактирование:
  *   IPG clock = AHB/4 = 600/4 = 150 МГц.
  *   PWM prescaler = /16 → PWM clock = 9.375 МГц.
- *   Fpwm = 16000 Гц (центрально-симметричный режим).
+ *   Fpwm = 9 375 000 / 586 / 2 = 12000 Гц (центрально-симметричный режим).
  */
 
 #include "bsp/mqs.h"
@@ -96,7 +96,7 @@ bsp_status_t bsp_mqs_amp_init(void)
     /* --- ForceSignal: использовать нормальный PWM-сигнал --- */
     PWM_SetupForceSignal(AMP_PWM_BASE, AMP_PWM_SUBMODULE, AMP_PWM_CHANNEL, kPWM_UsePwm);
 
-    /* --- PWM-сигнал: 16 кГц, центрально-симметричный, duty 50% --- */
+    /* --- PWM-сигнал: 12 кГц, центрально-симметричный, duty 50% --- */
     const pwm_signal_param_t PWM_SIGNAL = {
         .pwmChannel       = AMP_PWM_CHANNEL,
         .dutyCyclePercent = AMP_DEFAULT_DUTY,

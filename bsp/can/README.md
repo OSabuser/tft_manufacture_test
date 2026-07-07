@@ -65,7 +65,7 @@ bsp_status_t bsp_can_set_filter(uint8_t idx, uint32_t id,
                                 uint32_t mask, bool is_extended);
 bsp_status_t bsp_can_accept_all(void);
 
-bsp_status_t bsp_can_register_rx_callback(bsp_can_rx_cb_t cb, void *p_ctx);
+bsp_status_t bsp_can_register_rx_callback(bsp_can_rx_callback_t cb, void *p_ctx);
 ```
 
 **Коды возврата `bsp_can_send()`:**
@@ -147,7 +147,7 @@ bsp_can_set_filter(2, 0x1ABCDEF0, 0x1FFFFFFF, true);
 add_host_test(
     NAME    test_bsp_can
     SOURCES can/test_bsp_can.c
-            ${PROJECT_SOURCE_DIR}/bsp/can/src/bsp_can.c
+            ${PROJECT_SOURCE_DIR}/bsp/can/src/can.c
             ${PROJECT_SOURCE_DIR}/utils/ring_buffer/ring_buffer.c
     INCLUDES
             ${PROJECT_SOURCE_DIR}/bsp/can/include
@@ -160,7 +160,7 @@ add_host_test(
 **Humble Object** — fff-заглушки для потребителей в `bsp/can/mocks/`:
 
 ```c
-#include "can_mock.h"
+#include "can_mocks.h"
 
 void setUp(void) { CAN_MOCK_RESET_ALL(); }
 

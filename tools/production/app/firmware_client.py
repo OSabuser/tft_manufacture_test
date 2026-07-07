@@ -33,11 +33,9 @@ from .models import TestInfo
 
 logger = logging.getLogger(__name__)
 
-# Таймаут чтения одной строки (сек)
 _READLINE_TIMEOUT_S = 0.1
-# Таймаут ping→pong при подключении (сек)
 _PING_TIMEOUT_S = 5.0
-# Таймаут ожидания событий теста (сек) — длиннее самого долгого теста (SDRAM ~15 с)
+# Длиннее самого долгого теста (SDRAM ~15 с)
 _TEST_EVENT_TIMEOUT_S = 120.0
 
 

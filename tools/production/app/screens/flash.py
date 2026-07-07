@@ -173,9 +173,8 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
         self._stop_connection_watch()
 
     def _check_sdp_present(self) -> bool:
-        # Не считаем потерей соединения, если идёт активная операция —
-        # flash_usb.py сам обработает реальный обрыв через subprocess.
-        # обрыв в этом случае обнаружит и обработает сам flash_backend
+        # Не считаем потерей соединения, если идёт активная операция — обрыв
+        # в этом случае обнаружит и обработает сам flash_backend
         # (ConnectionLostError, см. Фазу 4), не watcher.
         if self._flashing:
             return True

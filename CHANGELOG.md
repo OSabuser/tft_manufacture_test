@@ -55,86 +55,153 @@
 - Проверять, остаётся ли `.github/workflows/ci.yml` только сборочным workflow через `just ci::build` или начинает запускать host-тесты.
 - Отслеживать появление self-hosted runner, регулярных аппаратных прогонов или отчётов по HIL.
 - Проверять новые firmware-test модули в `firmware/test/src/tests/` и синхронные обновления протокола/документации.
-- Следить за развитием BSP: MQS, RGB, bootloader или `tft_app`.
+- Следить за развитием BSP: RGB (частично закрыто display-тестом), bootloader или `tft_app` — обе директории всё ещё не заведены.
 - Отслеживать локальные патчи поверх vendor SDK, которые нужно вести отдельным patch log.
+- Отслеживать мерж ветки `feature-tui-monolith` в `dev` — после мержа эту запись нужно закрыть датой и финальным диапазоном SHA.
 
-## [Не выпущено] — service-tui: кастомная прошивка нестандартной памяти (после слияния `feature-tui-python`)
+## [Не выпущено] — service-tui: монолитный spsdk-бэкенд, устойчивость к обрыву USB, упаковка PyInstaller
 
-Диапазон: `<заполнить после merge>..<текущий HEAD>`
-Сравнение: `<заполнить после merge>`
+Диапазон: `1801f1beb959d610d31ee3dcd1f91046953117d4..22c40779ef0ec9911031d7a5272c4611b596d3e8` + незакоммиченные изменения рабочего дерева (документация)
+Сравнение: <https://github.com/OSabuser/tft_manufacture_test/compare/1801f1beb959d610d31ee3dcd1f91046953117d4...22c40779ef0ec9911031d7a5272c4611b596d3e8>
 
-> Изменения внесены **поверх** слияния `feature-tui-python → dev` — базовая
-> архитектура `service-tui` (экраны, USB/M5-клиенты, оркестратор) приходит
-> самим merge-коммитом; здесь только то, что было доработано отдельно после.
+> Ветка `feature-tui-monolith` (от `dev`, поверх мержа `feature-tui-python`).
+> **Полностью заменяет предыдущую версию этой записи**: прошивка сторонних
+> бинарников через subprocess (`tools/host/flash_usb.py --fcb-path` +
+> `nxpimage`) была реализацией на момент Фазы 0/раннего мержа и с тех пор
+> заменена прямыми вызовами `spsdk` Python API — ничего из старой записи
+> больше не описывает текущий код.
 
 ### Кратко
 
-- `service-tui` теперь умеет прошивать сторонние/легаси бинарники (платы
-  с W25Q256/512 вместо штатного W25Q128) через USB SDP, с явной записью
-  FCB вместо ненадёжного для таких чипов auto-config Flashloader.
-- Выбор оператора на `FlashScreen` (файл/память/DCD) запоминается на весь
-  запуск TUI — ускоряет прошивку партии одинаковых плат.
-- Документация (`tools/production/README.md`, `tools/production/DEV_ARCH.md`,
-  `tools/host/README.md`, `docs/HOW_TO_FLASH.md`, `docs/DEV_ARCH.md`)
-  синхронизирована с фактическим состоянием кода.
+- Прошивка в `service-tui` переведена с subprocess-обёртки над
+  `nxpimage`/`sdphost`/`blhost` на прямые вызовы `spsdk` Python API
+  (`McuBoot`/`SDP`/`HabImage`) — `app/flash_backend.py`, провалидировано
+  byte-exact на живом железе (macOS + Windows). `tools/host/flash_usb.py`
+  остаётся отдельным dev-CLI для `just host::flash*`, TUI его больше не
+  вызывает ни субпроцессом, ни как библиотеку.
+- Обрыв USB во время прошивки/chip erase теперь надёжно типизируется во
+  всех трёх наблюдавшихся на железе сценариях (`SPSDKConnectionError`,
+  `SPSDKTimeoutError`, `False`-по-таймауту без исключения) и даёт оператору
+  единое понятное сообщение вместо «Непредвиденная ошибка».
+- Собран первый standalone-бандл (PyInstaller, onedir) — alpha, вручную
+  протестирован на macOS и Windows.
+- Документация (`tools/production/README.md`+`docs/DEV_ARCH.md`, корневые
+  `docs/*`, все `bsp/*/README.md`, корневой `README.md`) синхронизирована
+  с фактическим состоянием кода после всех фаз миграции.
 
 ### Добавлено
 
-- `tools/host/flash_usb.py` — `write_fcb_explicit()` + флаг `--fcb-path`:
-  буквальная запись 512-байтного FCB-блоба (`write-memory 0x60000000`)
-  вместо magic option word `0xF000000F`. Штатный `--firmware`-путь
-  (`firmware_test`/`bootloader`/`app`) не тронут — работает как раньше.
-- `tools/production/app/models.py` — `FcbVariant` (`W25Q128` покрывает и
-  W25Q64, `W25Q512` — и W25Q256) и `FlashPreset` (липкий выбор оператора).
-- `tools/production/app/flasher.py` — `_build_custom_hab()`: сборка
-  HAB-образа на лету через `nxpimage hab export` из «сырого» бинарника
-  (без FCB/IVT/DCD) в `custom_binaries/`, с опциональным `DCDFilePath`;
-  стриминг вывода `nxpimage` в UI-лог, а не только в `logger.debug`.
-  `list_custom_binaries()` + `SERVICE_CUSTOM_BINARIES_DIR` — резолв
-  директории кастомных бинарей (внешняя, не пакуется в PyInstaller).
-- `tools/production/app/screens/flash.py` — `Select` по `custom_binaries/`,
-  `Select` по `FcbVariant`, `Switch` DCD вместо свободного текстового
-  `Input`; предзаполнение из `FlashPreset` при создании экрана.
-- `tools/production/app/app.py` — `ServiceApp._last_flash_preset`,
-  прокидывается в новый `FlashScreen` при каждом `DeviceDetected(FLASHING)`.
+- `tools/production/app/flash_backend.py` — синхронное ядро прошивки на
+  spsdk: `detect_sdp`/`detect_cdc`, `load_flashloader`, `flash`,
+  `erase_chip`, `build_custom_hab` (`HabImage` вместо `nxpimage` CLI),
+  `write_fcb_explicit`/`write_fcb_auto`. Zero Textual/asyncio импортов,
+  тестируется без event loop.
+- `tools/production/app/usb_ports.py` — `resolve_serial_port()` по VID:PID
+  (имя порта не переносимо между перевтыкиваниями).
+- Иерархия `FlashBackendError`/`ConnectionLostError`/`DeviceNotFoundError`/
+  `FlashLoaderTimeoutError`/`HabBuildError` с полем `connection_lost` —
+  различает физический обрыв USB от логической ошибки прошивки без
+  парсинга текста сообщения.
+- `tools/production/tests/test_flash_backend.py` — вырос до 45 unit-тестов
+  backend'а, включая обе ветки обрыва USB (`SPSDKTimeoutError`,
+  `False`-по-таймауту + вариант B через `detect_sdp()`) и golden-тест
+  byte-exact сборки HAB.
+- Кнопка «✕ Выйти из приложения» на `WaitingScreen`.
+- `tools/production/service_tui.spec` — PyInstaller spec (onedir).
+- `tools/production/docs/RELEASE_ROADMAP.md` — дорожная карта Фаз
+  4a→4b→5→6 с принятыми решениями (Р10–Р12) и статусом гейтов.
 
 ### Изменено
 
-- `tools/host/flash_usb.py`, `erase_chip()` — таймаут `blhost`
-  `flash-erase-all` увеличен до `-t 200000` (W25Q512 стирается заметно
-  дольше W25Q128, дефолтного таймаута не хватало). `flash-erase-region`
-  (обычная прошивка) не тронут — там стирается пара секторов, масштаб иной.
-- `tools/production/app/app.tcss` — `#flash-target-group` ограничен по
-  высоте (`max-height: 18`, свой скролл), `#flash-log` защищён
-  `min-height: 6` — разросшаяся custom-группа больше не сжимает лог
-  прошивки до нечитаемого состояния.
+- `tools/production/app/flasher.py` — переведён с subprocess
+  (`flash_usb.py` через `uv run`) на `asyncio.to_thread`-обёртку над
+  `flash_backend.py`; сборка кастомного HAB — через `HabImage` в отдельном
+  потоке, а не subprocess `nxpimage`.
+- `tools/production/app/main.py` — логирование: root по умолчанию `INFO`
+  (было `DEBUG`), `spsdk`/`libusbsio` принудительно приглушены до
+  `WARNING` независимо от root; полный DEBUG — через
+  `SERVICE_LOG_LEVEL=DEBUG`.
+- `tools/production/app/screens/flash.py` — троттлинг записи в
+  `#flash-log` для фазы `write` (раз на 10%, ~10 строк вместо ~135) без
+  потери плавности прогресс-бара.
+- `bsp/sd/src/sd.c` — `bsp_sd_init()`/`bsp_sd_deinit()` теперь делают
+  аппаратный `USDHC_Reset()` + полный `memset(&g_sd, ...)` перед
+  повторной инициализацией: без этого non-blocking host driver SDK мог
+  оставаться в состоянии ожидания транзакции от предыдущей
+  diagnostic-сессии, и следующий `f_mount()` в тесте `usd` блокировался
+  навсегда.
+
+### Исправлено
+
+- Обёртка обрыва USB расширена с `SPSDKConnectionError` на
+  `(SPSDKConnectionError, SPSDKTimeoutError)` — второй тип не наследует
+  первый, но реально прилетает на read-фазе после write.
+- Вариант B для команд, возвращающих `False` без исключения
+  (`flash_erase_all`/`flash_erase_region`/`write_memory`): при `False`
+  выполняется быстрый `detect_sdp()` — устройство пропало с шины →
+  `ConnectionLostError`, устройство на месте → обычная `FlashBackendError`.
+- Баг «File not found» для bootloader/app/firmware_test при резолве путей
+  прошивки (Фаза 4a).
+- Unit-тест моки (`test_cli.c`, `test_bsp_can.c`, `test_firmware_runner.c`,
+  stub-хедеры `fsl_clock.h`/`version.h`) — фиксы после рефакторинга
+  `cli.c`/`test_runner.c`.
+
+### Тесты
+
+- `test_flash_backend.py` — вырос до 45 тестов, включая гейт по
+  `SPSDKTimeoutError` и переклассификации erase-таймаута (вариант B).
 
 ### Документация
 
-- `tools/production/README.md` — мокап `FlashScreen` под факт (Select/Select/
-  Switch), новый workflow «Прошивка стороннего бинарника», `SERVICE_CUSTOM_BINARIES_DIR`
-  в примере `.env`.
-- `tools/production/DEV_ARCH.md` — новый §8 (конвейер кастомной прошивки,
-  `FlashPreset`, явная запись FCB, обоснование отказа от auto-config для
-  W25Q256/512 и от полноценного авто-батч-режима прошивки).
-- `docs/HOW_TO_FLASH.md` — §1.5, сноска в сравнительной таблице способов
-  прошивки (FCB «не нужен» верно только для W25Q128).
-- `docs/DEV_ARCH.md` — `tools/production/` добавлен в дерево структуры
-  репозитория (отсутствовал ранее).
-- `tools/host/README.md` — актуализирован статус `dcd/*.bin` (`w25q512_fdcb.bin`
-  теперь используется), указатель на `service-tui` как способ прошивки
-  нестандартной памяти.
+- `tools/production/README.md`/`tools/production/docs/DEV_ARCH.md` —
+  полностью пересмотрены под факт: убраны все следы subprocess/`nxpimage`/
+  `flash_usb.py` из описания архитектуры прошивки; добавлены §6.2
+  (обработка обрыва USB), §14 (PyInstaller/frozen-резолв путей), §15
+  (логирование); зафиксирован разрыв между закоммиченным
+  `service_tui.spec` (`datas` только `../shared`) и фактическим
+  содержимым уже собранных релизных бандлов в `dist/`.
+- `docs/testing/PROTOCOL.md` — версия `0.1.0`→`0.1.2`, добавлена команда
+  `get_version` и события `test_list`/`uid_response`/`version_response`,
+  матрица тестов исправлена (убраны никогда не существовавшие `uart_ttl`/
+  `uart_iso`, добавлен реальный `mqs`), поток Display дополнен шагами
+  ротации (`display_rot0`/`display_rot_base`).
+- `docs/testing/host/HOST_CREATE_TEST.md` — был байт-в-байт дубликатом
+  `docs/HOW_TO_DEBUG.md` (копипаст-баг, минимум с 2026-06-23); переписан
+  как реальный гайд по добавлению host-теста.
+- `docs/HOW_TO_FLASH.md` (§1.5 под факт spsdk-конвейера), `docs/DEV_ARCH.md`
+  (в дереве `tools/hil/` недоставало `04_test_button.py`),
+  `docs/testing/hil/HIL_CREATE_TEST.md` (пример `loaded_<n>` без `m5`
+  вводил в заблуждение — питание таргета всегда идёт через M5, не только
+  сигнальные реле) — актуализированы.
+- `bsp/usb_cdc/README.md` (VID/PID был заявлен как заглушка `0x1234:0x0001`,
+  реально прошит `0x1996:0x00AD`), `bsp/uart_host/README.md` (в списке API
+  отсутствовали реальные `bsp_uart_host_deinit/rx_available/rx_flush`),
+  `bsp/can/README.md` (несуществующие в коде `bsp_can.c`/`can_mock.h`/
+  `bsp_can_rx_cb_t`) — исправлены по сверке с заголовками.
+- `bsp/mqs/{mqs.c,mqs.h,mqs_amp.c}` — докстринги приведены в соответствие
+  с кодом (были «SAI1»/«16 кГц», реально SAI3/12 кГц — подтверждено
+  сверкой с `bsp/generated/clock_config.c`); `bsp/provisioning/provisioning.h`
+  — докстринг порядка байт UID исправлен на соответствующий реализации
+  (`provisioning.c` пишет CFG0 первым, докстринг утверждал обратное).
+- Корневой `README.md` — `firmware/bootloader/`/`firmware/tft_app/`
+  помечены как запланированные, а не готовые (директорий не существует,
+  `add_subdirectory()` закомментирован в корневом `CMakeLists.txt`);
+  добавлен ранее отсутствовавший раздел «Инструменты (`tools/`)» —
+  `tools/production/` (service-tui) нигде не упоминался.
 
 ### Известные ограничения
 
-- Auto-config Flashloader для W25Q256/512 не проверялся напрямую — решение
-  писать FCB явно снимает вопрос архитектурно, но не подтверждает и не
-  опровергает надёжность auto-config как таковую.
-- Полноценный режим массового программирования (авто-прошивка по факту
-  детекта USB, без подтверждения оператора) рассмотрен и отклонён — в
-  SDP/Flashloader-режиме нет способа прочитать UID платы для идентификации.
-- Standalone-упаковка (`PyInstaller`) для этого функционала ещё не
-  реализована — см. `tools/production/RELEASE_PLAN.md`.
+- `service_tui.spec` не включает `datas` для `spsdk`/`dcd/*.bin`/
+  `pyproject.toml`, хотя уже собранные alpha-бандлы их содержат — спек
+  нужно синхронизировать перед следующей сборкой релиза.
+- `pyusb` в `pyproject.toml` — мёртвая зависимость (Р7 перевёл детект на
+  `spsdk`/`serial.tools.list_ports`), кандидат на удаление.
+- Auto-config Flashloader для W25Q256/512 не проверялся напрямую — решили
+  не полагаться на него вообще, FCB для кастомных бинарей всегда пишется
+  явно.
+- Массовое программирование (авто-прошивка по факту детекта SDP, без
+  подтверждения оператора) рассмотрено и отклонено — в SDP/Flashloader-режиме
+  нет способа прочитать UID платы для идентификации.
 
 ## [2026-06-29] — Этапы 6г–7: MQS, HIL pytest firmware_test, Provisioning
 
