@@ -38,7 +38,7 @@
             "interface": "swd",
             "loadFiles": [],
             "runToEntryPoint": "main",
-            "preLaunchTask": "build-and-rtt:firmware-test-debug",
+            "preLaunchTask": "build:bootloader-debug",
         },
         // =============================================================
         // firmware/tft_app — FreeRTOS task view

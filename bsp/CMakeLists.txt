@@ -66,3 +66,12 @@ target_compile_definitions(
 
 add_library(bsp_boot_ram INTERFACE)
 target_compile_definitions(bsp_boot_ram INTERFACE SKIP_SYSCLK_INIT)
+
+# bsp_boot_xip без DCD — для firmware/bootloader: XIP из Flash, но без
+# инициализации SDRAM (bootloader SDRAM не использует, см.
+# docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md). В отличие от bsp_boot_xip не
+# определяет XIP_BOOT_HEADER_DCD_ENABLE.
+add_library(bsp_boot_xip_no_dcd INTERFACE)
+target_compile_definitions(
+  bsp_boot_xip_no_dcd INTERFACE XIP_EXTERNAL_FLASH=1 XIP_BOOT_HEADER_ENABLE=1
+                                SKIP_SYSCLK_INIT)

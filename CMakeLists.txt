@@ -18,14 +18,14 @@ if(NOT BUILD_TESTS_HOST)
   set(CMAKE_C_STANDARD_REQUIRED ON)
   set(CMAKE_C_EXTENSIONS OFF)
   set(BSP_SYSCALLS_FILE
-      "${CMAKE_SOURCE_DIR}/bsp/generated/syscalls.c"
-      CACHE FILEPATH "Заглушки системных вызовов newlib")
+    "${CMAKE_SOURCE_DIR}/bsp/generated/syscalls.c"
+    CACHE FILEPATH "Заглушки системных вызовов newlib")
   set(BSP_GENERATED
-      "${CMAKE_SOURCE_DIR}/bsp/generated"
-      CACHE PATH "Путь до сгенерированных ConfigTools файлов")
+    "${CMAKE_SOURCE_DIR}/bsp/generated"
+    CACHE PATH "Путь до сгенерированных ConfigTools файлов")
   set(BSP_STARTUP_FILE
-      "${BSP_GENERATED}/startup/startup_MIMXRT1052.S"
-      CACHE FILEPATH "Путь до стартап файла")
+    "${BSP_GENERATED}/startup/startup_MIMXRT1052.S"
+    CACHE FILEPATH "Путь до стартап файла")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -46,8 +46,7 @@ add_subdirectory(lib)
 # -----------------------------------------------------------------------------
 if(NOT BUILD_TESTS_HOST)
   add_subdirectory(firmware/test)
-  # add_subdirectory(firmware/bootloader) - add_subdirectory(firmware/app) #
-  # Загрузчик + Основное приложение
+  add_subdirectory(firmware/bootloader)
 endif()
 
 # -----------------------------------------------------------------------------

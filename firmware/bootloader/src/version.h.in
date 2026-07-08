@@ -1,0 +1,25 @@
+/**
+ * @file  version.h
+ * @brief Версия bootloader — генерируется CMake из CMakeLists.txt.
+ *
+ * НЕ редактировать вручную. Версию менять в firmware/bootloader/CMakeLists.txt:
+ *   project(bootloader VERSION X.Y.Z)
+ */
+
+#ifndef VERSION_H_
+#define VERSION_H_
+
+/** @brief Мажорная версия. */
+#define BOOTLOADER_VERSION_MAJOR @bootloader_VERSION_MAJOR@
+
+/** @brief Минорная версия. */
+#define BOOTLOADER_VERSION_MINOR @bootloader_VERSION_MINOR@
+
+/** @brief Патч-версия. */
+#define BOOTLOADER_VERSION_PATCH @bootloader_VERSION_PATCH@
+
+/** @brief Версия строкой для протокола: "X.Y.Z". */
+#define BOOTLOADER_VERSION_STR \
+    "@bootloader_VERSION_MAJOR@.@bootloader_VERSION_MINOR@.@bootloader_VERSION_PATCH@"
+
+#endif /* VERSION_H_ */
