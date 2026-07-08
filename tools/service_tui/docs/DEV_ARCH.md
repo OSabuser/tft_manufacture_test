@@ -721,17 +721,18 @@ service-tui-vX.Y.Z-<os>/
 означает, что `libusb-1.0.*`/Zadig в бандле **не нужны** ни на Windows, ни
 на macOS — детект BootROM SDP и Flashloader работает из коробки.
 
-> **Расхождение spec/факт:** закоммиченный `service_tui.spec` объявляет в
-> `datas` только `('../shared', 'shared')` — без `dcd/*.bin`,
-> `pyproject.toml` или `spsdk`-данных. Тем не менее уже собранные релизные
-> бандлы в `tools/service_tui/dist/service-tui-v0.2.0-{macos,windows}/`
-> фактически содержат `_internal/data/{dcd.bin,*_fdcb.bin,ivt_flashloader.bin}`,
-> `_internal/pyproject.toml` и `_internal/spsdk/` — то есть сборки, тестировавшиеся
-> на железе (Фаза 5, гейт по macOS/Windows), были собраны с более полным
-> набором `datas`, чем то, что сейчас лежит в репозитории. `service_tui.spec`
-> нужно актуализировать (`collect_data_files("spsdk")`, `tools/host/dcd/*.bin`
-> → `data/`, `pyproject.toml`) до следующей сборки релиза — см. «Известные
-> открытые вопросы».
+`service_tui.spec` актуализирован и ужесточён (FIRST_RELEASE_PLAN.md, Шаг 1):
+`collect_data_files("spsdk")`, `collect_dynamic_libs("libusbsio")`, `datas`
+для `tools/host/dcd/*.bin` (→ `data/` внутри `_internal`) и `pyproject.toml`.
+Сборка падает с `FileNotFoundError` уже на этапе генерации спека, если в
+`tools/host/dcd/` не хватает хотя бы одного из обязательных блобов —
+несоответствие spec/факт, из-за которого ранее собранные и протестированные
+на железе бандлы расходились с тем, что в репозитории, больше не может
+проскочить незамеченным. `dist/` больше не коммитится в git (см.
+`.gitignore`) — собранные бандлы это build-артефакты, не история репозитория.
+Пересобрано и провалидировано на живом железе macOS + Windows после
+актуализации spec (Гейт 5: детект SDP → прошивка `firmware_test` →
+диагностика → выход) — см. `FIRST_RELEASE_PLAN.md`, Шаг 1.4.
 
 ---
 
@@ -769,13 +770,6 @@ service-tui-vX.Y.Z-<os>/
   `app/flash.py` (комментарий `_check_sdp_present`) и `flasher.py`
   (docstring модуля упоминает Фазу 2 буквально, что нормально как история
   провенанса, но стоит перепроверить при следующей правке этих файлов).
-- **`service_tui.spec` не актуализирован под реальные релизные сборки** —
-  см. §14. Нужно добавить `datas` (`dcd/*.bin`, `pyproject.toml`,
-  `collect_data_files("spsdk")`) до следующей упаковки релиза.
-- **`pyusb` в `pyproject.toml` — мёртвая зависимость.** Р7 перевёл детект
-  SDP/CDC на `spsdk`/`serial.tools.list_ports`; ни один модуль `app/` больше
-  не импортирует `usb`/`pyusb`. Кандидат на удаление при следующей
-  grep-зачистке (Фаза 6).
 - **Release-сборка firmware нестабильна** (медленное мигание — подозрение на
   проблему с FCB/clock конфигурацией в Release HAB-образе) — TUI временно
   форсирует Debug через `FIRMWARE_BUILD_TYPE`.

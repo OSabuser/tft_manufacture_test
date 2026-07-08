@@ -11,9 +11,9 @@
 
 | Проект              | Путь                   | Описание                                                                               |
 | ------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
-| Тестовая прошивка (✅ реализована) | `firmware/test/`       | Входной контроль платы: CAN, UART, SDRAM, QSPI, SDIO, RGB, оптовходы, LED, кнопки, MQS |
-| Загрузчик (⏳ запланирован) | `firmware/bootloader/` | A/B обновление через uSD. Обновляется только через USB ROM + blhost / SWD              |
-| Production прошивка (⏳ запланирован) | `firmware/tft_app/`    | Приложение с реализацией логики лифтового индикатора. Обновляется загрузчиком          |
+| Тестовая прошивка (реализована) | `firmware/test/`       | Входной контроль платы: CAN, UART, SDRAM, QSPI, SDIO, RGB, оптовходы, LED, кнопки, MQS |
+| Загрузчик (запланирован) | `firmware/bootloader/` | A/B обновление через uSD. Обновляется только через USB ROM + blhost / SWD              |
+| Production прошивка (запланирован) | `firmware/tft_app/`    | Приложение с реализацией логики лифтового индикатора. Обновляется загрузчиком          |
 
 ---
 
@@ -21,9 +21,9 @@
 
 | Инструмент         | Путь                | Назначение                                                                                                   |
 | ------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Сервисный TUI      | `tools/service_tui/` | Диагностика и прошивка готовых плат сервисным инженером (Textual, standalone-бинарь). [README](tools/service_tui/README.md) |
-| Прошивка (dev-CLI) | `tools/host/`       | USB SDP / SWD прошивка при разработке (`sdphost`/`blhost`/`nxpimage`/`pyOCD`). [README](tools/host/README.md) |
-| HIL-тесты          | `tools/hil/`        | pytest-окружение аппаратных тестов (pyOCD + M5StampPLC). [README](tools/hil/README.md)                        |
+| Сервисный TUI      | `tools/service_tui/` | Диагностика и прошивка готовых плат сервисным инженером  [README](tools/service_tui/README.md) |
+| Прошивка (dev-CLI) | `tools/host/`       | USB SDP / SWD прошивка при разработке  [README](tools/host/README.md) |
+| HIL-тесты          | `tools/hil/`        | pytest-окружение аппаратных тестов [README](tools/hil/README.md)                        |
 
 ---
 
@@ -65,21 +65,6 @@ just host::debug-server                 # GDB-сервер для отладки
 
 Прошивка подробно — [docs/HOW_TO_FLASH.md](docs/HOW_TO_FLASH.md)
 Отладка подробно — [docs/HOW_TO_DEBUG.md](docs/HOW_TO_DEBUG.md)
-
----
-
-## Зависимости
-
-|                                               | Подход               |
-| --------------------------------------------- | -------------------- |
-| NXP MCUXpresso SDK, FreeRTOS, FatFS, LittleFS | vendored             |
-| Unity, fff, SEGGER RTT                        | vendored             |
-| pyOCD, pyserial, pytest, mpremote             | `tools/hil/uv.lock`  |
-| spsdk (nxpimage, blhost, sdphost — dev-CLI)   | `tools/host/uv.lock` |
-| spsdk (McuBoot/SDP/HabImage — прямой Python API), Textual | `tools/service_tui/uv.lock` |
-
-Всё что не меняется — vendored. Сборка работает после `git clone` без интернета
-(кроме Python-зависимостей).
 
 ---
 

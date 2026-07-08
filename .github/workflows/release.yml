@@ -1,0 +1,261 @@
+name: Release
+
+# Раздельные теги (FIRST_RELEASE_PLAN.md, Шаг 2.1): firmware_test и
+# service-tui версионируются и релизятся независимо друг от друга.
+#   firmware-vX.Y.Z → publish-firmware (только firmware_test_hab.bin, Debug)
+#   tui-vX.Y.Z       → publish-tui (service-tui-vX.Y.Z-{macos,windows}.zip)
+# HAB firmware_test, вшиваемый в TUI-бандл, всегда собирается заново из
+# текущего HEAD тега tui-v*, а не берётся из отдельного firmware-релиза —
+# так проще и не тянет зависимость на чужой GitHub Release.
+on:
+  push:
+    tags:
+      - "tui-v*"
+      - "firmware-v*"
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Тестовый прогон без публикации (job publish-* не запускается вне push тега)"
+        type: choice
+        options:
+          - tui
+          - firmware
+        default: tui
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # firmware — собирает HAB Debug firmware_test. Нужна как для standalone
+  # firmware-релиза, так и для вшивания в TUI-бандл — выполняется всегда.
+  # ─────────────────────────────────────────────────────────────────────────
+  firmware:
+    name: Build firmware_test HAB (Debug)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build devcontainer image with cache
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          tags: tft-devcontainer-ci:latest
+          load: true
+          cache-from: type=gha,scope=tft-devcontainer
+          cache-to: type=gha,mode=max,scope=tft-devcontainer
+
+      - name: Sync host Python tools inside container
+        run: |
+          docker run --rm --user root -v "$GITHUB_WORKSPACE":/workspace -w /workspace \
+            tft-devcontainer-ci:latest bash -lc 'cd tools/host && uv sync'
+
+      - name: Проверить, что тег совпадает с версией в CMakeLists.txt
+        if: startsWith(github.ref, 'refs/tags/firmware-v')
+        run: |
+          tag_version="${GITHUB_REF_NAME#firmware-v}"
+          file_version=$(grep -m1 -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' firmware/test/CMakeLists.txt | awk '{print $2}')
+          if [[ "$tag_version" != "$file_version" ]]; then
+            echo "::error::Тег ${GITHUB_REF_NAME} (версия ${tag_version}) не совпадает с VERSION в firmware/test/CMakeLists.txt (${file_version})"
+            exit 1
+          fi
+          echo "  ✅  Версия тега совпадает с CMakeLists.txt: ${file_version}"
+
+      - name: Собрать firmware_test HAB (Debug)
+        run: |
+          docker run --rm --user root -v "$GITHUB_WORKSPACE":/workspace -w /workspace \
+            tft-devcontainer-ci:latest bash -lc 'just build::hab-firmware-test-debug'
+
+      - name: Upload firmware_test_hab.bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-hab-debug
+          path: build/Debug/firmware_test_hab.bin
+          if-no-files-found: error
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # publish-firmware — только на тег firmware-v*, отдельный standalone-релиз
+  # HAB-образа (для tools/host/flash_usb.py и ручной прошивки, не через TUI).
+  # ─────────────────────────────────────────────────────────────────────────
+  publish-firmware:
+    name: Publish firmware release
+    needs: firmware
+    if: startsWith(github.ref, 'refs/tags/firmware-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download firmware_test_hab.bin
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-hab-debug
+          path: release-assets/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            release-assets/firmware_test_hab.bin \
+            --title "firmware_test ${GITHUB_REF_NAME#firmware-v}" \
+            --generate-notes
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # service-tui-{macos,windows} — упаковка PyInstaller-бандла с вшитым HAB
+  # из job firmware. Запускается на тег tui-v* и на workflow_dispatch с
+  # release_type=tui (для тестового прогона без публикации).
+  # ─────────────────────────────────────────────────────────────────────────
+  service-tui-macos:
+    name: Package service-tui (macOS)
+    needs: firmware
+    if: startsWith(github.ref, 'refs/tags/tui-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'tui')
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.3.2  # без плавающего major-тега начиная с v8 (upstream security policy) — пин точной версии, обновлять периодически
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Download firmware_test_hab.bin
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-hab-debug
+          path: build/Debug/
+
+      - name: Проверить, что тег совпадает с версией в pyproject.toml
+        if: startsWith(github.ref, 'refs/tags/tui-v')
+        run: |
+          tag_version="${GITHUB_REF_NAME#tui-v}"
+          file_version=$(grep -m1 '^version' tools/service_tui/pyproject.toml | sed -E 's/.*"(.+)".*/\1/')
+          if [[ "$tag_version" != "$file_version" ]]; then
+            echo "::error::Тег ${GITHUB_REF_NAME} (версия ${tag_version}) не совпадает с version в tools/service_tui/pyproject.toml (${file_version})"
+            exit 1
+          fi
+          echo "  ✅  Версия тега совпадает с pyproject.toml: ${file_version}"
+
+      - name: Собрать зависимости и упаковать бандл
+        run: |
+          just host::service-setup
+          just host::package-tui
+
+      - name: Заархивировать бандл
+        working-directory: tools/service_tui/dist
+        run: |
+          name=$(ls -d service-tui-v*-macos)
+          zip -r "${name}.zip" "${name}"
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-tui-macos
+          path: tools/service_tui/dist/service-tui-v*-macos.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  service-tui-windows:
+    name: Package service-tui (Windows)
+    needs: firmware
+    if: startsWith(github.ref, 'refs/tags/tui-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'tui')
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.3.2  # без плавающего major-тега начиная с v8 (upstream security policy) — пин точной версии, обновлять периодически
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Download firmware_test_hab.bin
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-hab-debug
+          path: build/Debug/
+
+      - name: Проверить, что тег совпадает с версией в pyproject.toml
+        if: startsWith(github.ref, 'refs/tags/tui-v')
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#tui-v}"
+          file_version=$(grep -m1 '^version' tools/service_tui/pyproject.toml | sed -E 's/.*"(.+)".*/\1/')
+          if [[ "$tag_version" != "$file_version" ]]; then
+            echo "::error::Тег ${GITHUB_REF_NAME} (версия ${tag_version}) не совпадает с version в tools/service_tui/pyproject.toml (${file_version})"
+            exit 1
+          fi
+          echo "  ✅  Версия тега совпадает с pyproject.toml: ${file_version}"
+
+      - name: Собрать зависимости и упаковать бандл
+        shell: bash
+        run: |
+          just host::service-setup
+          just host::package-tui
+
+      - name: Заархивировать бандл
+        working-directory: tools/service_tui/dist
+        shell: pwsh
+        run: |
+          $name = (Get-ChildItem -Directory -Filter "service-tui-v*-windows").Name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-tui-windows
+          path: tools/service_tui/dist/service-tui-v*-windows.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # publish-tui — только на тег tui-v*, релиз с обоими zip-бандлами.
+  # ─────────────────────────────────────────────────────────────────────────
+  publish-tui:
+    name: Publish service-tui release
+    needs: [service-tui-macos, service-tui-windows]
+    if: startsWith(github.ref, 'refs/tags/tui-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: service-tui-*
+          path: release-assets/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            release-assets/*.zip \
+            --title "service-tui ${GITHUB_REF_NAME#tui-v}" \
+            --generate-notes
