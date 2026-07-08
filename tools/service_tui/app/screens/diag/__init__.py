@@ -244,7 +244,8 @@ class DiagScreen(Screen, ConnectionWatcherMixin):
                 if event.type == OrchestratorEventType.SUMMARY:
                     break
         except Exception as exc:
-            logger.error("run_worker error: %s", exc)
+            logger.error("run_worker error: %s", exc, exc_info=True)
+            self._update_progress(done, total, f"⚠  Ошибка прогона тестов: {exc}")
         finally:
             self._tests_running = False
             self._set_run_buttons(enabled=True)

@@ -120,10 +120,16 @@ class M5Client:
         Вернуть None если не найден — M5 опционален.
         """
         port = None
-        loop = asyncio.get_running_loop()
         started = time.monotonic()
         for attempt in range(1, _AUTO_CONNECT_ATTEMPTS + 1):
-            port = await loop.run_in_executor(None, _find_m5_port)
+            # Намеренно НЕ run_in_executor: serial.tools.list_ports.comports()
+            # параллельно с WaitingScreen._poll_usb() (главный поток, тоже
+            # comports() — resolve_serial_port() для целевой платы) — два
+            # потока одновременно дёргают нативное перечисление USB-устройств
+            # (SetupDiGetClassDevs на Windows и т.п.), что подвешивало детект
+            # целевой платы целиком. comports() сам по себе быстрый (мс), не
+            # стоит того чтобы уводить его в отдельный поток и вводить гонку.
+            port = _find_m5_port()
             if port is not None:
                 elapsed = time.monotonic() - started
                 logger.info(
@@ -140,7 +146,7 @@ class M5Client:
                 await asyncio.sleep(_AUTO_CONNECT_RETRY_DELAY_S)
         if port is None:
             elapsed = time.monotonic() - started
-            visible = await loop.run_in_executor(None, _describe_visible_ports)
+            visible = _describe_visible_ports()
             logger.info(
                 "M5StampPLC не найден за %.1fс (%d попыток, ищем %04X:%04X). "
                 "Видимые порты: %s",
@@ -209,8 +215,22 @@ class M5Client:
     # ── Low-level I/O ───────────────────────────────────────────────────────
 
     def _send_recv(self, cmd: dict) -> Optional[dict]:
-        """Отправить команду, прочитать ответ (blocking)."""
+        """
+        Отправить команду, прочитать ответ (blocking).
+
+        Протокол без корреляции запрос↔ответ: одна команда — одна строка
+        ответа, без ID. Если предыдущий вызов истёк по таймауту (readline()
+        не дождался ответа за _READLINE_TIMEOUT_S), а M5 всё-таки прислал
+        его чуть позже — этот ответ остаётся непрочитанным в буфере порта, и
+        следующий вызов читает ЕГО вместо ответа на свою собственную команду
+        (см. историю багфикса: KeyError('id') в can_recv() из-за того, что
+        читался застрявший {"ok": true} от предыдущего can_send()). Сброс
+        входного буфера перед каждой командой устраняет этот десинк ценой
+        узкого окна гонки (если M5 успеет что-то прислать между reset и
+        write) — гораздо безопаснее, чем читать ответ на чужую команду.
+        """
         assert self._ser is not None
+        self._ser.reset_input_buffer()
         line = json.dumps(cmd, separators=(",", ":")) + "\n"
         self._ser.write(line.encode("utf-8"))
         self._ser.flush()
@@ -283,8 +303,12 @@ class M5Client:
         :return: {"id": int, "data": list[int]} или None при таймауте/ошибке.
         """
         resp = await self._cmd({"cmd": "can_recv", "timeout_ms": timeout_ms})
-        if resp and resp.get("ok") is True:
+        if resp and resp.get("ok") is True and "id" in resp and "data" in resp:
             return {"id": resp["id"], "data": resp["data"]}
+        if resp and resp.get("ok") is True:
+            logger.warning(
+                "can_recv: ok=true, но ответ без id/data (не тот ответ?): %r", resp
+            )
         return None
 
     @staticmethod
