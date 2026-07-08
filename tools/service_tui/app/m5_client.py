@@ -23,6 +23,7 @@ import os
 import asyncio
 import json
 import logging
+import time
 from typing import Optional
 
 import serial
@@ -36,6 +37,29 @@ _M5_PID = int(os.environ.get("SERVICE_M5_PID", "0x4001"), 16)
 _READLINE_TIMEOUT_S = 0.5
 _CMD_TIMEOUT_S = 3.0
 
+# Реальная причина «M5 не виден с первого запуска» (подтверждено логами
+# с живого стенда, см. историю m5_client.py/app.py) — НЕ в детекте порта:
+# serial.tools.list_ports.comports() находит M5 мгновенно, с первой же
+# попытки. Ломается connect() ПОСЛЕ открытия порта: первый ping не получает
+# ответ за _READLINE_TIMEOUT_S. Похоже, само открытие serial-порта хостом
+# перезапускает MicroPython на M5 (типично для USB-CDC ESP32-S3), а
+# agent.py (tools/hil/m5/agent.py) перед основным циклом делает I2C/AW9523/
+# CAN init и только потом пишет "READY" — на это уходит больше одного
+# read-таймаута. На повторном запуске TUI (без переподключения M5) агент
+# уже давно в основном цикле и отвечает мгновенно.
+#
+# Подтверждено логами: с бюджетом ~2.5с (6×0.5с) первый ping всё ещё не
+# успевал (connect failed через 2.517с после найденного порта) — то есть
+# перезагрузка/инициализация агента (I2C/AW9523/CAN) на живом стенде
+# занимает заметно больше 2.5с. Бюджет увеличен с запасом; если снова не
+# хватит — в логе будет видно сырое содержимое ответа (см. _send_recv),
+# по нему можно будет откалибровать точнее вместо угадывания.
+_AUTO_CONNECT_ATTEMPTS = 6
+_AUTO_CONNECT_RETRY_DELAY_S = 0.5
+
+_CONNECT_PING_ATTEMPTS = 24
+_CONNECT_PING_RETRY_DELAY_S = 0.5
+
 
 def _find_m5_port() -> Optional[str]:
     """Автодетект M5StampPLC по VID/PID."""
@@ -43,6 +67,29 @@ def _find_m5_port() -> Optional[str]:
         if info.vid == _M5_VID and info.pid == _M5_PID:
             return info.device
     return None
+
+
+def _describe_visible_ports() -> str:
+    """
+    Дамп всех видимых serial-портов (device + VID:PID) для диагностики.
+
+    Нужен, чтобы при неудаче auto_connect() в логе было видно, была ли на
+    шине вообще хоть какая-то плата (и с каким VID:PID), а не просто
+    «ничего не найдено» без возможности отличить «M5 не подключён» от
+    «подключён, но не под тем VID:PID».
+    """
+    try:
+        ports = list(serial.tools.list_ports.comports())
+    except Exception as exc:
+        return f"<comports() failed: {exc}>"
+    if not ports:
+        return "<нет портов>"
+    return ", ".join(
+        f"{info.device} ({info.vid:04X}:{info.pid:04X})"
+        if info.vid is not None and info.pid is not None
+        else f"{info.device} (vid/pid=None)"
+        for info in ports
+    )
 
 
 class M5Client:
@@ -72,9 +119,37 @@ class M5Client:
         Попытаться найти и подключиться к M5StampPLC.
         Вернуть None если не найден — M5 опционален.
         """
-        port = _find_m5_port()
+        port = None
+        loop = asyncio.get_running_loop()
+        started = time.monotonic()
+        for attempt in range(1, _AUTO_CONNECT_ATTEMPTS + 1):
+            port = await loop.run_in_executor(None, _find_m5_port)
+            if port is not None:
+                elapsed = time.monotonic() - started
+                logger.info(
+                    "M5StampPLC найден с попытки %d/%d (%.1fс, ищем %04X:%04X): %s",
+                    attempt,
+                    _AUTO_CONNECT_ATTEMPTS,
+                    elapsed,
+                    _M5_VID,
+                    _M5_PID,
+                    port,
+                )
+                break
+            if attempt < _AUTO_CONNECT_ATTEMPTS:
+                await asyncio.sleep(_AUTO_CONNECT_RETRY_DELAY_S)
         if port is None:
-            logger.info("M5StampPLC не найден")
+            elapsed = time.monotonic() - started
+            visible = await loop.run_in_executor(None, _describe_visible_ports)
+            logger.info(
+                "M5StampPLC не найден за %.1fс (%d попыток, ищем %04X:%04X). "
+                "Видимые порты: %s",
+                elapsed,
+                _AUTO_CONNECT_ATTEMPTS,
+                _M5_VID,
+                _M5_PID,
+                visible,
+            )
             return None
         client = cls(port=port, baudrate=baudrate)
         try:
@@ -85,13 +160,30 @@ class M5Client:
             return None
 
     async def connect(self) -> None:
-        """Открыть порт и проверить связь через ping."""
+        """
+        Открыть порт и проверить связь через ping.
+
+        Первый ping сразу после открытия порта нередко не долетает: судя по
+        логам (см. m5_client.py история), порт находится и открывается
+        мгновенно, но agent.py (tools/hil/m5/agent.py) перед тем как дойти
+        до основного цикла и ответить на первую команду, делает I2C/AW9523/
+        CAN init и пишет "READY" — вероятно, само открытие serial-порта
+        хостом перезапускает MicroPython (типично для USB-CDC ESP32-S3), и
+        эта инициализация занимает больше одного read-таймаута. mpremote
+        (just host::m5-*) с этим не сталкивается — либо вообще не открывает
+        порт (m5-scan — чистое перечисление), либо переживает reset за счёт
+        своей протокольной логики поверх REPL. Здесь — короткий retry ping
+        вместо одной попытки с жёстким таймаутом.
+        """
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._open)
-        ok = await self.ping()
-        if not ok:
-            await self.disconnect()
-            raise ConnectionError(f"M5StampPLC не отвечает: {self._port}")
+        for attempt in range(1, _CONNECT_PING_ATTEMPTS + 1):
+            if await self.ping():
+                return
+            if attempt < _CONNECT_PING_ATTEMPTS:
+                await asyncio.sleep(_CONNECT_PING_RETRY_DELAY_S)
+        await self.disconnect()
+        raise ConnectionError(f"M5StampPLC не отвечает: {self._port}")
 
     def _open(self) -> None:
         self._ser = serial.Serial(
@@ -124,10 +216,24 @@ class M5Client:
         self._ser.flush()
         raw = self._ser.readline()
         if not raw:
+            logger.debug(
+                "_send_recv(%s): нет ответа за %.1fс (timeout)",
+                cmd.get("cmd"),
+                _READLINE_TIMEOUT_S,
+            )
             return None
         try:
             return json.loads(raw.decode("utf-8", errors="replace").strip())
         except json.JSONDecodeError:
+            # Не JSON — вероятно boot-баннер MicroPython/REPL-вывод, если
+            # порт открылся во время перезапуска агента (см. connect()).
+            # Логируем сырую строку, чтобы это было видно, а не выглядело
+            # как немой таймаут.
+            logger.info(
+                "_send_recv(%s): не-JSON ответ, похоже на boot-вывод M5: %r",
+                cmd.get("cmd"),
+                raw[:200],
+            )
             return None
 
     async def _cmd(self, cmd: dict) -> Optional[dict]:

@@ -269,44 +269,44 @@ _flash_swd := TOOLS_DIR / "flash_swd.py"
 [doc('Прошить firmware_test Debug через SWD. Нужен power cycle после')]
 [group('flash-swd')]
 flash-swd-test-debug:
-    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+    uv run --directory "{{ HIL_DIR }}" python "{{ _flash_swd }}" \
         --firmware firmware_test --build-type Debug
 
 [doc('Прошить firmware_test Release через SWD. Нужен power cycle после')]
 [group('flash-swd')]
 flash-swd-test-release:
-    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+    uv run --directory "{{ HIL_DIR }}" python "{{ _flash_swd }}" \
         --firmware firmware_test --build-type Release
 
 [doc('Прошить bootloader Debug через SWD. Нужен power cycle после')]
 [group('flash-swd')]
 flash-swd-bootloader-debug:
-    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+    uv run --directory "{{ HIL_DIR }}" python "{{ _flash_swd }}" \
         --firmware bootloader --build-type Debug
 
 [doc('Прошить bootloader Release через SWD. Нужен power cycle после')]
 [group('flash-swd')]
 flash-swd-bootloader-release:
-    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+    uv run --directory "{{ HIL_DIR }}" python "{{ _flash_swd }}" \
         --firmware bootloader --build-type Release
 
 [doc('Прошить tft_app Debug через SWD. Нужен power cycle после')]
 [group('flash-swd')]
 flash-swd-app-debug:
-    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+    uv run --directory "{{ HIL_DIR }}" python "{{ _flash_swd }}" \
         --firmware app --build-type Debug
 
 [doc('Прошить tft_app Release через SWD. Нужен power cycle после')]
 [group('flash-swd')]
 flash-swd-app-release:
-    uv run --directory {{ HIL_DIR }} python {{ _flash_swd }} \
+    uv run --directory "{{ HIL_DIR }}" python "{{ _flash_swd }}" \
         --firmware app --build-type Release
 
 [confirm("Стереть всю Flash (W25Q128)? Все прошивки будут удалены.")]
 [doc('Стереть всю Flash (W25Q128) через SWD (chip erase). Нужен power cycle после')]
 [group('flash-swd')]
 flash-swd-erase:
-    uv run --directory {{ HIL_DIR }} pyocd erase \
+    uv run --directory "{{ HIL_DIR }}" pyocd erase \
         --target {{ env('PYOCD_TARGET', 'mimxrt1050_quadspi') }} \
         --frequency {{ env('PYOCD_FREQUENCY', '4000000') }} \
         --chip -O resume_on_disconnect=False
@@ -321,59 +321,59 @@ _hil_build := BUILD_DIR / "target-debug"
 [doc('Запустить все не интерактивные HIL-тесты')]
 [group('hil')]
 hil-run:
-    HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest -m "not interactive and not usb_vcom" -v 
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest -m "not interactive and not usb_vcom" -v 
 
 [doc('Запустить все интерактивные HIL-тесты: кнопки, дисплей')]
 [group('hil')]
 hil-run-interactive:
-    HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest -m interactive -s -v
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest -m interactive -s -v
 
 [doc('Запустить HIL-тест UART')]
 [group('hil')]
 hil-uart:
-    HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest 01_test_uart.py -v
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest 01_test_uart.py -v
 
 [doc('Запустить HIL-тест оптоизолированных входов')]
 [group('hil')]
 hil-opto:
-    HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest 02_test_opto.py -v
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest 02_test_opto.py -v
 
 [doc('Запустить HIL-тест кнопок')]
 [group('hil')]
 hil-button:
-    HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest 04_test_button.py -s -v
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest 04_test_button.py -s -v
 
 [doc('Запустить HIL тест bsp_can')]
 [group('hil')]
 hil-can:
-    HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest 03_test_can.py -v
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest 03_test_can.py -v
 
 [doc('Запустить HIL-тест USB CDC')]
 [group('hil')]
 hil-usb-cdc:
-    HIL_BUILD_DIR={{ _hil_build }} \
-        uv run --directory {{ HIL_DIR }} pytest 05_test_usb_cdc.py -v
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest 05_test_usb_cdc.py -v
 
 [doc('Запустить HIL-тест оптовходов через firmware_test CDC (протокол v2)')]
 [group('hil')]
 hil-firmware-opto:
-    uv run --directory {{ HIL_DIR }} pytest 06_test_firmware_opto.py -v
+    uv run --directory "{{ HIL_DIR }}" pytest 06_test_firmware_opto.py -v
 
 [doc('Запустить HIL-тест CAN через firmware_test CDC (протокол v2)')]
 [group('hil')]
 hil-firmware-can:
-    uv run --directory {{ HIL_DIR }} pytest 06_test_firmware_can.py -v
+    uv run --directory "{{ HIL_DIR }}" pytest 06_test_firmware_can.py -v
 
 [doc('Запустить все firmware_test CDC HIL-тесты (opto + can)')]
 [group('hil')]
 hil-firmware:
-    uv run --directory {{ HIL_DIR }} pytest 06_test_firmware_opto.py 06_test_firmware_can.py -v
+    uv run --directory "{{ HIL_DIR }}" pytest 06_test_firmware_opto.py 06_test_firmware_can.py -v
 
 # =============================================================================
 # ГРУППА: debug — GDB-сервер для отладки из VSCode (devcontainer)
@@ -394,8 +394,8 @@ _hil_dir := "tools/hil"
 [doc('Запустить GDB-сервер. Оставить запущенным, подключаться из VSCode')]
 [group('debug')]
 debug-server:
-    uv run --directory {{ _hil_dir }} pyocd gdbserver \
-        --config {{ justfile_directory() }}/pyocd_debug.yaml \
+    uv run --directory "{{ _hil_dir }}" pyocd gdbserver \
+        --config "{{ justfile_directory() }}/pyocd_debug.yaml" \
         --port {{ env('GDB_PORT', '3333') }} \
         --persist \
         --semihosting
@@ -403,7 +403,7 @@ debug-server:
 [doc('Показать доступные builtin-таргеты pyOCD для MIMXRT')]
 [group('debug')]
 debug-list-targets:
-    uv run --directory {{ _hil_dir }} pyocd list --targets | grep -i mimx
+    uv run --directory "{{ _hil_dir }}" pyocd list --targets | grep -i mimx
 
 # =============================================================================
 # ГРУППА: m5 — работа с M5Stack StamPLC
@@ -448,7 +448,7 @@ m5-scan:
 [doc('Открыть MicroPython REPL на M5Stack (Ctrl+X для выхода)')]
 [group('m5')]
 m5-repl:
-    uv run --directory {{ HIL_DIR }} mpremote connect {{ M5_PORT }} repl
+    uv run --directory "{{ HIL_DIR }}" mpremote connect "{{ M5_PORT }}" repl
 
 [doc('Проверить версию MicroPython на M5Stack')]
 [group('m5')]
@@ -470,8 +470,8 @@ m5-start:
 [doc('Управление питанием таргета через M5 RLY1: m5-power <on|off>')]
 [group('m5')]
 m5-power state:
-    uv run --directory {{ HIL_DIR }} python m5/power.py \
-        --port {{ M5_PORT }} --state {{ state }}
+    uv run --directory "{{ HIL_DIR }}" python m5/power.py \
+        --port "{{ M5_PORT }}" --state "{{ state }}"
 
 [doc('Скопировать агент на M5Stack (tools/hil/m5_agent.py → /main.py)')]
 [group('m5')]
@@ -488,7 +488,7 @@ m5-deploy:
 [doc('Запустить интерактивный CLI для ручного тестирования агента')]
 [group('m5')]
 m5-cli:
-    uv run --directory {{ HIL_DIR }} python m5/cli.py --port {{ M5_PORT }}
+    uv run --directory "{{ HIL_DIR }}" python m5/cli.py --port "{{ M5_PORT }}"
 
 # =============================================================================
 # ГРУППА: util
@@ -513,8 +513,8 @@ flashloader-status:
 [doc('Открыть UART монитор на MCU-Link VCOM (кроссплатформенный)')]
 [group('util')]
 uart-monitor:
-    uv run --directory {{ HIL_DIR }} python3 -m serial.tools.miniterm \
-        {{ env('HIL_VCOM_PORT') }} {{ env('HIL_VCOM_BAUD', '115200') }} \
+    uv run --directory "{{ HIL_DIR }}" python3 -m serial.tools.miniterm \
+        "{{ env('HIL_VCOM_PORT') }}" "{{ env('HIL_VCOM_BAUD', '115200') }}" \
         --raw
 
 # =============================================================================
@@ -552,7 +552,7 @@ service-setup:
 [doc('Запустить TUI сервисного инженера')]
 [group('service')]
 service-tui:
-    uv run --directory {{ SERVICE_TUI_DIR }} python main.py
+    uv run --directory "{{ SERVICE_TUI_DIR }}" python main.py
 
 [doc('Собрать standalone-бинарь TUI (PyInstaller → dist/service_tui)')]
 [group('service')]

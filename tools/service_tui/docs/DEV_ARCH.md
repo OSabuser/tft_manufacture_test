@@ -510,6 +510,7 @@ sequenceDiagram
     participant M5 as M5StampPLC
 
     OP->>TUI: запустить service_tui
+    TUI->>M5: auto_connect() как фоновая задача
     TUI->>WS: push_screen()
     WS->>WS: spsdk/list_ports poll каждые 1.5 с
 
@@ -517,7 +518,7 @@ sequenceDiagram
     WS->>TUI: DeviceDetected(DIAGNOSING)
     TUI->>FW: auto_connect() → ping→pong
     TUI->>FW: get_version()
-    TUI->>M5: auto_connect() (опционально)
+    TUI->>M5: await фоновую задачу (готова, либо ещё ретраит ping — см. ниже)
     TUI->>DS: switch_screen(fw_version=...)
 
     DS->>FW: list_tests() → TestInfo×N
@@ -568,6 +569,14 @@ sequenceDiagram
         TUI->>WS: switch_screen(disconnect_reason=...)
     end
 ```
+
+M5 не детектится синхронно в момент перехода на диагностику — `ServiceApp._restart_m5_detection()` запускает `M5Client.auto_connect()` фоновой задачей (`asyncio.Task`) сразу при входе на `WaitingScreen` (включая `on_mount`), параллельно с поллингом целевой платы. `_connect_and_diagnose()` просто дожидается ту же задачу.
+
+**«M5 не виден с первого запуска TUI»** (воспроизведено и подтверждено логами с живого стенда, macOS) — это не проблема детекта порта: `serial.tools.list_ports.comports()` находит M5 мгновенно, с первой попытки (`_AUTO_CONNECT_ATTEMPTS = 6` в `m5_client.py` — небольшой запас на случай реальной гонки в перечислении портов, не более). Ломается `M5Client.connect()` сразу после открытия порта: первый `ping` не получает ответ за `_READLINE_TIMEOUT_S`. Судя по всему, само открытие serial-порта хостом перезапускает MicroPython на M5 (типично для USB-CDC ESP32-S3), а `agent.py` (`tools/hil/m5/agent.py`) перед основным циклом делает I2C/AW9523/CAN init и только потом пишет `"READY"` — на живом стенде это заняло больше 2.5с (бюджет первой версии фикса), поэтому итоговый бюджет ретрая `ping` — `_CONNECT_PING_ATTEMPTS = 24` (~12с, `_CONNECT_PING_RETRY_DELAY_S = 0.5`). Если сырой (не-JSON) ответ всё-таки прилетает во время этого окна, `_send_recv()` логирует его первые 200 байт на INFO — обычно это MicroPython boot-баннер, полезно для калибровки, если бюджета опять не хватит на другом экземпляре стенда.
+
+`just host::m5-*` с этой проблемой не сталкиваются: `m5-scan` вообще не открывает порт (чистое перечисление через `mpremote devs`), а `m5-repl`/`m5-cli`/etc используют `mpremote`, который переживает reset-on-connect за счёт своей протокольной логики поверх REPL — наш простой JSON-lines клиент такой логики не имеет, поэтому нужен явный retry.
+
+**Побочный эффект и его фикс:** пока `connect()` ретраит `ping` (до ~12с в худшем случае), `WaitingScreen` уже физически детектировал плату, но `ServiceApp` ещё не переключил экран — на месте секунд на 10 виден статичный (не крутящийся) спиннер, что выглядит как зависание. Причина — `_poll_usb()` в `waiting.py` останавливал разом все таймеры экрана, включая спиннер, в момент детекта. Исправлено: `_stop_detect_polling()` останавливает только опрос USB и меняет подсказку на «Плата найдена, подключаемся...», спиннер продолжает крутиться до фактического `switch_screen()` (весь набор таймеров глушится только в `on_unmount()`).
 
 ---
 

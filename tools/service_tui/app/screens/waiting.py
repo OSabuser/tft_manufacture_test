@@ -139,11 +139,31 @@ class WaitingScreen(Screen):
 
     def _poll_usb(self) -> None:
         if Flasher.detect_sdp():
-            self._stop_timers()
+            self._stop_detect_polling()
             self.post_message(self.DeviceDetected(AppMode.FLASHING))
         elif Flasher.detect_cdc():
-            self._stop_timers()
+            self._stop_detect_polling()
             self.post_message(self.DeviceDetected(AppMode.DIAGNOSING))
+
+    def _stop_detect_polling(self) -> None:
+        """
+        Остановить опрос USB, но не спиннер.
+
+        Экран остаётся смонтированным ещё некоторое время после детекта —
+        ServiceApp подключается к плате и (в режиме диагностики) ждёт M5
+        (см. app.py._connect_and_diagnose, ретрай ping в M5Client.connect()
+        может занимать секунды). Если остановить спиннер здесь же, экран
+        выглядит зависшим на этот промежуток — спиннер должен крутиться до
+        фактического переключения экрана (on_unmount).
+        """
+        if self._detect_timer:
+            self._detect_timer.stop()
+        try:
+            self.query_one("#waiting-hint", Static).update(
+                "Плата найдена, подключаемся..."
+            )
+        except NoMatches:
+            pass
 
     def _stop_timers(self) -> None:
         if self._detect_timer:

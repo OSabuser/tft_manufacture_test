@@ -7,6 +7,7 @@ app.py — корневое Textual приложение.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Optional
@@ -41,13 +42,32 @@ class ServiceApp(App):
         super().__init__()
         self._fw: Optional[FirmwareClient] = None
         self._m5: Optional[M5Client] = None
+        self._m5_task: Optional[asyncio.Task[Optional[M5Client]]] = None
         # «Липкий» выбор оператора на FlashScreen — переносится на следующую
         # плату в рамках одного запуска TUI (см. FlashPreset docstring).
         # Сбрасывается при перезапуске TUI, не персистится на диск.
         self._last_flash_preset = FlashPreset()
 
     def on_mount(self) -> None:
+        self._restart_m5_detection()
         self.push_screen(WaitingScreen())
+
+    def _restart_m5_detection(self) -> None:
+        """
+        Запустить поиск M5 фоновой задачей параллельно с WaitingScreen.
+
+        M5 детектится не в момент перехода на диагностику (единственная
+        попытка без запаса по времени), а с момента входа на WaitingScreen —
+        столько же времени на «осесть» в ОС, сколько уже естественно есть у
+        целевой платы за счёт её непрерывного поллинга (см. m5_client.py).
+        """
+        if self._m5_task is not None and not self._m5_task.done():
+            self._m5_task.cancel()
+        self._m5_task = asyncio.create_task(M5Client.auto_connect())
+
+    def _switch_to_waiting(self, disconnect_reason: Optional[str] = None) -> None:
+        self._restart_m5_detection()
+        self.switch_screen(WaitingScreen(disconnect_reason=disconnect_reason))
 
     # ── Переходы между экранами ───────────────────────────────────────────────
     @on(WaitingScreen.DeviceDetected)
@@ -75,28 +95,25 @@ class ServiceApp(App):
             self._last_flash_preset = event.preset
 
         if event.target is None and not event.success:
-            self.switch_screen(
-                WaitingScreen(
-                    disconnect_reason=event.error_message
-                    or "Соединение с платой потеряно"
-                )
+            self._switch_to_waiting(
+                disconnect_reason=event.error_message or "Соединение с платой потеряно"
             )
             return
 
         if event.success and event.target == FlashTarget.FIRMWARE_TEST:
             self.switch_screen(PostFlashScreen())
         else:
-            self.switch_screen(WaitingScreen())
+            self._switch_to_waiting()
 
     @on(PostFlashScreen.Done)
     def _on_post_flash_done(self) -> None:
         """Оператор подтвердил смену BootMode или истёк таймаут."""
-        self.switch_screen(WaitingScreen())
+        self._switch_to_waiting()
 
     @on(DiagScreen.DiagDone)
     def _on_diag_done(self, event: DiagScreen.DiagDone) -> None:
         self._disconnect()
-        self.switch_screen(WaitingScreen(disconnect_reason=event.reason))
+        self._switch_to_waiting(disconnect_reason=event.reason)
 
     # ── Подключение к firmware_test ───────────────────────────────────────────
 
@@ -106,10 +123,13 @@ class ServiceApp(App):
             self._fw = await FirmwareClient.auto_connect(vid=_CDC_VID, pid=_CDC_PID)
         except Exception as exc:
             logger.error("CDC connect failed: %s", exc)
-            self.switch_screen(WaitingScreen())
+            self._switch_to_waiting()
             return
 
-        self._m5 = await M5Client.auto_connect()
+        # M5 детектится фоновой задачей с момента входа на WaitingScreen
+        # (см. _restart_m5_detection) — здесь просто забираем готовый
+        # результат, дожидаясь задачу, если она ещё не успела завершиться.
+        self._m5 = await self._m5_task if self._m5_task is not None else None
 
         fw_version = ""
         try:
