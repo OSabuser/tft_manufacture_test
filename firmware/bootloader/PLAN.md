@@ -6,7 +6,7 @@
 |---|---|---|
 | 0 — Карта Flash | ✅ завершена | [docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md](../../docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md) |
 | 1 — Скелет (CDC + LED) | ✅ завершена | сборка/HAB/SWD-прошивка/ping-pong/debug — все пункты верификации пройдены на реальной плате, детали ниже |
-| 2 — bootutil (Direct-XIP) | не начата | |
+| 2 — bootutil (Direct-XIP) | 🟡 host-тесты завершены | реальный bootutil+TinyCrypt+imgtool-фикстуры, 5/5 тестов зелёные; ARM-сторона (flash_map_backend над bsp_qspi_flash, boot_select.c/jump, сборка/железо) — впереди |
 | 3 — SD-путь установки | не начата | |
 | 4 — SDRAM/W25Q smoke-test + LED-паттерны | не начата | |
 | 5 — HAB Release + service-tui | не начата | |
@@ -150,7 +150,79 @@
 - `firmware/bootloader/src/boot_select.c` — вызов `boot_go` (Direct-XIP путь), получение адреса entry
   point выбранного слота.
 
-**Верификация — до всякого железа**:
+**Решения, принятые в обсуждении Фазы 2 (не пересматриваются):**
+- Крипто-бэкенд — **TinyCrypt**, не mbedTLS: для ECDSA-P256+SHA-256 нужно 6 файлов (~2142 строк),
+  всё уже вендорено (`sdk/middleware/mcuboot_opensource/ext/tinycrypt` + минимальный ASN.1-парсер из
+  `ext/mbedtls-asn1`). Полноценный mbedTLS не вендорен вообще — потребовал бы ~8000+ новых строк.
+- FIH-профиль — **MCUBOOT_FIH_PROFILE_LOW** (double-read защита + CFI-счётчики), без RNG-задержки
+  (та требует профиль HIGH и реальную mbedTLS-энтропию — не наш случай).
+- **MCUBOOT_DIRECT_XIP_REVERT — включён.** Если новый образ ни разу не подтверждён (`boot_set_confirmed()`,
+  вызов — будущая ответственность tft_app), следующая загрузка стирает его и откатывается. Проверено
+  host-тестом (`test_boot_go_reverts_unconfirmed_image`).
+- Heap **не нужен** — `malloc`/`free` в `loader.c` компилируются только под `!MCUBOOT_DIRECT_XIP`.
+  Линкер-скрипт бюджет 256 КБ (Фаза 1) не трогаем.
+- Тестовый ключ — уже вендоренный публичный sample-ключ MCUboot
+  (`sdk/middleware/mcuboot_opensource/root-ec-p256.pem`), публичная часть встроена как C-массив через
+  `imgtool.py getpub --lang c` (`mcuboot_port/keys/bootloader_test_ecdsa_pub.c`). Не production-секрет —
+  для серийного производства нужен отдельный ключ вне репозитория (аналог HAB SRK-церемонии).
+
+**Итог host-части (выполнено):**
+- `firmware/bootloader/mcuboot_port/` — `sysflash/sysflash.h`, `mcuboot_config/{mcuboot_config.h,
+  mcuboot_logging.h}`, `flash_map_backend/flash_map_backend.h`, `flash_map.h`, `keys.c` +
+  `keys/bootloader_test_ecdsa_pub.c`, `bootutil_sources.cmake` (общий список исходников bootutil +
+  TinyCrypt + ASN.1, `include()`-ится и ARM-таргетом, и host-тестами — не дублируется).
+- Финальный набор файлов bootutil для нашего режима (Direct-XIP + Revert, ECDSA-only, без
+  measured-boot/encryption): `loader.c, bootutil_misc.c, bootutil_public.c, tlv.c, image_validate.c,
+  image_ecdsa.c, fault_injection_hardening.c, swap_scratch.c`. Важная находка:
+  **`swap_scratch.c` нужен несмотря на название** — `boot_read_image_header()` внутри него обёрнут в
+  `#if !defined(MCUBOOT_SWAP_USING_MOVE)`, то есть это и есть дефолтная (не swap-move) реализация чтения
+  заголовка слота, которую `loader.c` вызывает безусловно для любого режима, включая Direct-XIP.
+  `swap_move.c` (с альтернативной версией той же функции под `MCUBOOT_SWAP_USING_MOVE`) не нужен.
+- `tests/host/mcuboot_port/` — `fake_flash_map_backend.c/.h` (in-memory реализация контракта
+  `flash_map.h` вместо `bsp_qspi_flash`), `host_link_shims.c` (см. ниже), `test_boot_select.c`
+  (5 тестов), `fixtures/` (imgtool-подписанные `valid_v1.bin`/`valid_v2.bin`/`valid_v2_unconfirmed.bin`/
+  `corrupt_v1.bin`, 32 КБ каждый, slot-size уменьшен относительно реальных 2 МБ — тестируем логику
+  выбора слота, не абсолютные размеры).
+- **Обход двух host-специфичных проблем линковки** (не существуют на реальном ARM-таргете,
+  `arm-none-eabi-gcc` не использует leading-underscore mangling и `--gc-sections` вырезает мёртвый код):
+  - `fih_panic_loop()` в `fault_injection_hardening.c` — ARM inline-asm self-reference по имени без
+    подчёркивания. Зависит от ABI хоста, не просто от "это host-тест":
+    **Mach-O (macOS)** — C-функция манглится в `_fih_panic_loop`, inline asm ищет
+    `fih_panic_loop` без подчёркивания и не находит → нужен отдельный символ через
+    `asm("fih_panic_loop")`-label.
+    **ELF (Linux, напр. clang-17 в devcontainer)** — C-символы НЕ манглятся, `fih_panic_loop`
+    резолвится сам на себя нативно, как на реальном ARM — наш шим здесь не нужен и ломает сборку
+    (`multiple definition of 'fih_panic_loop'`, поймано на Release/Debug пресетах в devcontainer).
+    Шим в `host_link_shims.c` обёрнут в `#if defined(__APPLE__)` — активен только там, где реально нужен.
+  - `mbedtls_mpi_read_binary` — недостижимый RSA-путь ASN.1 (`mbedtls_asn1_get_mpi`), попадающий в
+    объектный файл `asn1parse.c` целиком; на host (оба ABI) без `--gc-sections` требует явной
+    (недостижимой по рантайму) заглушки — платформенно-независимая часть `host_link_shims.c`.
+  - Проверено на обеих платформах: macOS (Homebrew clang, локально) и Linux/devcontainer (clang-17,
+    Debug + Release пресеты) — `just build::test-host` и `test-host-release` зелёные 13/13 на обеих.
+- **Обход бага clang 22.1.8 (Homebrew)**: `-fsanitize=address,undefined` ломает генерацию CFI-директив
+  на больших функциях `loader.c` ("invalid CFI advance_loc expression" на этапе ассемблирования; без
+  санитайзеров те же файлы собираются чисто). Отключены санитайзеры точечно для вендоренных файлов
+  bootutil/TinyCrypt/ASN.1 через `set_source_files_properties` в `bootutil_sources.cmake` — для
+  собственного кода (`fake_flash_map_backend.c`, тест) ASan/UBSan остаются включены.
+- `just build::test-host` — **13/13 тестов зелёные**, включая 5/5 новых
+  (`test_boot_go_slot_a_only_valid`, `test_boot_go_picks_higher_version`,
+  `test_boot_go_ignores_corrupted_slot`, `test_boot_go_no_valid_image`,
+  `test_boot_go_reverts_unconfirmed_image`).
+
+**Осталось для Фазы 2 (ARM-сторона, ещё не сделано):**
+- `firmware/bootloader/mcuboot_port/flash_map_backend.c` — реальный шим над `bsp_qspi_flash`
+  (`bsp_qspi_read`/`bsp_qspi_write_page`/`bsp_qspi_erase_sector`), по образцу
+  `sdk/middleware/mcuboot_opensource/boot/nxp_mcux_sdk/flashapi/flash_api.c`.
+- `firmware/bootloader/src/boot_select.c` — `boot_go()` + прыжок в выбранный образ. Референс —
+  `sdk/middleware/mcuboot_opensource/boot/nxp_mcux_sdk/boot.c::do_boot()`: `flash_device_base()` →
+  `vt = flash_base + rsp->br_image_off + rsp->br_hdr->ih_hdr_size` → `__set_MSP(vt->msp)` →
+  `((void(*)(void))vt->reset)()`. CMSIS-интринсики, ассемблер не нужен.
+- Подключить `bsp_qspi_flash` в `firmware/bootloader/CMakeLists.txt`, собрать под ARM (проверить что
+  `m_text` укладывается в 247 КБ бюджет Фазы 1).
+- Аппаратная проверка: образ-заглушка (просто зажигает LED), подписанный тем же тестовым ключом, залит
+  вручную через SWD в Slot A (`0x60040000`) — подтвердить что bootloader реально в него прыгает.
+
+**Верификация — до всякого железа** (план, для истории):
 - Host-юнит-тесты (`tests/host/`, Unity + fff, по образцу существующих `tests/host/protocol/`,
   `tests/host/cli/`) с фейковым flash-буфером в памяти вместо `bsp_qspi_flash`: валидный образ в
   Slot A только → выбран A; оба слота валидны, версия Б выше → выбран Б; повреждённый TLV/подпись в

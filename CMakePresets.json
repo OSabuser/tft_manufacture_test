@@ -150,7 +150,8 @@
                 "test_prio_queue",
                 "uart_host_mock_example",
                 "test_ring_buffer",
-                "test_timeout_pattern"
+                "test_timeout_pattern",
+                "test_mcuboot_boot_select"
             ]
         },
         {
@@ -169,7 +170,8 @@
                 "test_prio_queue",
                 "uart_host_mock_example",
                 "test_ring_buffer",
-                "test_timeout_pattern"
+                "test_timeout_pattern",
+                "test_mcuboot_boot_select"
             ]
         },
         {

@@ -218,3 +218,29 @@ add_host_test(
   ${BSP_MOCKS_DIR})
 
 target_compile_definitions(test_firmware_runner PRIVATE UNIT_TEST)
+
+# -----------------------------------------------------------------------------
+# bootutil (MCUboot Direct-XIP) — выбор слота. Реальный bootutil + TinyCrypt
+# поверх fake_flash_map_backend.c (in-memory буфер вместо bsp_qspi_flash).
+# См. firmware/bootloader/PLAN.md, Фаза 2.
+# -----------------------------------------------------------------------------
+include(${CMAKE_SOURCE_DIR}/firmware/bootloader/mcuboot_port/bootutil_sources.cmake)
+
+add_host_test(
+  NAME
+  test_mcuboot_boot_select
+  SOURCES
+  mcuboot_port/test_boot_select.c
+  mcuboot_port/fake_flash_map_backend.c
+  mcuboot_port/host_link_shims.c
+  ${CMAKE_SOURCE_DIR}/firmware/bootloader/mcuboot_port/keys.c
+  ${MCUBOOT_BOOTUTIL_SOURCES}
+  INCLUDES
+  ${MCUBOOT_BOOTUTIL_INCLUDES}
+  ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_port)
+
+target_compile_definitions(
+  test_mcuboot_boot_select
+  PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_port/fixtures")
+
+target_compile_options(test_mcuboot_boot_select PRIVATE -w)
