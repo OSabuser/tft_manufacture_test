@@ -12,7 +12,9 @@
  *   OPTO_RESET_EVENTS  -> OK               (сбросить счётчики)
  *
  * Стенд:
- *   M5StampPLC: RLY2->EXT_IN1(ch1), RLY3->EXT_IN2(ch2), RLY4->RS_RX(ch3)
+ *   M5StampPLC: RLY2->RS_RX(ch3), RLY3->EXT_IN1(ch1), RLY4->EXT_IN2(ch2)
+ *   (маппинг реле — см. _OPTO_TO_RELAY в tools/hil/m5/agent.py и
+ *   docs/testing/hil/HIL_BENCH.md)
  *
  * ВАЖНО: bsp_opto_process() вызывается в каждой итерации main loop.
  *        CLI_RX_TIMEOUT=10ms для быстрого цикла обработки debounce.

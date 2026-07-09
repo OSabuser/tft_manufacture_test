@@ -3,9 +3,10 @@ test_opto.py — HIL тест bsp_opto через M5StampPLC.
 
 Стенд:
   M5StampPLC реле → оптопары таргета (PS2801-4, active-HIGH, неинвертирующие):
-    RLY2 → EXT_IN1 (ch1, BSP_OPTO_CH_IN1)
-    RLY3 → EXT_IN2 (ch2, BSP_OPTO_CH_IN2)
-    RLY4 → RS_RX   (ch3, BSP_OPTO_CH_RS)
+    RLY2 → RS_RX   (ch3, BSP_OPTO_CH_RS)
+    RLY3 → EXT_IN1 (ch1, BSP_OPTO_CH_IN1)
+    RLY4 → EXT_IN2 (ch2, BSP_OPTO_CH_IN2)
+  (маппинг реле — источник истины: _OPTO_TO_RELAY в tools/hil/m5/agent.py)
 
 Цепочка фикстур (scope=module, создаются один раз на весь файл):
 
