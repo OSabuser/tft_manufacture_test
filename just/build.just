@@ -237,6 +237,35 @@ hab-verify project="firmware_test" type="release":
     grep -E "(entry|csf|tag)" "${OUT}" || true
 
 # =============================================================================
+# ГРУППА: mcuboot-stub — заглушка tft_app для аппаратной верификации bootutil
+# (Фаза 2, firmware/bootloader/PLAN.md). Временное — удалить вместе с
+# firmware/bootloader/test_stub/, когда появится реальный firmware/tft_app.
+# =============================================================================
+
+MCUBOOT_ROOT := justfile_directory() / 'sdk/middleware/mcuboot_opensource'
+MCUBOOT_KEY := MCUBOOT_ROOT / 'root-ec-p256.pem'
+MCUBOOT_IMGTOOL := MCUBOOT_ROOT / 'scripts/imgtool.py'
+# imgtool не входит в зависимости tools/host (spsdk) — ставится эфемерно через uv --with,
+# не трогая основной venv (см. firmware/bootloader/PLAN.md, "Аппаратная верификация Фазы 2").
+MCUBOOT_UV := 'uv run --with cryptography --with intelhex --with click --with cbor2 --with pyyaml python3'
+
+[doc('Собрать и подписать заглушки Slot A/Б для аппаратной верификации bootutil (Debug)')]
+[group('mcuboot-stub')]
+build-mcuboot-stub: _configure-debug
+    cmake --build --preset mcuboot-stub-debug
+    mkdir -p "{{ BUILD_DIR }}/Debug/signed"
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 1.0.0 --align 1 --pad-header --pad --confirm \
+        "{{ BUILD_DIR }}/Debug/test_slot_stub_a.bin" "{{ BUILD_DIR }}/Debug/signed/stub_a_v1_confirmed.bin"
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 2.0.0 --align 1 --pad-header --pad --confirm \
+        "{{ BUILD_DIR }}/Debug/test_slot_stub_b.bin" "{{ BUILD_DIR }}/Debug/signed/stub_b_v2_confirmed.bin"
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 1.0.0 --align 1 --pad-header --pad \
+        "{{ BUILD_DIR }}/Debug/test_slot_stub_a.bin" "{{ BUILD_DIR }}/Debug/signed/stub_a_v1_unconfirmed.bin"
+    @echo "  ✅  build/Debug/signed/stub_{a,b}_*.bin готовы — прошивка через just host::flash-swd (см. PLAN.md)"
+
+# =============================================================================
 # ГРУППА: quality
 # =============================================================================
 

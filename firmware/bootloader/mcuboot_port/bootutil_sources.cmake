@@ -52,16 +52,22 @@ set(MCUBOOT_BOOTUTIL_INCLUDES
 )
 
 # ------------------------------------------------------------------------
-# Обход бага clang 22.1.8 (Homebrew): -fsanitize=address,undefined ломает
-# генерацию CFI-директив на некоторых больших функциях bootutil (напр.
-# loader.c::context_boot_go) — "invalid CFI advance_loc expression" на
-# этапе ассемблирования. Без санитайзеров те же файлы собираются чисто —
-# похоже на баг конкретной версии тулчейна, а не проблему в bootutil или
-# нашем коде. Отключаем санитайзеры только для вендоренных исходников
-# bootutil/TinyCrypt/ASN.1 (не для нашего кода — там ASan/UBSan остаются).
+# Опции компиляции только для вендоренных исходников (не для нашего кода —
+# main.c/cli.c/boot_select.c и т.д. компилируются с обычными warnings/ASan
+# консьюмера):
+#   -w                              — вендоренный код, не наш стиль/lint
+#   -fno-sanitize=address,undefined — обход бага clang 22.1.8 (Homebrew):
+#     -fsanitize=address,undefined ломает генерацию CFI-директив на
+#     некоторых больших функциях bootutil (напр. loader.c::context_boot_go)
+#     — "invalid CFI advance_loc expression" на этапе ассемблирования. Без
+#     санитайзеров те же файлы собираются чисто — похоже на баг конкретной
+#     версии тулчейна. Не применимо к arm-none-eabi-gcc (ARM-таргет не
+#     использует ASan) — гейтим по Clang.
 # ------------------------------------------------------------------------
+set(MCUBOOT_VENDORED_COMPILE_OPTIONS -w)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-  set_source_files_properties(${MCUBOOT_BOOTUTIL_SOURCES}
-                              PROPERTIES COMPILE_OPTIONS
-                                         "-fno-sanitize=address,undefined")
+  list(APPEND MCUBOOT_VENDORED_COMPILE_OPTIONS -fno-sanitize=address,undefined)
 endif()
+set_source_files_properties(${MCUBOOT_BOOTUTIL_SOURCES}
+                            PROPERTIES COMPILE_OPTIONS
+                                       "${MCUBOOT_VENDORED_COMPILE_OPTIONS}")

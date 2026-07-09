@@ -6,7 +6,7 @@
 |---|---|---|
 | 0 — Карта Flash | ✅ завершена | [docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md](../../docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md) |
 | 1 — Скелет (CDC + LED) | ✅ завершена | сборка/HAB/SWD-прошивка/ping-pong/debug — все пункты верификации пройдены на реальной плате, детали ниже |
-| 2 — bootutil (Direct-XIP) | 🟡 host-тесты завершены | реальный bootutil+TinyCrypt+imgtool-фикстуры, 5/5 тестов зелёные; ARM-сторона (flash_map_backend над bsp_qspi_flash, boot_select.c/jump, сборка/железо) — впереди |
+| 2 — bootutil (Direct-XIP) | ✅ завершена | host-тесты 5/5, аппаратная верификация — все 5 сценариев пройдены на реальной плате (детали и 3 найденных/исправленных бага — [DEBUG_LOG_PHASE2.md](DEBUG_LOG_PHASE2.md)) |
 | 3 — SD-путь установки | не начата | |
 | 4 — SDRAM/W25Q smoke-test + LED-паттерны | не начата | |
 | 5 — HAB Release + service-tui | не начата | |
@@ -209,18 +209,197 @@
   `test_boot_go_ignores_corrupted_slot`, `test_boot_go_no_valid_image`,
   `test_boot_go_reverts_unconfirmed_image`).
 
-**Осталось для Фазы 2 (ARM-сторона, ещё не сделано):**
-- `firmware/bootloader/mcuboot_port/flash_map_backend.c` — реальный шим над `bsp_qspi_flash`
-  (`bsp_qspi_read`/`bsp_qspi_write_page`/`bsp_qspi_erase_sector`), по образцу
-  `sdk/middleware/mcuboot_opensource/boot/nxp_mcux_sdk/flashapi/flash_api.c`.
-- `firmware/bootloader/src/boot_select.c` — `boot_go()` + прыжок в выбранный образ. Референс —
+**ARM-сторона (выполнено):**
+- `firmware/bootloader/mcuboot_port/flash_map_backend.c` — реальный шим над `bsp_qspi_flash`.
+  `bsp_qspi_read/write_page/erase_sector()` принимают flash-relative адрес (0-based, `IPCR0` FlexSPI
+  IP-команд), НЕ XIP-адрес — `flash_area.fa_off` тоже flash-relative (Slot A `0x00040000`, Slot Б
+  `0x00240000`). `flash_device_base()` — единственное место с XIP-адресом `0x60000000`, нужен только
+  `boot_select.c` для вычисления адреса прыжка. Постраничная запись (`write_page_chunked`) — порт
+  логики `flash_area_write_internal()` из NXP-референса: 0xFF поверх уже запрограммированных байт не
+  меняет их (NOR program только сбрасывает биты 1→0), поэтому безопасно перезатирать буфером с
+  ERASED_VAL в нетронутой части страницы.
+- `firmware/bootloader/src/boot_select.{c,h}` — `boot_go()` + `jump_to_image()`. Портировано с
   `sdk/middleware/mcuboot_opensource/boot/nxp_mcux_sdk/boot.c::do_boot()`: `flash_device_base()` →
   `vt = flash_base + rsp->br_image_off + rsp->br_hdr->ih_hdr_size` → `__set_MSP(vt->msp)` →
-  `((void(*)(void))vt->reset)()`. CMSIS-интринсики, ассемблер не нужен.
-- Подключить `bsp_qspi_flash` в `firmware/bootloader/CMakeLists.txt`, собрать под ARM (проверить что
-  `m_text` укладывается в 247 КБ бюджет Фазы 1).
-- Аппаратная проверка: образ-заглушка (просто зажигает LED), подписанный тем же тестовым ключом, залит
-  вручную через SWD в Slot A (`0x60040000`) — подтвердить что bootloader реально в него прыгает.
+  `((void(*)(void))vt->reset)()`. CMSIS-интринсики (`fsl_common.h`), ассемблер не понадобился.
+- `firmware/bootloader/CMakeLists.txt` — `bsp_qspi_flash` в зависимостях,
+  `include(mcuboot_port/bootutil_sources.cmake)` (тот же список bootutil+TinyCrypt+ASN.1, что и у
+  host-тестов — не дублируется). `-w`/`-fno-sanitize` для вендоренного кода перенесены в сам
+  `bootutil_sources.cmake` (`set_source_files_properties`), не блэнкетом на весь таргет — наш код
+  (`main.c`, `boot_select.c`, `flash_map_backend.c`) остаётся под обычными warnings.
+- `main.c`: после `board_hw_init()`/`bsp_led_init()`/`bsp_tick_init()`/`bsp_qspi_init()` — сразу
+  `boot_select_and_jump()`, **до** поднятия USB CDC. Так плата грузится в tft_app и без подключённого
+  кабеля (нормальный полевой сценарий) — ждать хоста для проверки образа было бы неправильно. Провал
+  → **не падать**, продолжить в уже существующий ping/pong-цикл Фазы 1 — прообраз будущего состояния
+  "жду SD" из Фазы 3, без самого SD-сканирования. Сценарий "оба слота пусты" на железе проверяется тем
+  же CDC-ping, что и в Фазе 1.
+- Собрано под ARM: `m_text` — 50712 Б из 247 КБ бюджета (20.05%, был 12.85% в Фазе 1 — рост за счёт
+  bootutil+TinyCrypt+ASN.1, запас всё ещё большой). `just build::build-bootloader-debug` и
+  `hab-bootloader-debug` — оба зелёные.
+
+### Аппаратная верификация Фазы 2 — все 5 сценариев пройдены на железе
+
+**Зачем отдельная заглушка.** `tft_app` не существует — нечего класть в слоты для проверки прыжка.
+Нужен минимальный, независимо собираемый "образ", который bootloader может реально выбрать и в
+который может реально прыгнуть — не файл с мусором, а настоящий imgtool-подписанный образ с корректным
+vector table по адресу слота.
+
+**Реализовано в `firmware/bootloader/test_stub/`** (не `tests/target/` — тот масштабируется под
+RAM-загрузку через pyOCD для HIL, наш стаб — XIP из Flash, ближе по духу к самому bootloader; удалить
+директорию целиком, когда появится реальный `firmware/tft_app`):
+- `main.c` — `board_hw_init()` → `bsp_led_init()` → `bsp_tick_init()` → бесконечный цикл
+  `bsp_led_toggle(LED_APP)` с периодом `STUB_BLINK_MS` (компилируется в двух вариантах). Без USB/CDC.
+- `cmake/linker/MIMXRT1052xxxxx_mcuboot_slot.ld` — параметризован через `-Wl,--defsym=__slot_base__=`,
+  один файл на оба таргета вместо двух копий. `ORIGIN = SLOT_BASE + 0x200` (после imgtool header),
+  `m_text` 32 КБ (с большим запасом для мигалки в 2-МБ слоте). Пришлось добавить `m_data2`/
+  `__NCACHE_REGION_START/SIZE` — `board_mpu_init()` (общий для всех прошивок, включён транзитивно
+  через `bsp_board`) их безусловно требует, даже когда некэшируемый регион не используется.
+- Два CMake-таргета из одного `main.c` (`add_mcuboot_stub()` в `test_stub/CMakeLists.txt`):
+  `test_slot_stub_a` (`__slot_base__=0x60040000`, `STUB_BLINK_MS=500` — мигает ~1 раз/сек, "версия 1"),
+  `test_slot_stub_b` (`__slot_base__=0x60240000`, `STUB_BLINK_MS=250` — ~2 раза/сек, "версия 2").
+  Разный адрес — намеренно: MCUboot Direct-XIP код обычно не позиционно-независим (открытый вопрос из
+  BOOTLOADER_FLASH_MAP.md §4), это первая реальная проверка two-slot-two-linkage подхода.
+- Оба собраны и подписаны тем же тестовым ключом (`sdk/middleware/mcuboot_opensource/root-ec-p256.pem`),
+  реальные параметры слота (`-H 0x200 -S 0x200000 --align 1 --pad-header --pad`) — **одной командой**:
+
+  ```bash
+  just build::build-mcuboot-stub
+  ```
+
+  Рецепт (`just/build.just`, группа `mcuboot-stub`) сам собирает `test_slot_stub_a`/`test_slot_stub_b`
+  (пресет `mcuboot-stub-debug`, targets в `CMakePresets.json`, т.к. в `bootloader-debug` их нет — иначе
+  собирались бы всегда вместе с bootloader) и подписывает imgtool'ом (эфемерный venv через
+  `uv run --with cryptography --with intelhex --with click --with cbor2 --with pyyaml` — эти зависимости
+  не в `tools/host` (spsdk), туда их специально не добавляли, чтобы не раздувать основной venv ради
+  временной тестовой оснастки). **Важно**: сначала это было проделано вручную в чате и `signed/` не
+  появлялась при обычной пересборке — это и вскрылось при попытке воспроизвести. Плюс была реальная
+  ошибка в первой версии рецепта: потерян `--pad` у `unconfirmed`-варианта (файл получался 16 КБ вместо
+  2 МБ — без trailer'а в конце слота revert-сценарий не работал бы). Исправлено, проверено размерами
+  файлов (все три — по 2 МБ).
+  - `build/Debug/signed/stub_a_v1_confirmed.bin` — `-v 1.0.0 --confirm` (сценарии 1, 3, 4)
+  - `build/Debug/signed/stub_b_v2_confirmed.bin` — `-v 2.0.0 --confirm` (сценарий 2)
+  - `build/Debug/signed/stub_a_v1_unconfirmed.bin` — `-v 1.0.0`, без `--confirm` (сценарий 5, revert)
+
+**Прошивка в слот напрямую по адресу** — не через `flash_swd.py` (тот собирает FCB+IVT+HAB под
+`0x60000000`, слотам это не нужно — они не самостоятельный boot-образ для BootROM, а данные, которые
+читает `boot_go()`). Пишем сырой подписанный `.bin` напрямую по адресу слота через pyOCD (тот же
+`tools/hil` venv, что уже использует `flash_swd.py` — см. `run_pyocd_flash()`):
+
+**Важно**: `uv run --directory tools/hil` меняет рабочую директорию у самого `pyocd`, а не только у
+`uv` — относительный путь к `.bin` резолвится от `tools/hil/`, не от корня репозитория. Путь к образу
+должен быть абсолютным (`"$(pwd)/build/..."`, запускать из корня репо).
+
+```bash
+# Slot A — валидный, confirmed (сценарии 1, 3, 4)
+uv run --directory tools/hil pyocd flash --target mimxrt1050_quadspi --frequency 4000000 \
+  --base-address 0x60040000 --erase sector "$(pwd)/build/Debug/signed/stub_a_v1_confirmed.bin"
+
+# Slot Б — валидный, confirmed, новее (сценарий 2)
+uv run --directory tools/hil pyocd flash --target mimxrt1050_quadspi --frequency 4000000 \
+  --base-address 0x60240000 --erase sector "$(pwd)/build/Debug/signed/stub_b_v2_confirmed.bin"
+
+# Slot A — неподтверждённый, для проверки revert (сценарий 5, вместо confirmed-варианта выше)
+uv run --directory tools/hil pyocd flash --target mimxrt1050_quadspi --frequency 4000000 \
+  --base-address 0x60040000 --erase sector "$(pwd)/build/Debug/signed/stub_a_v1_unconfirmed.bin"
+
+# Стереть слот (для сценария 4 — "оба слота пусты")
+# Адрес диапазона — позиционный аргумент, не через -a; start+length, не @.
+uv run --directory tools/hil pyocd erase --target mimxrt1050_quadspi --frequency 4000000 \
+  --sector 0x60040000+0x200000
+uv run --directory tools/hil pyocd erase --target mimxrt1050_quadspi --frequency 4000000 \
+  --sector 0x60240000+0x200000
+```
+
+**Чек-лист (зеркалит 5 host-тестов, но на реальном железе и с реальным `bsp_qspi_flash`) — все 5
+сценариев пройдены на плате (2026-07-09):**
+
+| № | Сценарий | Подготовка | Ожидаемый результат |
+|---|---|---|---|
+| 1 | Валиден только Slot A | Erase Slot Б, `stub_a_v1_confirmed.bin` → Slot A | LED_APP мигает ~1/сек (частота stub_a) |
+| 2 | Оба валидны, побеждает версия Б | + `stub_b_v2_confirmed.bin` → Slot Б | LED_APP мигает ~2/сек (частота stub_b) |
+| 3 | Slot Б повреждён | В Slot Б — испорченный файл (например, скопировать `stub_b_v2_confirmed.bin`, поменять байт в payload, прошить) | LED_APP возвращается к ~1/сек (Slot A) |
+| 4 | Оба слота пусты | Erase Slot A и Slot Б целиком | LED_APP не мигает по образцу заглушки; `ping` по CDC отвечает `pong` — bootloader не прыгнул, остался в своём цикле |
+| 5 | Revert неподтверждённого образа | `stub_a_v1_unconfirmed.bin` → Slot A; power cycle (1) → LED мигает (выбран впервые, `copy_done` выставляется); power cycle (2) БЕЗ вмешательства → Slot A должен быть стёрт bootutil'ом | После второго ресета — как сценарий 4 (LED не мигает, CDC ping жив) |
+
+Между сценариями — обязательный power cycle (SWD-запись не ресетит автоматически, как и в Фазе 1).
+
+**Инструмент подтверждения "прыжок реально произошёл", а не просто "LED мигает случайно":** частота
+мигания однозначно указывает на конкретный слот (500 мс vs 250 мс визуально различимы), так что
+чек-лист верифицируем глазами без дополнительной телеметрии. Если нужна более строгая проверка —
+можно снять частоту осциллографом/логическим анализатором через MCU-Link, но для Фазы 2 визуального
+контроля достаточно.
+
+### Найденный баг: сценарий 1 не проходил — LED мигал один раз и замирал
+
+`jump_to_image()` (`boot_select.c`) вызывал `__disable_irq()` перед прыжком — "для чистоты", не было
+в референсном `do_boot()` NXP. `bsp_delay()` (`bsp/tick/src/tick.c`) — busy-wait на `g_s_tick_ms`,
+инкрементируемом только внутри `SysTick_Handler` (ISR). Обычный `Reset_Handler` целевого образа не
+трогает PRIMASK — рассчитывает, что прерывания уже разрешены, как после настоящего аппаратного
+ресета. Замаскировав IRQ прыжком и не восстановив их нигде, мы гарантированно вешали `bsp_delay()` в
+любом образе, куда прыгает bootloader: `LED_APP` успевал toggle'нуться один раз (до первого
+`bsp_delay()` внутри цикла стаба) и застывал — неотличимо на глаз от "не мигает вообще".
+
+**Исправлено**: убрали `__disable_irq()` из `jump_to_image()` — как и в референсе, трогаем только
+`__set_CONTROL(0)`/`__set_MSP`/`__ISB`. Пересобрано (`m_text` уменьшился на 272 Б), HAB
+пересгенерирован. Стаб-образы (`build/Debug/signed/*.bin`) пересборки не требуют — баг был чисто на
+стороне bootloader, не заглушки.
+
+### Второй найденный баг: сценарий 1 всё ещё не проходил — реальный завис в `bsp_qspi_flash`
+
+После фикса `jump_to_image()` завис уже сам bootloader, **до** прыжка — в отладчике (стек
+`boot_select_and_jump → boot_go → ... → bootutil_img_validate → bootutil_img_hash → flash_area_read →
+bsp_qspi_read → qspi_ip_read → qspi_read_fifo → qspi_read_tail`) видно бесконечный busy-wait на
+`IPRXFSTS.FILL`. Значения на момент зависания: `remain=7` (внутри `qspi_read_tail`, т.е. запрошено
+`WORDS_NEEDED=2` слова), `FILL` стабильно `1`, `QSPI_BASE->INTR=0x61` — расшифровка битов
+(`PERI_FLEXSPI.h`): bit0 `IPCMDDONE` **уже установлен**. Контроллер считает IP-команду завершённой,
+реально доставив только одно слово (4 байта) из требуемых двух.
+
+`bootutil_img_hash()` (`image_validate.c:125-129`) читает образ кусками до `BOOT_TMPBUF_SZ=256` байт;
+последняя итерация цикла — остаток `size - off`, в данном случае 7 байт (последние байты хэшируемой
+области `header+img_size+protected_tlv`). Эта короткая, **не кратная 4** длина ни разу не встречалась
+раньше: JEDEC ID и чтения статус-регистров всегда используют `SR_READ_LEN=4` (уже word-aligned), а
+`firmware_test`/`test_qspi.c` тоже, судя по всему, ни разу не запрашивал не кратный 4 размер. LUT
+`LSEQ_IP_READ` (`qspi_flash.c`) использует `READ_SDR` с operand `0x04` — похоже, что при `IDATSZ`, не
+кратном 4, контроллер отдаёт ровно один "бит" этой инструкции и не дотягивает до второго (частичного)
+слова.
+
+**Исправлено** в `bsp/qspi_flash/src/qspi_flash.c::qspi_ip_read()` — `IDATSZ`, который уходит в
+железо (`qspi_ip_setup`), теперь округляется вверх до кратного `QSPI_RFDR_WORD_BYTES` (4); из FIFO
+`qspi_read_fifo()`/`qspi_read_tail()` по-прежнему извлекают ровно исходное (не округлённое) число
+байт — лишний padding-байт молча дренируется вместе со словом и отбрасывается существующей логикой
+извлечения, менять её не понадобилось. Затрагивает **все** IP-чтения произвольной длины через
+`bsp_qspi_read()`, не только bootutil — потенциально тот же баг мог бы всплыть и в `firmware_test`,
+если бы там когда-нибудь понадобилось прочитать не кратное 4 число байт.
+
+**Важно**: после этого фикса на сценарии 1 всплыл ещё один, третий баг (ниже) — оба фикса стоят в
+дереве вместе, изолированно друг от друга на железе не перепроверялись.
+
+**Урок**: любая ручная "гигиена" вокруг прыжка (маскирование прерываний, сброс периферии и т.п.),
+не присутствующая в проверенном референсе, — повод для отдельного вопроса "а точно ли это
+симметрично восстанавливается на другой стороне", а не молчаливого добавления "на всякий случай".
+
+### Третий найденный баг: зависание переехало на чтение подписи — `qspi_read_tail` сравнивал FILL в юнитах напрямую со счётчиком слов
+
+После фикса второго бага зависание не пропало, а переехало дальше по стеку — тот же паттерн
+(`qspi_read_tail`, `FILL` намертво на `1`), но уже на чтении TLV с ECDSA-P256 подписью в
+`bootutil_img_validate` (не в `bootutil_img_hash`). Ключевой момент: для этого чтения `IDATSZ`,
+уходящий в железо, уже был кратен 4 (72 байта) — гипотеза про word-alignment из второго бага оказалась
+неполной.
+
+Настоящая причина: `IPRXFSTS.FILL` считает не слова, а watermark-юниты по 8 байт (2 слова) — как и
+документирует `FLEXSPI_GetFifoCounts()` в SDK-драйвере (`fsl_flexspi.h`, домножает то же поле на 8
+при переводе в байты). `qspi_read_tail()` сравнивал `FILL` напрямую со счётчиком нужных слов, без
+перевода единиц — зависал именно тогда, когда хвост требовал ровно 2 слова (невидимо для всех чтений,
+которым достаточно 1 слова, включая все SR/JEDEC-чтения — отсюда и не проявлялось раньше).
+
+**Исправлено** в той же функции `qspi_read_tail()` — сравнение переведено в слова
+(`FILL_UNITS * QSPI_WM_UNIT_WORDS >= WORDS_NEEDED`), тем же паттерном, что уже использовался в
+`qspi_read_fifo()`. Полный разбор, включая то, как гипотеза была подтверждена без доступа к живому
+регистру через отладчик (упёрлись в ограничение карты памяти pyOCD-таргета `mimxrt1050_quadspi`) —
+[DEBUG_LOG_PHASE2.md](DEBUG_LOG_PHASE2.md).
+
+**Подтверждено на железе**: со всеми тремя фиксами сценарий 1, а следом и оставшиеся четыре сценария
+чек-листа прошли (2026-07-09). Фаза 2 аппаратно верифицирована полностью.
 
 **Верификация — до всякого железа** (план, для истории):
 - Host-юнит-тесты (`tests/host/`, Unity + fff, по образцу существующих `tests/host/protocol/`,

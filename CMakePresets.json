@@ -127,6 +127,15 @@
             ]
         },
         {
+            "name": "mcuboot-stub-debug",
+            "displayName": "mcuboot slot stub (Фаза 2 верификация) — Debug",
+            "configurePreset": "Debug",
+            "targets": [
+                "test_slot_stub_a",
+                "test_slot_stub_b"
+            ]
+        },
+        {
             "name": "app-release",
             "displayName": "app — Release",
             "configurePreset": "Release",

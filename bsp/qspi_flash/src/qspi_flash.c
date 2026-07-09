@@ -115,8 +115,9 @@
 /**
  * @brief Размер читаемого буфера для однобайтных SR-команд.
  *
- * FlexSPI FIFO работает минимальными единицами в 4 байта (RXWMRK=0, 1 FILL
- * unit = 4 bytes). Читаем 4 байта, используем только byte[0].
+ * FlexSPI FIFO работает минимальными единицами в 4 байта. Читаем 4 байта,
+ * используем только byte[0]. (Про размер watermark-юнита IPRXFSTS.FILL —
+ * см. QSPI_WM_UNIT_BYTES и комментарий в qspi_read_tail().)
  */
 #define SR_READ_LEN 4U
 
@@ -338,9 +339,16 @@ AT_QUICKACCESS_SECTION_CODE(static status_t qspi_read_tail(uint8_t *p_dst, uint3
 
     while (!done)
     {
-        const uint32_t FILL =
+        /* IPRXFSTS.FILL считает в watermark-юнитах (1 unit = QSPI_WM_UNIT_WORDS
+         * слов = QSPI_WM_UNIT_BYTES байт), а не в словах напрямую — см.
+         * FLEXSPI_GetFifoCounts() в sdk/.../drivers/fsl_flexspi.h, которая
+         * домножает это же поле на 8 при переводе в байты. Без домножения
+         * ниже FILL=1 (один готовый юнит, 2 слова уже в RFDR[0..1]) никогда
+         * не проходил сравнение с WORDS_NEEDED=2 — busy-wait висел вечно,
+         * хотя нужные данные уже лежали в FIFO. */
+        const uint32_t FILL_UNITS =
             (QSPI_BASE->IPRXFSTS & FLEXSPI_IPRXFSTS_FILL_MASK) >> FLEXSPI_IPRXFSTS_FILL_SHIFT;
-        if (FILL >= WORDS_NEEDED)
+        if ((FILL_UNITS * QSPI_WM_UNIT_WORDS) >= WORDS_NEEDED)
         {
             done = true;
         }
@@ -508,7 +516,23 @@ AT_QUICKACCESS_SECTION_CODE(static void qspi_ip_setup(uint32_t seq_idx, uint32_t
 AT_QUICKACCESS_SECTION_CODE(static status_t qspi_ip_read(uint32_t seq_idx, uint32_t addr,
                                                          uint8_t *p_rx, uint32_t data_len))
 {
-    qspi_ip_setup(seq_idx, addr, data_len);
+    /* IDATSZ округляем вверх до кратного QSPI_RFDR_WORD_BYTES (4).
+     *
+     * Наблюдение: при data_len, не кратном 4 (напр. 7 — хвост hash-цикла
+     * bootutil), контроллер отдавал ровно один "бит" LUT-инструкции
+     * READ_SDR (operand=4 байта, см. LSEQ_IP_READ) и выставлял IPCMDDONE,
+     * не дотягивая до второго (частичного) слова — IPRXFSTS.FILL зависал
+     * на 1 навсегда. JEDEC/status-регистры (SR_READ_LEN=4) этой границы
+     * никогда не касались — отсюда и не было заметно раньше.
+     *
+     * qspi_read_fifo()/qspi_read_tail() ниже вызываются с ИСХОДНЫМ
+     * data_len — из задренированного (возможно на слово большего) FIFO
+     * извлекается по-прежнему ровно запрошенное число байт, лишний
+     * padding-байт молча дренируется вместе со словом и отбрасывается. */
+    const uint32_t IDATSZ_ALIGNED =
+        (data_len + (QSPI_RFDR_WORD_BYTES - 1U)) & ~(QSPI_RFDR_WORD_BYTES - 1U);
+
+    qspi_ip_setup(seq_idx, addr, IDATSZ_ALIGNED);
     const status_t RESULT = qspi_read_fifo(p_rx, data_len);
     qspi_wait_idle();
     return RESULT;
