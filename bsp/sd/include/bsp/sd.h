@@ -26,9 +26,10 @@ bsp_status_t bsp_sd_init(void);
 bsp_status_t bsp_sd_deinit(void);
 
 /*
- * Проверить физическое наличие карты через регистр USDHC PRSSTAT.
- * Не требует предварительного вызова bsp_sd_init().
- * Включает тактирование USDHC1 на время чтения регистра.
+ * Проверить физическое наличие карты через USDHC PRES_STATE.CINST
+ * (USDHC_GetPresentStatusFlags). Включает тактирование USDHC1 на время
+ * чтения; не требует предварительного вызова bsp_sd_init(). Корректно
+ * пока пин D13 замаплен на USDHC1_CD_B.
  */
 bool bsp_sd_is_inserted(void);
 

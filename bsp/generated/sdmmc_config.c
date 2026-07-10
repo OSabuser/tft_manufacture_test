@@ -49,7 +49,8 @@ static uint32_t get_usdhc1_src_clock_hz(void)
 }
 
 /*
- * Управление питанием карты: GPIO1[19] (SdPwr), active-high.
+ * Управление питанием карты: GPIO1[19] (SdPwr). Регистрируется как
+ * usrParam.pwr — SDK дёргает её из SD_SetCardPower().
  */
 static void sd_power_control(bool enable)
 {
@@ -123,10 +124,20 @@ static void sd_pin_config(uint32_t freq)
     IOMUXC_SetPinConfig(IOMUXC_GPIO_SD_B0_03_USDHC1_DATA1, pad);
     IOMUXC_SetPinConfig(IOMUXC_GPIO_SD_B0_04_USDHC1_DATA2, pad);
     IOMUXC_SetPinConfig(IOMUXC_GPIO_SD_B0_05_USDHC1_DATA3, pad);
-    /* CD_B в GPIO-режиме: подтяжка вверх + hysteresis для стабильного уровня. */
-    IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_12_GPIO2_IO28,
-                        IOMUXC_SW_PAD_CTL_PAD_PKE_MASK | IOMUXC_SW_PAD_CTL_PAD_PUE_MASK |
-                            IOMUXC_SW_PAD_CTL_PAD_HYS_MASK | IOMUXC_SW_PAD_CTL_PAD_PUS(1));
+    /*
+     * CD_B pad config — байт-в-байт как TFT_BOOTLOADER::BOARD_SD_Pin_Config()
+     * (board/sdmmc_config.c: IOMUXC_SetPinConfig(..., 0x10B0U)), не "разумная
+     * по умолчанию" альтернатива. Отличие от прежней версии здесь: PKE=1 но
+     * PUE=0 — это KEEPER, не активная подтяжка (PUS игнорируется в этом
+     * режиме); HYS выключен. Прежняя версия (активная 47к подтяжка вверх +
+     * hysteresis) не была проверена на этой плате и не объяснила устойчивый
+     * ложный "card present" без карты на реальном железе (Фаза 3, симптом 1,
+     * см. DEBUG_LOG_PHASE3_SD.md) — pinmux сам по себе (GPIO2_IO28) это не
+     * лечит, раз симптом воспроизводится и после его отката.
+     */
+    IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_12_GPIO2_IO28, IOMUXC_SW_PAD_CTL_PAD_PKE_MASK |
+                                                       IOMUXC_SW_PAD_CTL_PAD_SPEED(2U) |
+                                                       IOMUXC_SW_PAD_CTL_PAD_DSE(6U));
 }
 
 /* ---------------------------------------------------------------------------
@@ -166,7 +177,30 @@ void BOARD_SD_Config(void *card, sd_cd_t cd, uint32_t host_irq_priority, void *u
 
     /* --- GPIO питания --- */
     sd_power_init();
-    /* CD_B: переводим в GPIO2_IO28 и настраиваем вход */
+    /*
+     * CD_B (GPIO_B1_12 / physical D13) — на этой плате детект работает через
+     * DVA механизма в разные моменты (см. DEBUG_LOG_PHASE3_SD.md, разрешение
+     * от 2026-07-10):
+     *
+     *  1. НАШ гейт bsp_sd_is_inserted() (bsp/sd/src/sd.c) — читает USDHC
+     *     PRES_STATE.CINST (USDHC_GetPresentStatusFlags). Это и есть настоящий
+     *     фикс симптома 1: на пустом слоте BOARD_SD_Config() ещё не вызывался,
+     *     пин остаётся на USDHC1_CD_B (замаплен в BOARD_InitPins()), и PRSSTAT
+     *     отражает реальность корректно — гейт стабильно возвращает false, и
+     *     блокирующий SD_PollingCardInsert() без карты просто не достигается.
+     *  2. Внутренний детект SDK (SD_PollingCardInsert внутри f_mount) — через
+     *     GPIO-callback sd_card_detect_gpio() (GPIO_PinRead(GPIO2, 28)). Он
+     *     достигается только ПОСЛЕ того, как гейт уже подтвердил карту, то
+     *     есть уже после этого IOMUXC_SetPinMux ниже — тогда пин на GPIO2_IO28
+     *     и GPIO-чтение корректно.
+     *
+     * Отсюда remux ниже на GPIO2_IO28: он нужен именно для (2). Пин остаётся
+     * эксклюзивным (одна альт-функция разом), поэтому (1) и (2) физически
+     * работают в разные моменты на разной маршрутизации одного пина — это
+     * подтверждено на железе (все 5 сценариев Фазы 3 пройдены), но хрупко:
+     * см. "латентная хрупкость re-scan" в DEBUG_LOG_PHASE3_SD.md и там же —
+     * рекомендованная консолидация на единый механизм (PRSSTAT везде).
+     */
     IOMUXC_SetPinMux(IOMUXC_GPIO_B1_12_GPIO2_IO28, 0U);
     const gpio_pin_config_t cd_cfg = {
         .direction     = kGPIO_DigitalInput,

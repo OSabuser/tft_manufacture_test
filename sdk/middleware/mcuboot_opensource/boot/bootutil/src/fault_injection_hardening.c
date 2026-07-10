@@ -65,6 +65,7 @@ __attribute__((used))
 __attribute__((noinline))
 void fih_panic_loop(void)
 {
+#if defined(__arm__)
     __asm volatile ("b fih_panic_loop");
     __asm volatile ("b fih_panic_loop");
     __asm volatile ("b fih_panic_loop");
@@ -74,5 +75,17 @@ void fih_panic_loop(void)
     __asm volatile ("b fih_panic_loop");
     __asm volatile ("b fih_panic_loop");
     __asm volatile ("b fih_panic_loop");
+#else
+    /* Host-порт (см. tests/host/mcuboot_port/): "b fih_panic_loop" — валидная
+     * мнемоника только для ARM/Thumb. На x86_64 ассемблер падает ("invalid
+     * instruction mnemonic 'b'") — отсюда падение test-host-release в CI
+     * (x86_64-раннер), которого нет в devcontainer на arm64 (там та же
+     * мнемоника случайно ассемблируется, но не несёт смысла — это не
+     * реальный fault-injection путь, а хостовая сборка). Реальный ARM-таргет
+     * (__arm__ определён) использует оригинальный код выше без изменений. */
+    for (;;)
+    {
+    }
+#endif
 }
 #endif /* FIH_ENABLE_GLOBAL_FAIL */

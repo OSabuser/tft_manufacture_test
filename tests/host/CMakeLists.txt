@@ -244,3 +244,57 @@ target_compile_definitions(
   PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_port/fixtures")
 
 target_compile_options(test_mcuboot_boot_select PRIVATE -w)
+
+# -----------------------------------------------------------------------------
+# update_policy — чистая логика решения install/skip + целевой слот (Фаза 3,
+# SD-путь установки). Нужен только заголовок bootutil/image.h (struct
+# image_version) — без линковки самого bootutil, но fault_injection_hardening.h
+# (включается из image.h) требует mcuboot_config/mcuboot_config.h в include-
+# путях, поэтому переиспользуем MCUBOOT_BOOTUTIL_INCLUDES целиком (уже задан
+# выше через bootutil_sources.cmake).
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_update_policy
+  SOURCES
+  update_policy/test_update_policy.c
+  ${PROJECT_SOURCE_DIR}/firmware/bootloader/src/update_policy.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/bootloader/src
+  ${MCUBOOT_BOOTUTIL_INCLUDES})
+
+# -----------------------------------------------------------------------------
+# slot_version — read-only пик версии слота через bootutil_img_validate()
+# (Фаза 3). Реальный bootutil + TinyCrypt поверх fake_flash_map_backend.c —
+# переиспользует те же фикстуры, что и test_mcuboot_boot_select (Фаза 2).
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_slot_version
+  SOURCES
+  slot_version/test_slot_version.c
+  ${PROJECT_SOURCE_DIR}/firmware/bootloader/src/slot_version.c
+  mcuboot_port/fake_flash_map_backend.c
+  mcuboot_port/host_link_shims.c
+  ${CMAKE_SOURCE_DIR}/firmware/bootloader/mcuboot_port/keys.c
+  ${MCUBOOT_BOOTUTIL_SOURCES}
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/bootloader/src
+  ${MCUBOOT_BOOTUTIL_INCLUDES}
+  ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_port)
+
+target_compile_definitions(
+  test_slot_version PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_port/fixtures")
+
+target_compile_options(test_slot_version PRIVATE -w)
+
+# slot_version.c зовёт FIH_CALL(bootutil_img_validate, ...) напрямую — тот же
+# баг clang 22.1.8 (Homebrew) с генерацией CFI-директив под ASan/UBSan, что
+# уже обойдён для вендоренных файлов bootutil в bootutil_sources.cmake
+# ("invalid CFI advance_loc expression"); здесь тот же обход для нашего
+# файла, единственного, где эта макро-развёртка встречается вне bootutil.
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+  set_source_files_properties(
+    ${PROJECT_SOURCE_DIR}/firmware/bootloader/src/slot_version.c
+    PROPERTIES COMPILE_OPTIONS "-fno-sanitize=address,undefined")
+endif()

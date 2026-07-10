@@ -160,7 +160,9 @@
                 "uart_host_mock_example",
                 "test_ring_buffer",
                 "test_timeout_pattern",
-                "test_mcuboot_boot_select"
+                "test_mcuboot_boot_select",
+                "test_slot_version",
+                "test_update_policy"
             ]
         },
         {
@@ -180,7 +182,9 @@
                 "uart_host_mock_example",
                 "test_ring_buffer",
                 "test_timeout_pattern",
-                "test_mcuboot_boot_select"
+                "test_mcuboot_boot_select",
+                "test_slot_version",
+                "test_update_policy"
             ]
         },
         {

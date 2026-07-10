@@ -5,15 +5,11 @@
 #include "bsp/sd.h"
 
 #include "fsl_sd.h"
-#include "fsl_usdhc.h"    /* USDHC_Reset — аппаратный сброс FIFO/state machine */
-#include "sdmmc_config.h" /* BOARD_SD_Config, BOARD_SDMMC_SD_HOST_BASEADDR */
+#include "fsl_usdhc.h"
+#include "sdmmc_config.h"
 
-#include <string.h> /* memset */
-/* ---------------------------------------------------------------------------
- * Глобальный дескриптор карты — нужен SDK-стеку (передаётся по указателю
- * в BOARD_SD_Config и sd_disk_initialize через g_sd).
- * Объявлен без static — fsl_sd_disk.c ссылается на него как extern sd_card_t g_sd.
- * ------------------------------------------------------------------------- */
+#include <string.h>
+
 extern sd_card_t g_sd;
 
 /* ---------------------------------------------------------------------------
@@ -37,7 +33,8 @@ static void ensure_host_configured(void)
     {
         return;
     }
-    /* cd=NULL, userData=NULL: CD управляется хостом через PRSSTAT */
+    /* cd=NULL, userData=NULL: детект — GPIO-callback внутри BOARD_SD_Config(),
+     * не внешний callback сюда (см. bsp_sd_is_inserted() — тот же механизм). */
     BOARD_SD_Config(&g_sd, NULL, BOARD_SDMMC_SD_HOST_IRQ_PRIORITY, NULL);
     g_s_host_configured = true;
 }
@@ -54,19 +51,8 @@ bsp_status_t bsp_sd_init(void)
     }
 
     /*
-     * Аппаратный сброс USDHC FIFO + command/data state machine ПЕРЕД
-     * повторной инициализацией. Без этого non-blocking host driver SDK
-     * (fsl_sdmmc_host.c) может остаться в состоянии "ожидание завершения
-     * предыдущей транзакции" после SD_HostDeinit() на прошлом прогоне —
-     * физическая транзакция уже умерла вместе с deinit, но внутренний
-     * флаг ожидания interrupt остаётся выставленным, и следующий f_mount()
-     * блокируется навсегда в ожидании события, которое никогда не придёт.
-     *
-     * USDHC_Reset с маской kUSDHC_ResetAll сбрасывает контроллер на
-     * регистровом уровне, не полагаясь на состояние, оставленное
-     * предыдущей сессией. Безопасно вызывать даже при первом запуске —
-     * базовый адрес уже доступен через BOARD_SDMMC_SD_HOST_BASEADDR
-     * (clock на этот момент должен быть включён, см. ниже).
+     * Аппаратный сброс USDHC FIFO + command/data state machine перед
+     * повторной инициализацией.
      */
     CLOCK_EnableClock(kCLOCK_Usdhc1); /* тактирование нужно ДО сброса регистров */
     USDHC_Reset(BOARD_SDMMC_SD_HOST_BASEADDR, kUSDHC_ResetAll, 100U);
@@ -80,12 +66,20 @@ bsp_status_t bsp_sd_init(void)
     (void) memset(&g_sd, 0, sizeof(g_sd));
     g_s_host_configured = false; /* форсируем повторный BOARD_SD_Config ниже */
 
-    ensure_host_configured(); /* только BOARD_SD_Config — заполняет g_sd */
+    ensure_host_configured(); /* BOARD_SD_Config — заполняет g_sd, включая usrParam.pwr */
 
-    /* 
-     * Полный init (host + card) происходит в sd_disk_initialize → SD_Init,
-     * который вызывается из f_mount → disk_initialize.
-     */
+    if (SD_HostInit(&g_sd) != kStatus_Success)
+    {
+        return BSP_ERR_HW;
+    }
+
+    if (SD_PollingCardInsert(&g_sd, kSD_Inserted) != kStatus_Success)
+    {
+        return BSP_ERR_HW;
+    }
+
+    SD_SetCardPower(&g_sd, false);
+    SD_SetCardPower(&g_sd, true);
 
     g_s_initialized = true;
     return BSP_OK;
@@ -101,12 +95,6 @@ bsp_status_t bsp_sd_deinit(void)
     SD_HostDeinit(&g_sd);
     SD_SetCardPower(&g_sd, false);
 
-    /*
-     * Дополнительный аппаратный сброс сразу после deinit — гарантирует,
-     * что FIFO и state machine USDHC не останутся в промежуточном
-     * состоянии независимо от того, что делает (или не делает)
-     * SD_HostDeinit() из SDK на уровне регистров.
-     */
     USDHC_Reset(BOARD_SDMMC_SD_HOST_BASEADDR, kUSDHC_ResetAll, 100U);
 
     g_s_initialized     = false;
@@ -116,6 +104,8 @@ bsp_status_t bsp_sd_deinit(void)
 
 bool bsp_sd_is_inserted(void)
 {
-    return GPIO_PinRead(BOARD_SDMMC_SD_CD_GPIO_BASE, BOARD_SDMMC_SD_CD_GPIO_PIN) ==
-           BOARD_SDMMC_SD_CD_INSERT_LEVEL;
+    CLOCK_EnableClock(kCLOCK_Usdhc1);
+
+    uint32_t ps = USDHC_GetPresentStatusFlags(BOARD_SDMMC_SD_HOST_BASEADDR);
+    return (ps & kUSDHC_CardInsertedFlag) != 0U;
 }

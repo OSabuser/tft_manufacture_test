@@ -36,3 +36,10 @@ void protocol_send_error(const char *p_code)
     (void) snprintf(buf, sizeof(buf), "{\"ok\":false,\"error\":\"%s\"}\n", p_code);
     cli_send(buf);
 }
+
+void protocol_send_status(const char *p_state)
+{
+    char buf[PROTO_BUF_SIZE];
+    (void) snprintf(buf, sizeof(buf), "{\"type\":\"status\",\"state\":\"%s\"}\n", p_state);
+    cli_send(buf);
+}

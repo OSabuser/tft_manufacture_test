@@ -17,12 +17,18 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in"
 # Фаза 2.
 include(${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_port/bootutil_sources.cmake)
 
+# bootloader_fatfs — bare-metal FatFS для чтения TFT_APP.BIN с SD (Фаза 3).
+add_subdirectory(fatfs)
+
 add_executable(
   ${TARGET_NAME}
   src/main.c
   src/cli.c
   src/protocol.c
   src/boot_select.c
+  src/update_policy.c
+  src/slot_version.c
+  src/sd_update.c
   mcuboot_port/flash_map_backend.c
   mcuboot_port/keys.c
   ${MCUBOOT_BOOTUTIL_SOURCES}
@@ -40,11 +46,13 @@ target_compile_definitions(
                          __STARTUP_INITIALIZE_NONCACHEDATA)
 
 # -----------------------------------------------------------------------------
-# Зависимости. bsp_button (downgrade-override) добавится в Фазе 3.
+# Зависимости. bsp_button — downgrade-override (удержание BSP_BUTTON_1).
+# bootloader_fatfs — чтение TFT_APP.BIN с SD (Фаза 3, firmware/bootloader/fatfs/).
 # -----------------------------------------------------------------------------
 target_link_libraries(${TARGET_NAME} PRIVATE bsp_board bsp_led bsp_tick
                                              bsp_usb_cdc bsp_qspi_flash
-                                             bsp_boot_xip_no_dcd)
+                                             bsp_boot_xip_no_dcd bsp_button
+                                             bootloader_fatfs)
 
 # -----------------------------------------------------------------------------
 # Linker script — вариант flexspi_nor с m_text, ограниченным бюджетом

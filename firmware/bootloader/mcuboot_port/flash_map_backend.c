@@ -14,10 +14,9 @@
  *      (main.c, до boot_go()).
  */
 
+#include "bsp/qspi_flash.h"
 #include "flash_map.h"
 #include "sysflash/sysflash.h"
-
-#include "bsp/qspi_flash.h"
 
 #include <string.h>
 
@@ -26,10 +25,16 @@
 /* Slot A/Б — см. docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md. Смещения —
  * flash-relative (от начала чипа), не XIP-адрес. */
 static const struct flash_area g_s_areas[2] = {
-    { .fa_id = 0U, .fa_device_id = FLASH_DEVICE_ID, .pad16 = 0U,
-      .fa_off = 0x00040000UL, .fa_size = 0x00200000UL }, /* Slot A: 0x60040000, 2 МБ */
-    { .fa_id = 1U, .fa_device_id = FLASH_DEVICE_ID, .pad16 = 0U,
-      .fa_off = 0x00240000UL, .fa_size = 0x00200000UL }, /* Slot Б: 0x60240000, 2 МБ */
+    { .fa_id        = 0U,
+      .fa_device_id = FLASH_DEVICE_ID,
+      .pad16        = 0U,
+      .fa_off       = 0x00040000UL,
+      .fa_size      = 0x00200000UL }, /* Slot A: 0x60040000, 2 МБ */
+    { .fa_id        = 1U,
+      .fa_device_id = FLASH_DEVICE_ID,
+      .pad16        = 0U,
+      .fa_off       = 0x00240000UL,
+      .fa_size      = 0x00200000UL }, /* Slot Б: 0x60240000, 2 МБ */
 };
 
 /* ── Постраничная запись (аналог NXP flash_area_write_internal) ─────────
@@ -126,6 +131,28 @@ int flash_area_erase(const struct flash_area *area, uint32_t off, uint32_t len)
         ((len % BSP_QSPI_SECTOR_SIZE) != 0U))
     {
         return -1;
+    }
+
+    /* Fast-path: стирание всей области целиком (off=0, len=fa_size), кратно
+     * 64 КБ — блочное стирание ~5x быстрее посекторного (2 МБ: ~4.8 с против
+     * ~23 с, см. docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md, "Обоснование
+     * размеров"). Ускоряет и sd_update (Фаза 3), и штатный revert-erase
+     * bootutil (boot_select_or_erase() в loader.c) — они уже зовут
+     * flash_area_erase(fap, 0, flash_area_get_size(fap)) без изменений.
+     * Частичное/невыровненное стирание (напр. один трейлер) — прежний
+     * посекторный путь ниже. */
+    if ((off == 0U) && (len == area->fa_size) && ((len % BSP_QSPI_BLOCK_64K_SIZE) == 0U))
+    {
+        uint32_t block_addr = area->fa_off;
+        for (; len > 0U; len -= BSP_QSPI_BLOCK_64K_SIZE)
+        {
+            if (bsp_qspi_erase_block_64k(block_addr) != BSP_OK)
+            {
+                return -1;
+            }
+            block_addr += BSP_QSPI_BLOCK_64K_SIZE;
+        }
+        return 0;
     }
 
     uint32_t addr = area->fa_off + off;
