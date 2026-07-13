@@ -64,7 +64,7 @@ just host::flash-production      # bootloader release + app release (с подт
 flowchart TD
     A["Плата в SDP-режиме\n1FC9:0130"] --> B["sdphost\nзагрузить ivt_flashloader.bin\nв RAM 0x20001C00"]
     B --> C["sdphost jump-address\nFlashloader поднимается\nкак 15A2:0073"]
-    C --> D["configure-memory 0xC0000007\nинициализация FlexSPI NOR"]
+    C --> D["configure-memory 0xC0000207\nинициализация FlexSPI NOR + QE-бит"]
     D --> E["flash-erase-region 0x60000000"]
     E --> F["configure-memory 0xF000000F\nзапись FCB в 0x60000000"]
     F --> G["write-memory 0x60001000\nHAB-образ"]

@@ -67,6 +67,16 @@ def test_detect_cdc_not_found(monkeypatch):
     assert fb.detect_cdc() is False
 
 
+def test_detect_flashloader_found(monkeypatch):
+    monkeypatch.setattr(fb.MbootUSBInterface, "scan", Mock(return_value=[Mock()]))
+    assert fb.detect_flashloader() is True
+
+
+def test_detect_flashloader_not_found(monkeypatch):
+    monkeypatch.setattr(fb.MbootUSBInterface, "scan", Mock(return_value=[]))
+    assert fb.detect_flashloader() is False
+
+
 # ─── wait_for_flashloader ────────────────────────────────────────────────
 
 
@@ -157,17 +167,30 @@ def test_load_flashloader_happy_path(monkeypatch, events):
 def test_configure_flexspi_ok():
     mboot = Mock(configure_memory=Mock(return_value=True))
     fb.configure_flexspi(mboot)
-    mboot.fill_memory.assert_called_once_with(
-        fb.FLEXSPI_OPTION_ADDR, 4, fb.FLEXSPI_OPTION_VALUE
-    )
+    # Р15: option0 (0xC0000207 — включая QE-бит) + явное обнуление option1,
+    # зеркало последовательности NXP MCUBootUtility.
+    assert mboot.fill_memory.call_args_list == [
+        ((fb.FLEXSPI_OPTION_ADDR, 4, fb.FLEXSPI_OPTION_VALUE),),
+        ((fb.FLEXSPI_OPTION_ADDR + 4, 4, 0),),
+    ]
     mboot.configure_memory.assert_called_once_with(
         fb.FLEXSPI_OPTION_ADDR, fb.FLEXSPI_MEMORY_ID
     )
 
 
+def test_flexspi_option_value_sets_winbond_qe():
+    """Р15-регрессия: quad_mode_setting (биты [11:8]) обязан быть 2 —
+    «установить QE-бит в Status Register 2 bit 1» (Winbond W25Q). Со значением
+    0 чипы из партий с заводским QE=0 не работают вообще (20106 на любой
+    операции) — см. модульный docstring, Р15."""
+    assert (fb.FLEXSPI_OPTION_VALUE >> 8) & 0xF == 2
+    assert fb.FLEXSPI_OPTION_VALUE == 0xC0000207
+
+
 def test_configure_flexspi_fail(monkeypatch):
     # Плата на месте → честная ошибка операции, НЕ обрыв (вариант B, Фаза 4a).
-    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=True))
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=True))
+    monkeypatch.setattr(fb.time, "sleep", Mock())  # не ждать реально между retry (Р14)
     mboot = Mock(configure_memory=Mock(return_value=False))
     with pytest.raises(fb.FlashBackendError) as ei:
         fb.configure_flexspi(mboot)
@@ -200,7 +223,8 @@ def test_write_fcb_explicit_ok(tmp_path):
 
 
 def test_write_fcb_explicit_write_fails(monkeypatch, tmp_path):
-    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=True))
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=True))
+    monkeypatch.setattr(fb.time, "sleep", Mock())  # не ждать реально между retry (Р14)
     fcb = tmp_path / "w25q128_fdcb.bin"
     fcb.write_bytes(b"\xab" * 512)
     mboot = Mock(write_memory=Mock(return_value=False))
@@ -321,8 +345,9 @@ def test_flash_write_memory_fails(monkeypatch, events, tmp_path):
     hab_bin.write_bytes(b"\xd1")
 
     monkeypatch.setattr(
-        fb, "detect_sdp", Mock(return_value=True)
+        fb, "detect_flashloader", Mock(return_value=True)
     )  # плата на месте → честная ошибка
+    monkeypatch.setattr(fb.time, "sleep", Mock())  # не ждать реально между retry (Р14)
     monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=Mock()))
     _mock_mcuboot_ctx(monkeypatch, write_memory=False)
 
@@ -367,7 +392,7 @@ def test_erase_chip_happy_path(monkeypatch, events):
 
     fb.erase_chip(progress_cb=_collector(events))
 
-    assert flashloader_iface.device.timeout == fb.ERASE_ALL_TIMEOUT_MS
+    assert flashloader_iface.device.timeout == fb.MCUBOOT_CMD_TIMEOUT_MS
     ctx.flash_erase_all.assert_called_once_with(mem_id=fb.FLEXSPI_MEMORY_ID)
     ctx.reset.assert_called_once_with(reopen=False)
     assert _phases(events) == ["configure", "erase", "reset", "done"]
@@ -375,8 +400,9 @@ def test_erase_chip_happy_path(monkeypatch, events):
 
 def test_erase_chip_fails(monkeypatch, events):
     monkeypatch.setattr(
-        fb, "detect_sdp", Mock(return_value=True)
+        fb, "detect_flashloader", Mock(return_value=True)
     )  # плата на месте → честная ошибка
+    monkeypatch.setattr(fb.time, "sleep", Mock())  # не ждать реально между retry (Р14)
     monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=MagicMock()))
     _mock_mcuboot_ctx(monkeypatch, flash_erase_all=False)
 
@@ -511,25 +537,83 @@ def test_connection_lost_tuple_covers_timeout():
     assert not issubclass(fb.SPSDKTimeoutError, fb.SPSDKConnectionError)
 
 
-def test_sdp_still_present_swallows_check_error(monkeypatch):
-    """§B: ошибка самой проверки detect_sdp() трактуется как «устройства нет»."""
-    monkeypatch.setattr(fb, "detect_sdp", Mock(side_effect=RuntimeError("bus gone")))
-    assert fb._sdp_still_present() is False
+def test_flashloader_still_present_swallows_check_error(monkeypatch):
+    """§B: ошибка самой проверки detect_flashloader() трактуется как «устройства нет»."""
+    monkeypatch.setattr(
+        fb, "detect_flashloader", Mock(side_effect=RuntimeError("bus gone"))
+    )
+    assert fb._flashloader_still_present() is False
 
 
 def test_fail_command_device_gone_is_connection_lost(monkeypatch):
-    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=False))
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=False))
+    mboot = Mock(status_string="NoResponse")
     with pytest.raises(fb.ConnectionLostError) as ei:
-        fb._fail_command("flash_erase_all вернул False")
+        fb._fail_command(mboot, "flash_erase_all вернул False")
     assert ei.value.connection_lost is True
+    assert "NoResponse" in str(ei.value)
 
 
 def test_fail_command_device_present_is_plain_error(monkeypatch):
-    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=True))
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=True))
+    mboot = Mock(status_string="kStatus_FlashCommandFailure")
     with pytest.raises(fb.FlashBackendError) as ei:
-        fb._fail_command("flash_erase_all вернул False")
+        fb._fail_command(mboot, "flash_erase_all вернул False")
     assert not isinstance(ei.value, fb.ConnectionLostError)
     assert ei.value.connection_lost is False
+    assert "kStatus_FlashCommandFailure" in str(ei.value)
+
+
+# ─── Р14: retry маргинального контакта (_run_flash_cmd) ──────────────────
+
+
+def test_run_flash_cmd_succeeds_first_try(monkeypatch):
+    mboot = Mock(status_string="Success")
+    cmd = Mock(return_value=True)
+    fb._run_flash_cmd(mboot, "test_cmd", cmd)
+    cmd.assert_called_once()
+
+
+def test_run_flash_cmd_retries_then_succeeds(monkeypatch):
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=True))
+    monkeypatch.setattr(fb.time, "sleep", Mock())
+    mboot = Mock(status_string="NoResponse")
+    cmd = Mock(side_effect=[False, False, True])
+
+    fb._run_flash_cmd(mboot, "test_cmd", cmd)
+
+    assert cmd.call_count == 3
+
+
+def test_run_flash_cmd_gives_up_after_max_attempts_device_present(monkeypatch):
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=True))
+    sleep_mock = Mock()
+    monkeypatch.setattr(fb.time, "sleep", sleep_mock)
+    mboot = Mock(status_string="kStatus_FlashCommandFailure")
+    cmd = Mock(return_value=False)
+
+    with pytest.raises(fb.FlashBackendError) as ei:
+        fb._run_flash_cmd(mboot, "test_cmd", cmd)
+
+    assert not isinstance(ei.value, fb.ConnectionLostError)
+    assert cmd.call_count == fb.CMD_RETRY_ATTEMPTS
+    assert sleep_mock.call_count == fb.CMD_RETRY_ATTEMPTS - 1
+    assert f"после {fb.CMD_RETRY_ATTEMPTS} попыт" in str(ei.value)
+
+
+def test_run_flash_cmd_bails_immediately_if_device_gone(monkeypatch):
+    """Обрыв связи между попытками — retry бессмыслен, не тратим время."""
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=False))
+    sleep_mock = Mock()
+    monkeypatch.setattr(fb.time, "sleep", sleep_mock)
+    mboot = Mock(status_string="NoResponse")
+    cmd = Mock(return_value=False)
+
+    with pytest.raises(fb.ConnectionLostError):
+        fb._run_flash_cmd(mboot, "test_cmd", cmd)
+
+    cmd.assert_called_once()
+    sleep_mock.assert_not_called()
 
 
 def test_load_flashloader_timeout_is_connection_lost(monkeypatch):
@@ -581,19 +665,79 @@ def test_flash_write_false_device_gone_is_connection_lost(
 
     monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=Mock()))
     _mock_mcuboot_ctx(monkeypatch, write_memory=False)
-    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=False))
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=False))
 
     with pytest.raises(fb.ConnectionLostError):
         fb.flash(hab_bin, progress_cb=_collector(events))
 
 
 def test_erase_chip_false_device_gone_is_connection_lost(monkeypatch, events):
-    """Гейт 4a #2a: flash_erase_all=False + detect_sdp=False → ConnectionLostError."""
+    """Гейт 4a #2a: flash_erase_all=False + detect_flashloader=False → ConnectionLostError."""
     monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=MagicMock()))
     _mock_mcuboot_ctx(monkeypatch, flash_erase_all=False)
-    monkeypatch.setattr(fb, "detect_sdp", Mock(return_value=False))
+    monkeypatch.setattr(fb, "detect_flashloader", Mock(return_value=False))
 
     with pytest.raises(fb.ConnectionLostError) as ei:
         fb.erase_chip(progress_cb=_collector(events))
     assert ei.value.connection_lost is True
     assert "done" not in _phases(events)
+
+
+# ─── Р13: единый таймаут ДО первой Flashloader-команды (не только erase) ──
+
+
+def test_flash_sets_timeout_before_first_command(monkeypatch, events, tmp_path):
+    """Полевой баг: flash_erase_region молча падал по spsdk-дефолту 2000мс,
+    т.к. flash() никогда не поднимал iface.device.timeout. Таймаут должен
+    быть выставлен ДО configure_flexspi(), а не только перед erase."""
+    hab_bin = tmp_path / "fw_hab.bin"
+    hab_bin.write_bytes(b"\xd1" + b"\x00" * 15)
+
+    flashloader_iface = Mock()
+    flashloader_iface.device.timeout = 2000  # spsdk-дефолт, UsbDevice.__init__
+    monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=flashloader_iface))
+    ctx = _mock_mcuboot_ctx(monkeypatch)
+
+    seen_timeouts = []
+    ctx.configure_memory.side_effect = (
+        lambda *a, **k: seen_timeouts.append(flashloader_iface.device.timeout) or True
+    )
+
+    fb.flash(hab_bin, progress_cb=_collector(events))
+
+    assert seen_timeouts, "configure_memory ни разу не вызван — тест не проверяет ничего"
+    assert all(t == fb.MCUBOOT_CMD_TIMEOUT_MS for t in seen_timeouts)
+
+
+def test_erase_chip_sets_timeout_before_configure(monkeypatch, events):
+    """Тот же баг на шаге раньше: до фикса timeout поднимался ПОСЛЕ
+    configure_flexspi(), значит сам configure всё ещё шёл на 2000мс."""
+    flashloader_iface = MagicMock()
+    flashloader_iface.device.timeout = 2000
+    monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=flashloader_iface))
+    ctx = _mock_mcuboot_ctx(monkeypatch)
+
+    seen_timeouts = []
+    ctx.configure_memory.side_effect = (
+        lambda *a, **k: seen_timeouts.append(flashloader_iface.device.timeout) or True
+    )
+
+    fb.erase_chip(progress_cb=_collector(events))
+
+    assert seen_timeouts, "configure_memory ни разу не вызван — тест не проверяет ничего"
+    assert all(t == fb.MCUBOOT_CMD_TIMEOUT_MS for t in seen_timeouts)
+
+
+# ─── Р13, ОПРОВЕРГНУТАЯ гипотеза — commit FCB (0xF000000F) ДО erase ───────
+#
+# Была здесь как test_flash_commits_fcb_before_erase /
+# test_erase_chip_commits_fcb_before_erase, пинила write_fcb_auto(mboot)
+# сразу после configure_flexspi(mboot), до erase (по аналогии с
+# boot_utility_log.txt — NXP MCUBootUtility на той же плате). Проверено на
+# живом железе (2026-07-13) и ОПРОВЕРГНУТО: configure-memory(0xF000000F)
+# физически пишет FCB во flash немедленно, а не просто «донастраивает
+# контроллер» — на НЕ стёртой области (то есть на любой ранее прошитой
+# плате) запись сразу проваливается со status 10203 «Memory Cumulative
+# Write». Сломало ранее рабочую плату. Правка отменена — см. docstring
+# модуля flash_backend.py, раздел «Р13, ОПРОВЕРГНУТАЯ гипотеза», не
+# повторять без подтверждения по официальной документации NXP.

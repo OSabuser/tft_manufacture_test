@@ -181,7 +181,7 @@ BootROM в режиме SDP умеет только писать в RAM и пр�
          │
     Flashloader запущен
          │  blhost -u 0x15A2,0x0073
-         ├─ fill-memory 0x2000 4 0xC0000007  ← option word для FlexSPI NOR
+         ├─ fill-memory 0x2000 4 0xC0000207  ← option word для FlexSPI NOR (+QE-бит)
          ├─ configure-memory 9 0x2000        ← Flashloader пишет FCB в Flash
          ├─ flash-erase-region 0x60000000 …
          ├─ write-memory 0x60002000 firmware_hab.bin  ← HAB образ

@@ -21,6 +21,110 @@ Zero Textual/asyncio импортов — модуль полностью син
 закрывается в finally на любом исходе (защита от утечки HID-хэндла в
 редком окне «wait_for_flashloader вернул интерфейс → USB выдернут →
 McuBoot.__enter__ упал»).
+
+Р13 (полевой баг, ~50/500 плат — flash_erase_region/flash_erase_all
+возвращали False с «устройство пропало с шины», хотя плата оставалась на
+месте и стиралась штатно через NXP MCUBootUtility): два независимых бага.
+(1) _fail_command() проверял присутствие BootROM SDP, а к моменту вызова
+плата уже спрыгнула на Flashloader (см. load_flashloader()) — проверка
+гарантированно возвращала «нет» независимо от реального состояния платы,
+любой False от Flashloader-команды маскировался под обрыв USB. (2)
+flash()/flash_erase_region и configure_flexspi() (в обоих путях) работали
+на spsdk-дефолтном HID read-таймауте 2000мс (UsbDevice.__init__) — erase_chip()
+поднимал таймаут только перед flash_erase_all, уже ПОСЛЕ configure_flexspi().
+McuBoot(iface) создаётся с cmd_exception=False (дефолт) — таймаут не бросает
+исключение, а тихо оседает в status_code=NO_RESPONSE, поэтому команда просто
+возвращает False без трассировки. На части плат (полевые логи: ~2с до отказа
+на flash_erase_region) реальный ответ не укладывался в 2с. Фикс: единый
+MCUBOOT_CMD_TIMEOUT_MS выставляется сразу после load_flashloader(), до первой
+команды сессии; _fail_command() проверяет detect_flashloader() и добавляет
+mboot.status_string в текст ошибки — отличить в логе «host не дождался
+ответа» (NoResponse) от настоящего кода ошибки устройства.
+
+Р13, продолжение (после фикса выше status_string на живом железе показал
+НАСТОЯЩУЮ причину — не таймаут, не обрыв связи): flash_erase_region/
+flash_erase_all возвращают status 20106 «FlexSPINOR: Command Failure» —
+дженерик-ошибка исполнения команды контроллером FlexSPI (НЕ 20101/20102
+EraseSectorFail/EraseAllFail — до собственно попытки стереть дело не
+доходит), причина пока НЕ найдена (см. ниже — одна из гипотез уже
+опровергнута на железе).
+
+Р13, ОПРОВЕРГНУТАЯ гипотеза (не повторять без новых данных): сверка с
+boot_utility_log.txt (NXP MCUBootUtility, erase на той же плате проходит
+штатно) показала порядок configure-memory(0xC0000007) [probe] →
+configure-memory(0xF000000F) [commit FCB] → flash-erase-all — у нас
+write_fcb_auto() (0xF000000F) либо не вызывался перед erase вообще
+(erase_chip), либо вызывался только после (flash). Гипотеза была: commit
+нужен ДО erase, чтобы контроллер полностью сконфигурировался под
+erase-команды, а физически записанные им байты «всё равно сотрутся»
+следующей erase-командой. **Это ПРОВЕРЕНО и ОПРОВЕРГНУТО на железе**:
+добавление write_fcb_auto(mboot) сразу после configure_flexspi(mboot), до
+erase, в обоих путях, дало НОВУЮ ошибку — status 10203 «Memory Cumulative
+Write» (см. error_codes.py: соседний код IAP_CUMULATIVE_WRITE =
+«Flash Memory Region To Be Programmed Is Not Empty») — И СЛОМАЛО ранее
+рабочую плату. Значит configure-memory(0xF000000F) — это не «донастройка
+контроллера», а НЕМЕДЛЕННАЯ физическая запись FCB во flash прямо в момент
+вызова; запись в НЕ стёртую область (то есть в любую ранее прошитую плату)
+эту запись сразу проваливает — она не успевает дождаться erase. Правка
+отменена (revert). Почему в логе NXP это работало — неизвестно: либо их
+0xF000000F-эквивалент в этой конкретной последовательности целится в уже
+стёртую область по другой причине, либо это вообще не то, чем кажется на
+первый взгляд (лог обрывается ровно на flash-erase-all, что было ДО или
+ПОСЛЕ него в их полном сценарии — не зафиксировано). Не полагаться на
+сопоставление логов двух разных инструментов без подтверждения по
+официальной документации NXP (AN12107) или доступа к ROM-исходникам.
+
+Р14 (переоценка после доп. вопросов пользователю): AN12107 не описывает
+FCB/configure-memory вообще (проверено — pdftotext + grep по всему файлу,
+0 совпадений). Форум NXP (RT1064) прямо говорит: configure-memory(0xC0000007)
+«используется только для установления соединения» (речь идёт про скорость
+FlexSPI), а не для настройки конкретного чипа — версия про «нужен pre-existing
+корректный FCB на чипе» отклонена САМИМ пользователем: платы приходят с
+завода с гарантированно пустым внешним flash, поэтому у «рабочих» 450 плат
+просто не может быть валидного FCB к моменту первого касания. Уточняющие
+вопросы дали решающий факт: на ~50 проблемных платах **обычная** прошивка
+firmware_test (не только erase/«Другое») тоже падает, и чип/ревизия платы —
+**та же**, что у 450 рабочих (не другая партия/поставщик). Значит проблема не
+в логике конфигурации FlexSPI и не в конкретном чипе — она проявляется на
+случайном подмножестве физически идентичных плат независимо от того, какая
+именно flash-команда выполняется первой. Это типичная картина маргинального
+электрического контакта (пайка/разводка/питание конкретного экземпляра),
+воспроизводимого на erase (самая «тяжёлая» операция по току/длительности —
+NOR erase требует внутренней подкачки напряжения), а не логической ошибки
+хоста. Софт не может физически починить плохую пайку, но может дать шанс
+операции пройти со второй/третьей попытки, если условие временное. Фикс:
+retry (см. _run_flash_cmd) вокруг каждой команды, реально трогающей flash-чип
+(configure_memory/erase/write) — если контакт временно «плавает», повторная
+попытка через паузу может пройти там, где первая не удалась; если ошибка
+детерминированная (чип действительно неисправен), retry её не замаскирует —
+просто несколько раз повторит тот же честный отказ перед тем, как сдаться.
+[Р15: retry не помог — все 3 попытки падали с тем же 20106. Гипотеза
+«маргинальный контакт» опровергнута доп. фактами: MCUBootUtility на тех же
+платах работает 10/10, а после ОДНОГО её касания плата НАВСЕГДА начинает
+работать и в нашей утилите. Это не электрика — это энергонезависимое
+состояние чипа. Retry оставлен как безвредная страховка.]
+
+Р15 — НАЙДЕННАЯ ПРИЧИНА (misread лога в Р13): в логах MCUBootUtility
+option word — десятичное 3221225991 = 0xC0000207, а НЕ 0xC0000007, как было
+ошибочно прочитано при сверке в Р13 (и как стоило у нас с Фазы 0, унаследовано
+от flash_usb.py). Разница — поле quad_mode_setting (биты [11:8]): 2 вместо 0.
+quad_mode_setting=2 велит flashloader'у установить QE-бит (Quad Enable,
+Status Register 2 bit 1 — формат Winbond) на самом чипе при configure-memory.
+QE у Winbond ЭНЕРГОНЕЗАВИСИМЫЙ, и часть партий W25Q128 приходит с завода с
+QE=0 (Winbond выпускает варианты с заводским QE=0 и QE=1 под почти одинаковой
+маркировкой). Это объясняет ВСЁ наблюдённое детерминированно:
+  - на чипах с QE=0 наш 0xC0000007 не включал quad-режим, LUT настроен на
+    quad-команды → чип не отвечает → 20106 Command Failure на ЛЮБОЙ операции
+    (erase/обычная прошивка/«Другое») — ровно как в поле (~50/500 плат);
+  - MCUBootUtility (выбор W25Q в External Memory → 0xC0000207) работает
+    10/10 и, единожды установив QE=1, НАВСЕГДА «чинит» плату и для нас;
+  - на 450 «рабочих» платах — чипы из партий с заводским QE=1;
+  - форумный лог RT1064 с 0xC0000007 не противоречит: MCUBootUtility
+    подставляет option word по выбранному чипу, там чип другой.
+Для чипов с уже установленным QE повторная установка — no-op (это статус-
+регистр, не массив — Cumulative Write здесь не существует). Урок: десятичные
+значения в чужих логах пересчитывать инструментом, не «на глаз» — misread
+одного слова стоил трёх раундов на живом железе, включая один регресс.
 """
 
 from __future__ import annotations
@@ -109,12 +213,35 @@ HAB_OFFSET = 0x1000
 FLASHLOADER_LOAD_ADDR = 0x20001C00
 
 FLEXSPI_OPTION_ADDR = 0x2000
-FLEXSPI_OPTION_VALUE = 0xC0000007
+# Р15: 0xC0000207, НЕ 0xC0000007. Поле quad_mode_setting (биты [11:8]) = 2 →
+# flashloader при configure-memory устанавливает QE-бит (Quad Enable, Status
+# Register 2 bit 1 — формат Winbond W25Q) на самом flash-чипе. QE у Winbond
+# энергонезависимый; часть партий W25Q128 приходит с завода с QE=0 — на них
+# quad_mode_setting=0 («QE не трогать») оставлял чип в SPI-режиме при
+# LUT-таблицах, настроенных на quad-команды → ЛЮБАЯ операция (erase/write)
+# падала с 20106 FlexSPINOR Command Failure. Значение снято с живого лога
+# NXP MCUBootUtility (fill-memory ... 3221225991 = 0xC0000207 при выбранной
+# памяти W25Q). Для чипов с уже установленным QE повторная установка — no-op.
+FLEXSPI_OPTION_VALUE = 0xC0000207
 FLEXSPI_FCB_VALUE = 0xF000000F  # tag=0xF → Write FCB command (auto-config)
 FLEXSPI_MEMORY_ID = 9
 
-ERASE_ALL_TIMEOUT_MS = 200_000  # эквивалент blhost -t 200000 (см. Фазу 0, ⚠В2)
+# Единый read/write-таймаут HID-команд на всю Flashloader-сессию (configure +
+# erase + write) — см. Р13. spsdk-дефолт 2000мс (UsbDevice.__init__) слишком
+# короткий для части плат в поле; значение — эквивалент blhost -t 200000.
+MCUBOOT_CMD_TIMEOUT_MS = 200_000
 FLASHLOADER_WAIT_TIMEOUT_S = 10.0
+
+# Р14/Р15 — повторные попытки flash-команды. Изначально добавлены под
+# гипотезу «маргинальный контакт», которая позже опроверглась (настоящая
+# причина — QE-бит, Р15). Оставлены как безвредная defensive-страховка от
+# РЕАЛЬНО транзиентных сбоев USB/HID: happy-path не затрагивают (первая же
+# успешная попытка возвращает управление), детерминированную ошибку не
+# маскируют (после N попыток — тот же честный _fail_command со status_string).
+# Компромисс: на действительно битой плате erase теперь может тянуться до
+# N×~54с перед отказом — приемлемо, такие платы редки. См. модульный docstring.
+CMD_RETRY_ATTEMPTS = 3
+CMD_RETRY_DELAY_S = 0.5
 
 _HAB_OPTIONS_TEMPLATE = [
     "options:",
@@ -198,8 +325,20 @@ def detect_cdc() -> bool:
     return resolve_serial_port(UsbId(_CDC_VID, _CDC_PID)) is not None
 
 
-def _sdp_still_present() -> bool:
+def detect_flashloader() -> bool:
+    """True если виден Flashloader (см. _FLASHLOADER_DEVICE_ID)."""
+    return len(MbootUSBInterface.scan(device_id=_FLASHLOADER_DEVICE_ID)) > 0
+
+
+def _flashloader_still_present() -> bool:
     """Быстрая проверка «плата ещё на шине» для error-путей (вариант B, Р10).
+
+    Проверяет присутствие Flashloader, НЕ BootROM SDP (Р13, исторический
+    баг): все вызовы _fail_command() приходят из команд McuBoot
+    (configure_flexspi/write_fcb_*/flash_erase_*/write_memory), которые
+    в принципе выполняются только после того, как плата спрыгнула с SDP на
+    Flashloader внутри load_flashloader() — проверка по SDP тут возвращала
+    бы «нет» ВСЕГДА, независимо от реального состояния платы.
 
     Любая ошибка самой проверки трактуется как «устройства нет»: проверка
     выполняется только ПОСЛЕ уже случившегося сбоя команды, шина в этот
@@ -207,24 +346,59 @@ def _sdp_still_present() -> bool:
     «плату выдернули» (согласовано, RELEASE_ROADMAP.md §B).
     """
     try:
-        return detect_sdp()
+        return detect_flashloader()
     except Exception:  # noqa: BLE001 — см. docstring: любой сбой ⇒ считаем обрывом
         return False
 
 
-def _fail_command(message: str) -> None:
+def _fail_command(mboot: McuBoot, message: str) -> None:
     """Живая команда spsdk вернула False — переклассификация по варианту B (Р10).
 
     Если устройство пропало с шины → обрыв (ConnectionLostError), иначе →
-    честная ошибка операции (FlashBackendError с прежним текстом). detect_sdp()
+    честная ошибка операции (FlashBackendError). detect_flashloader()
     выполняется ТОЛЬКО здесь, в error-пути; happy path не затрагивается.
+    mboot.status_string добавляется к тексту ошибки во всех случаях (Р13) —
+    настоящий код статуса spsdk (например «NoResponse» при хостовом
+    read-таймауте) отличим от кода ошибки, реально сообщённого устройством.
 
     :raises ConnectionLostError: устройство исчезло с шины после сбоя команды.
     :raises FlashBackendError: устройство на месте — ошибка самой операции.
     """
-    if not _sdp_still_present():
-        raise ConnectionLostError(f"{message} (устройство пропало с шины)")
-    raise FlashBackendError(message)
+    full_message = f"{message} (status: {mboot.status_string})"
+    if not _flashloader_still_present():
+        raise ConnectionLostError(f"{full_message} (устройство пропало с шины)")
+    raise FlashBackendError(full_message)
+
+
+def _run_flash_cmd(mboot: McuBoot, description: str, cmd: Callable[[], bool]) -> None:
+    """Выполняет одну flash-команду (configure_memory/erase/write) с повторами.
+
+    Р14: часть плат в поле отдаёт `status FlexSPINOR Command Failure` на
+    случайной операции с flash-чипом — похоже на маргинальный электрический
+    контакт (пайка/питание конкретного экземпляра), а не на логическую
+    ошибку хоста. Если условие временное, повтор через паузу может пройти
+    там, где первая попытка не удалась; если ошибка детерминированная
+    (плата действительно неисправна), повтор её не замаскирует — после
+    исчерпания попыток ошибка всё равно уходит в _fail_command() с честным
+    текстом. Между попытками проверяется присутствие Flashloader — при
+    реальном обрыве связи retry не имеет смысла, сразу же уходим в
+    _fail_command() (см. ConnectionLostError).
+
+    :raises ConnectionLostError: устройство исчезло с шины между попытками.
+    :raises FlashBackendError: команда не удалась во всех попытках,
+        устройство на месте.
+    """
+    for attempt in range(1, CMD_RETRY_ATTEMPTS + 1):
+        if cmd():
+            return
+        if attempt < CMD_RETRY_ATTEMPTS and _flashloader_still_present():
+            logger.warning(
+                f"{description}: попытка {attempt}/{CMD_RETRY_ATTEMPTS} не удалась "
+                f"(status: {mboot.status_string}), повтор через {CMD_RETRY_DELAY_S}с"
+            )
+            time.sleep(CMD_RETRY_DELAY_S)
+            continue
+        _fail_command(mboot, f"{description} вернул False после {attempt} попыт(ок)")
 
 
 def _emit(
@@ -318,11 +492,28 @@ def load_flashloader(
 
 
 def configure_flexspi(mboot: McuBoot) -> None:
-    """Инициализирует FlexSPI NOR контроллер (см. flash_usb.py::configure_flexspi)."""
+    """Инициализирует FlexSPI NOR контроллер + включает QE-бит чипа (Р15).
+
+    Option word 0xC0000207 (см. комментарий у константы) — flashloader
+    пробует чип по SFDP и, что критично, устанавливает энергонезависимый
+    QE-бит на чипах, пришедших с завода с QE=0. Второе option-слово
+    обнуляется явно — зеркало последовательности NXP MCUBootUtility
+    (при optionSize=0 оно не должно читаться, но страхуемся от мусора в RAM).
+
+    ВАЖНО для «Другое»: flash() зовёт configure_flexspi() ВСЕГДА, в т.ч. для
+    custom-бинарей с явным FCB. quad_mode_setting=2 = «QE через Status
+    Register 2 bit 1, команда 0x31» — это метод Winbond. Все текущие
+    FcbVariant — Winbond W25Q, для них корректно. Если в список памяти когда-
+    нибудь добавят не-Winbond чип (другой метод QE — SR1 bit 6, отдельный
+    регистр и т.п.), этот option word под него нужно будет пересмотреть.
+    """
     mboot.fill_memory(FLEXSPI_OPTION_ADDR, 4, FLEXSPI_OPTION_VALUE)
-    ok = mboot.configure_memory(FLEXSPI_OPTION_ADDR, FLEXSPI_MEMORY_ID)
-    if not ok:
-        _fail_command("configure_memory (FlexSPI init) вернул False")
+    mboot.fill_memory(FLEXSPI_OPTION_ADDR + 4, 4, 0)
+    _run_flash_cmd(
+        mboot,
+        "configure_memory (FlexSPI init)",
+        lambda: mboot.configure_memory(FLEXSPI_OPTION_ADDR, FLEXSPI_MEMORY_ID),
+    )
 
 
 def write_fcb_auto(mboot: McuBoot) -> None:
@@ -331,9 +522,11 @@ def write_fcb_auto(mboot: McuBoot) -> None:
     Надёжно проверен только для W25Q128 — см. docstring оригинала.
     """
     mboot.fill_memory(FLEXSPI_OPTION_ADDR, 4, FLEXSPI_FCB_VALUE)
-    ok = mboot.configure_memory(FLEXSPI_OPTION_ADDR, FLEXSPI_MEMORY_ID)
-    if not ok:
-        _fail_command("configure_memory (FCB write) вернул False")
+    _run_flash_cmd(
+        mboot,
+        "configure_memory (FCB write)",
+        lambda: mboot.configure_memory(FLEXSPI_OPTION_ADDR, FLEXSPI_MEMORY_ID),
+    )
 
 
 def write_fcb_explicit(mboot: McuBoot, fcb_path: Path) -> None:
@@ -345,9 +538,11 @@ def write_fcb_explicit(mboot: McuBoot, fcb_path: Path) -> None:
     if not fcb_path.exists():
         raise FlashBackendError(f"FCB-файл не найден: {fcb_path}")
     data = fcb_path.read_bytes()
-    ok = mboot.write_memory(FLASH_BASE, data, mem_id=0)
-    if not ok:
-        _fail_command(f"write_memory(FCB {fcb_path.name}) вернул False")
+    _run_flash_cmd(
+        mboot,
+        f"write_memory(FCB {fcb_path.name})",
+        lambda: mboot.write_memory(FLASH_BASE, data, mem_id=0),
+    )
 
 
 # ─── Прошивка / RAM-load / erase ────────────────────────────────────────────
@@ -391,6 +586,7 @@ def flash(
         return
 
     iface = load_flashloader(progress_cb)
+    iface.device.timeout = MCUBOOT_CMD_TIMEOUT_MS  # см. Р13 — до первой команды
 
     write_addr = FLASH_BASE + HAB_OFFSET
     hab_size = hab_bin.stat().st_size
@@ -410,9 +606,11 @@ def flash(
                 0,
                 f"Стирание 0x{FLASH_BASE:08X} + {erase_size} байт",
             )
-            ok = mboot.flash_erase_region(FLASH_BASE, erase_size, mem_id=0)
-            if not ok:
-                _fail_command("flash_erase_region вернул False")
+            _run_flash_cmd(
+                mboot,
+                "flash_erase_region",
+                lambda: mboot.flash_erase_region(FLASH_BASE, erase_size, mem_id=0),
+            )
 
             _emit(progress_cb, "fcb", 0, "Запись FCB")
             if fcb_path is not None:
@@ -427,11 +625,13 @@ def flash(
                 _emit(progress_cb, "write", percent, f"{current}/{total} байт")
 
             data = hab_bin.read_bytes()
-            ok = mboot.write_memory(
-                write_addr, data, mem_id=0, progress_callback=_on_progress
+            _run_flash_cmd(
+                mboot,
+                "write_memory (HAB-образ)",
+                lambda: mboot.write_memory(
+                    write_addr, data, mem_id=0, progress_callback=_on_progress
+                ),
             )
-            if not ok:
-                _fail_command("write_memory (HAB-образ) вернул False")
 
             _emit(progress_cb, "reset", 0, "Reset")
             mboot.reset(reopen=False)
@@ -452,6 +652,7 @@ def erase_chip(progress_cb: Optional[ProgressCallback] = None) -> None:
     :raises ConnectionLostError: обрыв USB посреди chip erase.
     """
     iface = load_flashloader(progress_cb)
+    iface.device.timeout = MCUBOOT_CMD_TIMEOUT_MS  # см. Р13 — уже для configure_flexspi
 
     try:
         with McuBoot(iface) as mboot:
@@ -459,10 +660,11 @@ def erase_chip(progress_cb: Optional[ProgressCallback] = None) -> None:
             configure_flexspi(mboot)
 
             _emit(progress_cb, "erase", 0, "Полная очистка Flash (~30с)")
-            iface.device.timeout = ERASE_ALL_TIMEOUT_MS  # см. Фазу 0, ⚠В2
-            ok = mboot.flash_erase_all(mem_id=FLEXSPI_MEMORY_ID)
-            if not ok:
-                _fail_command("flash_erase_all вернул False")
+            _run_flash_cmd(
+                mboot,
+                "flash_erase_all",
+                lambda: mboot.flash_erase_all(mem_id=FLEXSPI_MEMORY_ID),
+            )
 
             _emit(progress_cb, "reset", 0, "Reset")
             mboot.reset(reopen=False)

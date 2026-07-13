@@ -62,11 +62,19 @@ SDP_USB = _usb("BOOTROM_VID", "1fc9", "BOOTROM_PID", "0130")
 BLHOST_USB = _usb("FLASHLOADER_VID", "15a2", "FLASHLOADER_PID", "0073")
 
 # ─── Аппаратные константы ─────────────────────────────────────────────────────
-# FlexSPI NOR config option word: 0xC0000007
+# FlexSPI NOR config option word: 0xC0000207
 #   bits[31:28]=0xC — tag (QuadSPI NOR)
-#   bits[3:0]=0x7   — option size
+#   bits[11:8]=0x2  — quad_mode_setting: установить QE-бит (Status Register 2
+#                     bit 1, формат Winbond W25Q). КРИТИЧНО: часть партий
+#                     W25Q128 приходит с завода с QE=0 — без этого поля (было
+#                     0xC0000007) любая flash-операция на них падает с
+#                     FlexSPINOR Command Failure. QE энергонезависимый; для
+#                     чипов с уже установленным QE — no-op. Значение сверено
+#                     с NXP MCUBootUtility (память W25Q). См. service_tui
+#                     flash_backend.py, docstring Р15.
+#   bits[3:0]=0x7   — maxFreq
 FLEXSPI_OPTION_ADDR = "0x2000"
-FLEXSPI_OPTION_VALUE = "0xC0000007"
+FLEXSPI_OPTION_VALUE = "0xC0000207"
 FLEXSPI_MEMORY_ID = "9"  # FlexSPI NOR memory interface ID
 
 # Option word для записи FCB: tag=0xF → Write FCB command
