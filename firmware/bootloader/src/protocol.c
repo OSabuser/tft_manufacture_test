@@ -5,8 +5,10 @@
 
 #include "protocol.h"
 
+#include "bsp/boot_state.h"
 #include "bsp/wdog.h"
 #include "cli.h"
+#include "recovery.h"
 
 #include <stdio.h>
 
@@ -49,9 +51,12 @@ void protocol_send_wdog_status(void)
 {
     char buf[PROTO_BUF_SIZE];
     (void) snprintf(buf, sizeof(buf),
-                    "{\"type\":\"wdog\",\"armed\":%s,\"timeout_s\":%u,\"recovered\":%s}\n",
+                    "{\"type\":\"wdog\",\"armed\":%s,\"timeout_s\":%u,\"recovered\":%s,"
+                    "\"reset_count\":%u,\"threshold\":%u}\n",
                     bsp_wdog_is_armed() ? "true" : "false",
                     (unsigned) bsp_wdog_timeout_s(),
-                    bsp_wdog_caused_last_reset() ? "true" : "false");
+                    bsp_wdog_caused_last_reset() ? "true" : "false",
+                    (unsigned) bsp_boot_attempt_count(),
+                    (unsigned) RECOVERY_DEFAULT_THRESHOLD);
     cli_send(buf);
 }

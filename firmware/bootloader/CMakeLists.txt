@@ -29,6 +29,7 @@ add_executable(
   src/update_policy.c
   src/slot_version.c
   src/sd_update.c
+  src/recovery.c
   mcuboot_port/flash_map_backend.c
   mcuboot_port/keys.c
   ${MCUBOOT_BOOTUTIL_SOURCES}
@@ -52,7 +53,8 @@ target_compile_definitions(
 target_link_libraries(${TARGET_NAME} PRIVATE bsp_board bsp_led bsp_tick
                                              bsp_usb_cdc bsp_qspi_flash
                                              bsp_boot_xip_no_dcd bsp_button
-                                             bsp_wdog bootloader_fatfs)
+                                             bsp_wdog bsp_boot_state
+                                             bootloader_fatfs)
 
 # -----------------------------------------------------------------------------
 # Linker script — вариант flexspi_nor с m_text, ограниченным бюджетом

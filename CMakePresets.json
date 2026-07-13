@@ -162,7 +162,8 @@
                 "test_timeout_pattern",
                 "test_mcuboot_boot_select",
                 "test_slot_version",
-                "test_update_policy"
+                "test_update_policy",
+                "test_recovery"
             ]
         },
         {
@@ -184,7 +185,8 @@
                 "test_timeout_pattern",
                 "test_mcuboot_boot_select",
                 "test_slot_version",
-                "test_update_policy"
+                "test_update_policy",
+                "test_recovery"
             ]
         },
         {

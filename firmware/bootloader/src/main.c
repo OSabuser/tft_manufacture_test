@@ -10,6 +10,14 @@
  * ожидания, где SD периодически пере-сканируется (см. sd_update.h о том,
  * почему boot_go() нельзя звать без новой попытки установки между вызовами).
  *
+ * Фаза 6 (recovery, см. recovery.h): каждая попытка обёрнута в attempt_boot()
+ * — после SD-скана, но перед прыжком, recovery_decide() решает, обычная ли
+ * это загрузка, нужно ли стереть подозреваемый в зависании слот (счётчик
+ * bsp_boot_attempt_count() дошёл до порога, но есть валидный фолбэк), или
+ * входить в recovery (порог без фолбэка, или удержан BSP_BUTTON_2). Класс A
+ * таксономии (незавершённая установка) закрывается штатным revert MCUboot
+ * без участия этой логики.
+ *
  * USB CDC поднимается ДО SD-логики (не дожидаясь подключения хоста —
  * bsp_usb_cdc_write() не блокируется без хоста, см. bsp/usb_cdc/src/usb_cdc.c)
  * — чтобы статусы ("installing" и т.п.) были видны, если технолог уже
@@ -18,15 +26,16 @@
  * Последовательность старта:
  *   1. board_hw_init()          — тактирование, MPU, кэш, пины
  *   2. bsp_wdog_init()          — аппаратный watchdog как можно раньше (см. ниже)
- *   3. bsp_led_init()           — оба LED выключены
- *   4. bsp_tick_init()          — SysTick 1 мс
- *   5. bsp_button_init()        — для проверки удержания BSP_BUTTON_1
- *   6. bsp_qspi_init()          — доступ к Slot A/Б
- *   7. bsp_usb_cdc_init()       — не блокирует, см. выше
- *   8. sd_update_check()        — no-op быстро, если SD не вставлена
- *   9. boot_select_and_jump()   — при успехе не возвращается
+ *   3. bsp_boot_state_init()    — POR-детект + счётчик попыток (Фаза 6)
+ *   4. bsp_led_init()           — оба LED выключены
+ *   5. bsp_tick_init()          — SysTick 1 мс
+ *   6. bsp_button_init()        — для проверки удержания BSP_BUTTON_1/2
+ *   7. bsp_qspi_init()          — доступ к Slot A/Б
+ *   8. bsp_usb_cdc_init()       — не блокирует, см. выше
+ *   9. attempt_boot()           — SD-скан + recovery-гейт + прыжок; при
+ *                                 успехе не возвращается
  *  10. Цикл ожидания            — CDC ping/pong + LED + периодический
- *                                 пере-скан SD (шаги 8-9 повторно)
+ *                                 пере-скан SD (шаг 9 повторно)
  *
  * Watchdog (bsp_wdog): единственная защита от бесконечных зависаний в
  * блокирующих вызовах SDMMC-стека, не возвращающих управление в наш код
@@ -42,6 +51,7 @@
  */
 #include "board.h"
 #include "boot_select.h"
+#include "bsp/boot_state.h"
 #include "bsp/button.h"
 #include "bsp/led.h"
 #include "bsp/qspi_flash.h"
@@ -49,11 +59,72 @@
 #include "bsp/usb_cdc.h"
 #include "bsp/wdog.h"
 #include "cli.h"
+#include "flash_map.h"
 #include "protocol.h"
+#include "recovery.h"
 #include "sd_update.h"
+#include "slot_version.h"
 
 #include <stdbool.h>
 #include <stdint.h>
+
+/* ── Одна попытка загрузки: SD-скан + recovery-гейт (Фаза 6) + прыжок ─────
+ *
+ * sd_update_check() — до чтения счётчика/состояния слотов: новый образ с SD
+ * заслуживает полный бюджет попыток независимо от текущего счётчика (см.
+ * "Правила обнуления счётчика" в PLAN.md), а не только после гейта.
+ *
+ * peek_slot() — та же логика, что private peek_slot() в sd_update.c: не
+ * шарим напрямую между модулями (см. update_policy.h), копия минимальна. */
+static update_policy_slot_state_t peek_slot(uint8_t fa_id)
+{
+    update_policy_slot_state_t state;
+    state.valid = slot_version_get(fa_id, &state.version);
+    return state;
+}
+
+static void attempt_boot(bool downgrade_held, bool recovery_held)
+{
+    sd_update_check(downgrade_held); /* no-op быстро, если SD не вставлена */
+
+    update_policy_slot_state_t slot_a = peek_slot(0U);
+    update_policy_slot_state_t slot_b = peek_slot(1U);
+
+    recovery_decision_t decision = recovery_decide(
+        bsp_boot_attempt_count(), RECOVERY_DEFAULT_THRESHOLD, &slot_a, &slot_b, recovery_held);
+
+    switch (decision.action)
+    {
+    case RECOVERY_ERASE_ACTIVE_THEN_BOOT_OTHER:
+    {
+        /* Подозреваемый в зависании слот — стереть, есть подтверждённый
+         * фолбэк (recovery_decide() это уже проверила). boot_go() внутри
+         * boot_select_and_jump() ниже сам выберет оставшийся. */
+        const struct flash_area *p_fap;
+        if (flash_area_open((uint8_t) decision.active_slot, &p_fap) == 0)
+        {
+            (void) flash_area_erase(p_fap, 0U, p_fap->fa_size);
+            flash_area_close(p_fap);
+        }
+        bsp_boot_attempt_reset(); /* ситуация изменилась — новый полный бюджет */
+        bsp_wdog_refresh(); /* образ унаследует полное окно таймаута */
+        boot_select_and_jump(); /* при успехе не возвращается */
+        break;
+    }
+    case RECOVERY_ENTER_RECOVERY_MODE:
+        /* TODO(Фаза 6b): отдельное recovery-состояние — LED-паттерн, CDC
+         * status:recovery_mode, ослабленный version-gate на SD-установке.
+         * Пока просто не прыгаем — падаем в обычный цикл ожидания main(),
+         * как и при отсутствии валидного образа. */
+        break;
+    case RECOVERY_NORMAL_BOOT:
+    default:
+        bsp_boot_attempt_inc(); /* перед попыткой — см. bsp/boot_state.h */
+        bsp_wdog_refresh(); /* образ унаследует полное окно таймаута */
+        boot_select_and_jump(); /* при успехе не возвращается */
+        break;
+    }
+}
 
 int main(void)
 {
@@ -72,6 +143,10 @@ int main(void)
     /* Как можно раньше — до первой же SD-логики, которая может зависнуть. */
     (void) bsp_wdog_init(WDOG_TIMEOUT_S);
 
+    /* Сразу после watchdog — сама операция дешёвая (пара регистров SRC), а
+     * решение recovery_decide() ниже нужно уже на первой попытке. */
+    bsp_boot_state_init();
+
     bsp_led_init();
     bsp_tick_init();
     bsp_button_init();
@@ -84,14 +159,16 @@ int main(void)
      * Значение переиспользуется и первой попыткой, и пере-сканами в цикле. */
     const bool DOWNGRADE_HELD = bsp_button_read(BSP_BUTTON_1);
 
+    /* Жест recovery (Фаза 6) — тот же приём, удержание BSP_BUTTON_2. Приоритет
+     * над BTN_1 разрешается внутри recovery_decide() (проверяется первым). */
+    const bool RECOVERY_HELD = bsp_button_read(BSP_BUTTON_2);
+
     bool qspi_ok = (bsp_qspi_init() == BSP_OK);
     bool cdc_ok  = (bsp_usb_cdc_init() == BSP_OK);
 
     if (qspi_ok)
     {
-        sd_update_check(DOWNGRADE_HELD); /* no-op быстро, если SD не вставлена */
-        bsp_wdog_refresh(); /* образ унаследует полное окно таймаута */
-        boot_select_and_jump(); /* при успехе не возвращается */
+        attempt_boot(DOWNGRADE_HELD, RECOVERY_HELD);
     }
 
     /* Нет валидного образа ни в одном слоте (или сбой QSPI) —
@@ -139,9 +216,7 @@ int main(void)
 
             protocol_send_status("waiting_for_sd");
 
-            sd_update_check(DOWNGRADE_HELD);
-            bsp_wdog_refresh(); /* образ унаследует полное окно таймаута */
-            boot_select_and_jump(); /* при успехе не возвращается */
+            attempt_boot(DOWNGRADE_HELD, RECOVERY_HELD);
         }
     }
 }

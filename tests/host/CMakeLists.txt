@@ -264,6 +264,22 @@ add_host_test(
   ${MCUBOOT_BOOTUTIL_INCLUDES})
 
 # -----------------------------------------------------------------------------
+# recovery — чистая логика решения "что делать с этой попыткой загрузки"
+# (Фаза 6, разбивка 6a). Переиспользует update_policy_slot_state_t/
+# image_version_compare() из update_policy.c — тот же набор INCLUDES.
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_recovery
+  SOURCES
+  recovery/test_recovery.c
+  ${PROJECT_SOURCE_DIR}/firmware/bootloader/src/recovery.c
+  ${PROJECT_SOURCE_DIR}/firmware/bootloader/src/update_policy.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/bootloader/src
+  ${MCUBOOT_BOOTUTIL_INCLUDES})
+
+# -----------------------------------------------------------------------------
 # slot_version — read-only пик версии слота через bootutil_img_validate()
 # (Фаза 3). Реальный bootutil + TinyCrypt поверх fake_flash_map_backend.c —
 # переиспользует те же фикстуры, что и test_mcuboot_boot_select (Фаза 2).

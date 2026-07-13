@@ -63,13 +63,19 @@ void protocol_send_error(const char *p_code);
 void protocol_send_status(const char *p_state);
 
 /**
- * @brief Отправить статус аппаратного watchdog.
+ * @brief Отправить статус аппаратного watchdog и счётчика попыток загрузки
+ *        (Фаза 6).
  *
- * Формат: {"type":"wdog","armed":true,"timeout_s":10,"recovered":false}
- *  - armed     — watchdog взведён (bsp_wdog_init выполнен);
- *  - timeout_s — сконфигурированный таймаут в секундах;
- *  - recovered — ПОСЛЕДНИЙ сброс МК был по таймауту watchdog (плата
- *                восстановилась после зависания).
+ * Формат: {"type":"wdog","armed":true,"timeout_s":10,"recovered":false,
+ *          "reset_count":0,"threshold":3}
+ *  - armed       — watchdog взведён (bsp_wdog_init выполнен);
+ *  - timeout_s   — сконфигурированный таймаут в секундах;
+ *  - recovered   — ПОСЛЕДНИЙ сброс МК был по таймауту watchdog (плата
+ *                  восстановилась после зависания);
+ *  - reset_count — bsp_boot_attempt_count(): сколько попыток подряд без
+ *                  подтверждения здоровья (health-mark/новая установка), 0
+ *                  сразу после POR;
+ *  - threshold   — RECOVERY_DEFAULT_THRESHOLD: порог фолбэка/recovery.
  *
  * Эмитится один раз на старте, если recovered, и по команде "wdog".
  */
