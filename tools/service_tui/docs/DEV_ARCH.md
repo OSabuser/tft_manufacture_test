@@ -285,7 +285,19 @@ FlashBackendError                       (connection_lost: bool = False)
   `SPSDKError`, но **не** `SPSDKConnectionError`; read-фаза после write может
   отдать голый таймаут вместо connection error). Ловятся кортежем на всех
   точках отказа: `load_flashloader`, `flash` (основная + `ram_only` ветки),
-  `erase_chip`.
+  `erase_chip`. **Р17:** до фикса эти 4 места безусловно поднимали
+  `ConnectionLostError` на любое такое исключение, не проверяя, жива ли
+  плата (в отличие от варианта B ниже, который проверяет) — одиночный сбой
+  HID-записи (`bytes_written=-1`, реальный полевой пример: плата осталась на
+  шине, `WaitingScreen` почти сразу переоткрывал `FlashScreen`, оператор не
+  успевал прочитать причину) маскировался под полноценный обрыв сессии.
+  Теперь все 4 места сначала проверяют присутствие — `_sdp_still_present()`
+  для фаз ДО перехода на Flashloader (SDP-часть `load_flashloader()`,
+  `ram_only`) или `_flashloader_still_present()` для фаз после (основной
+  `McuBoot`-блок `flash()`/`erase_chip()`) — и при «плата на месте» поднимают
+  обычный `FlashBackendError` вместо `ConnectionLostError`, что автоматически
+  заводит их в тот же путь «остаёмся на FlashScreen», что и вариант B ниже —
+  без изменений в `flasher.py`/UI.
 - **Вариант B для команд, возвращающих `False` без исключения** (Р10,
   `_fail_command()`): `flash_erase_region`/`flash_erase_all`/`write_memory`
   иногда просто возвращают `False` вместо исключения (`McuBoot(iface)`
@@ -755,6 +767,18 @@ runtime-зависимостей `boot_art.py` не добавляет). Есл�
   "естественной" (auto) шириной — центрируется именно через `Center()`.
   Важно не путать эти два случая (`#waiting-version` — первый случай,
   `#post-flash-title`/`#post-flash-instruction` — второй).
+- **`Log(auto_scroll=True)` не гарантирует автопрокрутку на каждой строке.**
+  `Log.write_lines()` (`textual/widgets/_log.py`) читает
+  `self.is_vertical_scroll_end` **до** добавления новой строки в буфер, не
+  после, и скроллит только если снэпшот был `True`. Несколько `write_line()`
+  подряд быстрее, чем успевает осесть layout между вызовами (характерно для
+  событий `load_flashloader`/`configure`/`erase`-решения, летящих из
+  фонового потока почти одновременно) — снэпшот устаревает, и часть строк
+  проскакивает без скролла, хотя `auto_scroll=True` стоит. Медленные,
+  троттлированные события (`write`-фаза) успевают осесть между вызовами —
+  там штатно. Обходится принудительным `log.scroll_end(animate=False,
+  immediate=True)` сразу после каждого `write_line()` в вызывающем коде
+  (`FlashScreen._log()`) — не чинит `is_vertical_scroll_end`, а обходит его.
 
 ---
 

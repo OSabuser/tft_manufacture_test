@@ -125,6 +125,40 @@ QE=0 (Winbond выпускает варианты с заводским QE=0 и 
 регистр, не массив — Cumulative Write здесь не существует). Урок: десятичные
 значения в чужих логах пересчитывать инструментом, не «на глаз» — misread
 одного слова стоил трёх раундов на живом железе, включая один регресс.
+
+Р16 (пожелание с производства/сервиса, не баг): часть плат попадает на стенд
+с уже занятой W25Q — flash_erase_region в flash() стирает только под новый
+образ, хвост за границей erase_size (от прошивки БОЛЬШЕГО размера раньше)
+остаётся нетронутым. Фикс: перед erase — быстрый _is_blank() на первый
+BLANK_CHECK_SIZE=0x1000 байт (стёртый NOR физически 0xFF); если не пусто —
+flash_erase_all вместо flash_erase_region. Один сектор — компромисс: FCB+
+вектора всегда пишутся первыми, поэтому непустой чип почти всегда «виден»
+уже там, а читать больше — это доп. round-trip на КАЖДУЮ прошивку, не
+только на проблемные платы. erase_chip() не тронут — «Очистить память» и
+так всегда полный.
+
+Р17 (полевой отчёт: "USB-соединение потеряно при загрузке Flashloader:
+SDP: Connection issue -> SPSDK: Invalid size of written bytes has been
+detected: -1 != 1025" — плата физически осталась на шине, WaitingScreen
+почти сразу переоткрывал FlashScreen, статус не успевал прочитаться).
+_fail_command() (вариант B, Р10/Р13) проверяет присутствие платы перед тем,
+как объявить обрыв — но ЭТО применялось только к пути «команда вернула
+False». Все 4 места, ловящие _CONNECTION_LOST_EXCEPTIONS как ИСКЛЮЧЕНИЕ
+(load_flashloader() — SDP-фаза, flash() ram_only-ветка, flash() основной
+McuBoot-блок, erase_chip()), безусловно считали любой SPSDKConnectionError/
+SPSDKTimeoutError обрывом сессии, не проверяя, жива ли плата. Одиночный сбой
+HID-записи (bytes_written=-1, см. пример выше) — это не обязательно обрыв:
+плата может остаться на шине. Фикс: все 4 места теперь проверяют присутствие
+перед классификацией — _sdp_still_present() (новый, симметричный
+_flashloader_still_present, для фаз ДО перехода на Flashloader — SDP-часть
+load_flashloader() и ram_only) или _flashloader_still_present() (для фаз
+ПОСЛЕ — основной McuBoot-блок flash()/erase_chip()). Плата на месте →
+FlashBackendError (честная ошибка, остаёмся на экране — тот же путь, что
+уже был для варианта B); плата пропала → ConnectionLostError, как раньше.
+Ничего в flasher.py/screens не менялось — Flasher._run_flash_op() уже читал
+exc.connection_lost с любого FlashBackendError, UI уже умел оставаться на
+FlashScreen при connection_lost=False (Гейт 4a, вариант 2) — эта правка
+просто перестала СИСТЕМАТИЧЕСКИ обходить эту логику для exception-путей.
 """
 
 from __future__ import annotations
@@ -243,6 +277,18 @@ FLASHLOADER_WAIT_TIMEOUT_S = 10.0
 CMD_RETRY_ATTEMPTS = 3
 CMD_RETRY_DELAY_S = 0.5
 
+# Р16 — обнаружение непустого Flash перед прошивкой (пожелание с производства/
+# сервиса: часть плат попадает на стенд с уже занятой W25Q). flash_erase_region
+# стирает только под новый образ — если на чипе раньше лежал образ БОЛЬШЕГО
+# размера, хвост за границей erase_size остаётся нетронутым. Один быстрый
+# read_memory на BLANK_CHECK_SIZE байт (стёртый NOR физически 0xFF, надёжный
+# и однозначный сигнал) решает, стирать узкую область или чип целиком.
+# Размер — один сектор (граница erase-гранулярности): FCB+вектора всегда
+# пишутся первыми, поэтому непустой чип почти всегда «виден» уже в первом
+# секторе — читать больше ради надёжности не нужно, но и не бесплатно (это
+# доп. round-trip'ы на КАЖДУЮ прошивку, не только на проблемные платы).
+BLANK_CHECK_SIZE = 0x1000
+
 _HAB_OPTIONS_TEMPLATE = [
     "options:",
     "  flags: 0x00",
@@ -351,6 +397,23 @@ def _flashloader_still_present() -> bool:
         return False
 
 
+def _sdp_still_present() -> bool:
+    """Быстрая проверка присутствия платы в режиме SDP (Р17).
+
+    Симметрично _flashloader_still_present(), но для ДРУГОЙ фазы: SDP-часть
+    load_flashloader() и ram_only-ветка flash() падают ДО перехода на
+    Flashloader — устройство физически ещё не успело туда спрыгнуть, здесь
+    корректно проверять именно SDP (не наоборот, как исторически было в Р13).
+
+    Любая ошибка самой проверки трактуется как «устройства нет» — та же
+    логика, что и в _flashloader_still_present().
+    """
+    try:
+        return detect_sdp()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _fail_command(mboot: McuBoot, message: str) -> None:
     """Живая команда spsdk вернула False — переклассификация по варианту B (Р10).
 
@@ -399,6 +462,22 @@ def _run_flash_cmd(mboot: McuBoot, description: str, cmd: Callable[[], bool]) ->
             time.sleep(CMD_RETRY_DELAY_S)
             continue
         _fail_command(mboot, f"{description} вернул False после {attempt} попыт(ок)")
+
+
+def _is_blank(mboot: McuBoot, address: int, length: int) -> bool:
+    """True если [address, address+length) полностью стёрт (Р16).
+
+    Стёртый NOR физически 0xFF на уровне бит — однозначный сигнал, в отличие
+    от догадок по контрольным суммам/сигнатурам. Не оборачивается в
+    _run_flash_cmd: это не команда с состоянием «выполнена/не выполнена», а
+    просто чтение — если оно не удалось (data пустой или None, оба falsy),
+    считаем «не пусто» и уходим в полный erase — безопасный дефолт, если не
+    смогли определить реальное состояние чипа.
+    """
+    data = mboot.read_memory(address, length)
+    if not data:
+        return False
+    return all(b == 0xFF for b in data)
 
 
 def _emit(
@@ -479,6 +558,12 @@ def load_flashloader(
             sdp.write_file(FLASHLOADER_LOAD_ADDR, data)
             sdp.jump_and_run(FLASHLOADER_LOAD_ADDR)
     except _CONNECTION_LOST_EXCEPTIONS as exc:
+        if _sdp_still_present():
+            # Р17: одиночный сбой HID-записи (напр. bytes_written=-1), плата
+            # физически осталась на шине — честная ошибка, не обрыв сессии.
+            raise FlashBackendError(
+                f"Ошибка при загрузке Flashloader (плата на месте): {exc}"
+            ) from exc
         raise ConnectionLostError(
             f"USB-соединение потеряно при загрузке Flashloader: {exc}"
         ) from exc
@@ -579,6 +664,10 @@ def flash(
                 sdp.write_file(addr, hab_bin.read_bytes())
                 sdp.jump_and_run(addr)
         except _CONNECTION_LOST_EXCEPTIONS as exc:
+            if _sdp_still_present():  # Р17, см. load_flashloader()
+                raise FlashBackendError(
+                    f"Ошибка при RAM-загрузке (плата на месте): {exc}"
+                ) from exc
             raise ConnectionLostError(
                 f"USB-соединение потеряно при RAM-загрузке: {exc}"
             ) from exc
@@ -600,17 +689,34 @@ def flash(
             _emit(progress_cb, "configure", 0, "Конфигурация FlexSPI NOR")
             configure_flexspi(mboot)
 
-            _emit(
-                progress_cb,
-                "erase",
-                0,
-                f"Стирание 0x{FLASH_BASE:08X} + {erase_size} байт",
-            )
-            _run_flash_cmd(
-                mboot,
-                "flash_erase_region",
-                lambda: mboot.flash_erase_region(FLASH_BASE, erase_size, mem_id=0),
-            )
+            _emit(progress_cb, "erase", 0, "Проверка состояния Flash")
+            if _is_blank(mboot, FLASH_BASE, BLANK_CHECK_SIZE):
+                _emit(
+                    progress_cb,
+                    "erase",
+                    0,
+                    f"Стирание 0x{FLASH_BASE:08X} + {erase_size} байт",
+                )
+                _run_flash_cmd(
+                    mboot,
+                    "flash_erase_region",
+                    lambda: mboot.flash_erase_region(FLASH_BASE, erase_size, mem_id=0),
+                )
+            else:
+                # Р16: на чипе уже есть данные (возможно, от прошивки БОЛЬШЕГО
+                # размера) — узкий erase_region оставил бы хвост за границей
+                # нового образа нетронутым. Стираем чип целиком.
+                _emit(
+                    progress_cb,
+                    "erase",
+                    0,
+                    "Обнаружены данные во Flash — полная очистка (~30с)",
+                )
+                _run_flash_cmd(
+                    mboot,
+                    "flash_erase_all",
+                    lambda: mboot.flash_erase_all(mem_id=FLEXSPI_MEMORY_ID),
+                )
 
             _emit(progress_cb, "fcb", 0, "Запись FCB")
             if fcb_path is not None:
@@ -636,6 +742,10 @@ def flash(
             _emit(progress_cb, "reset", 0, "Reset")
             mboot.reset(reopen=False)
     except _CONNECTION_LOST_EXCEPTIONS as exc:
+        if _flashloader_still_present():  # Р17, см. load_flashloader()
+            raise FlashBackendError(
+                f"Ошибка во время прошивки (плата на месте): {exc}"
+            ) from exc
         raise ConnectionLostError(
             f"USB-соединение потеряно во время прошивки: {exc}"
         ) from exc
@@ -669,6 +779,10 @@ def erase_chip(progress_cb: Optional[ProgressCallback] = None) -> None:
             _emit(progress_cb, "reset", 0, "Reset")
             mboot.reset(reopen=False)
     except _CONNECTION_LOST_EXCEPTIONS as exc:
+        if _flashloader_still_present():  # Р17, см. load_flashloader()
+            raise FlashBackendError(
+                f"Ошибка во время chip erase (плата на месте): {exc}"
+            ) from exc
         raise ConnectionLostError(
             f"USB-соединение потеряно во время chip erase: {exc}"
         ) from exc
