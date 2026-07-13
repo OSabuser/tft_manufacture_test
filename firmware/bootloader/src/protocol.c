@@ -5,6 +5,7 @@
 
 #include "protocol.h"
 
+#include "bsp/wdog.h"
 #include "cli.h"
 
 #include <stdio.h>
@@ -41,5 +42,16 @@ void protocol_send_status(const char *p_state)
 {
     char buf[PROTO_BUF_SIZE];
     (void) snprintf(buf, sizeof(buf), "{\"type\":\"status\",\"state\":\"%s\"}\n", p_state);
+    cli_send(buf);
+}
+
+void protocol_send_wdog_status(void)
+{
+    char buf[PROTO_BUF_SIZE];
+    (void) snprintf(buf, sizeof(buf),
+                    "{\"type\":\"wdog\",\"armed\":%s,\"timeout_s\":%u,\"recovered\":%s}\n",
+                    bsp_wdog_is_armed() ? "true" : "false",
+                    (unsigned) bsp_wdog_timeout_s(),
+                    bsp_wdog_caused_last_reset() ? "true" : "false");
     cli_send(buf);
 }

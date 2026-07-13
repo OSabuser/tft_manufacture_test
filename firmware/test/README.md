@@ -29,7 +29,6 @@
 - [Как добавить новый тест](#как-добавить-новый-тест)
 - [Host unit-тесты](#host-unit-тесты)
 - [Версионирование](#версионирование)
-- [Архитектурные решения (закрыты)](#архитектурные-решения-закрыты)
 
 ---
 
@@ -199,16 +198,16 @@ main.c
 
 **BSP-зависимости тест-модулей** (по `target_link_libraries` в `CMakeLists.txt`):
 
-| Тест           | BSP модуль                     |
-| -------------- | ------------------------------ |
-| `test_sdram`   | `bsp_sdram`                    |
-| `test_qspi`    | `bsp_qspi_flash`               |
+| Тест           | BSP модуль                         |
+| -------------- | ---------------------------------- |
+| `test_sdram`   | `bsp_sdram`                        |
+| `test_qspi`    | `bsp_qspi_flash`                   |
 | `test_usd`     | `bsp_sd` (+ `firmware_test_fatfs`) |
-| `test_display` | `bsp_display`                  |
-| `test_buttons` | `bsp_button`                   |
-| `test_opto`    | `bsp_opto` (rs_as_gpio=true)   |
-| `test_can`     | `bsp_can`                      |
-| `test_mqs`     | `bsp_mqs`                      |
+| `test_display` | `bsp_display`                      |
+| `test_buttons` | `bsp_button`                       |
+| `test_opto`    | `bsp_opto` (rs_as_gpio=true)       |
+| `test_can`     | `bsp_can`                          |
+| `test_mqs`     | `bsp_mqs`                          |
 
 > `bsp_uart_host` также линкуется (используется вне тест-реестра); отдельного
 > UART-тест-модуля в текущем реестре нет (тестируется в `tests/target`).
@@ -271,7 +270,7 @@ main.c
 | Интерфейс                 | USB CDC ACM, разъём J2                                     |
 | Кодировка                 | UTF-8                                                      |
 | Фреймирование             | JSON-lines: одна строка = одно сообщение, завершается `\n` |
-| Максимальная длина строки | 128 байт включая `\n` (`CLI_LINE_BUF_SIZE`)               |
+| Максимальная длина строки | 128 байт включая `\n` (`CLI_LINE_BUF_SIZE`)                |
 | CR+LF                     | Принимается (таргет отбрасывает `\r`)                      |
 
 Нет хэндшейка, нет sequence number, нет подтверждений доставки.
@@ -551,16 +550,16 @@ confirm id для pre-confirm равен id теста (`usd`) — механи�
 
 Порядок — как в реестре `k_registry[]` (`test_runner.c`).
 
-| №   | ID        | Название           | Тип                          | Critical | M5 HIL | Confirm         |
-| --- | --------- | ------------------ | ---------------------------- | -------- | ------ | --------------- |
-| 1   | `sdram`   | SDRAM 32 MB        | self                         | ✅        | ❌      | ❌              |
-| 2   | `qspi`    | QSPI Flash W25Qxx  | self                         | ✅        | ❌      | ❌              |
-| 3   | `usd`     | microSD (SDIO)     | interactive                  | ❌        | ❌      | ✅ pre_confirm  |
-| 4   | `display` | TFT Display RGB888 | interactive                  | ❌        | ❌      | ✅ 6× в run()   |
-| 5   | `buttons` | Test Buttons       | interactive                  | ❌        | ❌      | prompt only     |
-| 6   | `opto`    | Opto Inputs        | HIL                          | ❌        | ✅      | ✅ 6× (авто)    |
-| 7   | `can`     | CAN loopback       | HIL                          | ❌        | ✅      | ✅ 2× (авто)    |
-| 8   | `mqs`     | MQS Audio Out      | interactive                  | ❌        | ❌      | ✅ 1× в run()   |
+| №   | ID        | Название           | Тип         | Critical | M5 HIL | Confirm       |
+| --- | --------- | ------------------ | ----------- | -------- | ------ | ------------- |
+| 1   | `sdram`   | SDRAM 32 MB        | self        | ✅        | ❌      | ❌             |
+| 2   | `qspi`    | QSPI Flash W25Qxx  | self        | ✅        | ❌      | ❌             |
+| 3   | `usd`     | microSD (SDIO)     | interactive | ❌        | ❌      | ✅ pre_confirm |
+| 4   | `display` | TFT Display RGB888 | interactive | ❌        | ❌      | ✅ 6× в run()  |
+| 5   | `buttons` | Test Buttons       | interactive | ❌        | ❌      | prompt only   |
+| 6   | `opto`    | Opto Inputs        | HIL         | ❌        | ✅      | ✅ 6× (авто)   |
+| 7   | `can`     | CAN loopback       | HIL         | ❌        | ✅      | ✅ 2× (авто)   |
+| 8   | `mqs`     | MQS Audio Out      | interactive | ❌        | ❌      | ✅ 1× в run()  |
 
 **Типы confirm:**
 
@@ -823,4 +822,4 @@ session_start / version_response:  "fw":"0.1.2"
 с ожидаемой. При несовместимых изменениях протокола (новое обязательное поле,
 смена семантики) — bump версии + обновление этого документа и `README_TESTING.md`.
 
-## 
+

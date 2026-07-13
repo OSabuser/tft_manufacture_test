@@ -62,6 +62,7 @@ add_sdk_driver(sai_edma fsl_sai_edma.c)
 add_sdk_driver(edma fsl_edma.c)
 add_sdk_driver(dmamux fsl_dmamux.c)
 add_sdk_driver(xbara fsl_xbara.c)
+add_sdk_driver(wdog fsl_wdog.c)
 
 # Драйверы которые зависят от clock
 target_link_libraries(sdk_lpuart PUBLIC sdk_clock)

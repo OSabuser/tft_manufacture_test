@@ -18,6 +18,8 @@
  * Типы исходящих событий (Фаза 3):
  *   status           — top-level состояние bootloader (waiting_for_sd и т.д.,
  *                      см. protocol_send_status())
+ *   wdog             — статус аппаратного watchdog (armed/timeout/recovered,
+ *                      см. protocol_send_wdog_status())
  *
  * Полный словарь состояний status (smoke_pass/smoke_fail/booting/...)
  * появится в Фазе 4.
@@ -59,5 +61,18 @@ void protocol_send_error(const char *p_code);
  *                     напр. "waiting_for_sd", "installing".
  */
 void protocol_send_status(const char *p_state);
+
+/**
+ * @brief Отправить статус аппаратного watchdog.
+ *
+ * Формат: {"type":"wdog","armed":true,"timeout_s":10,"recovered":false}
+ *  - armed     — watchdog взведён (bsp_wdog_init выполнен);
+ *  - timeout_s — сконфигурированный таймаут в секундах;
+ *  - recovered — ПОСЛЕДНИЙ сброс МК был по таймауту watchdog (плата
+ *                восстановилась после зависания).
+ *
+ * Эмитится один раз на старте, если recovered, и по команде "wdog".
+ */
+void protocol_send_wdog_status(void);
 
 #endif /* PROTOCOL_H_ */

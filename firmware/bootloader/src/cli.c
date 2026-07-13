@@ -135,6 +135,12 @@ static void handle_cmd(const char *p_line)
         return;
     }
 
+    if (strcmp(cmd_name, "wdog") == 0)
+    {
+        protocol_send_wdog_status();
+        return;
+    }
+
     protocol_send_error("UNKNOWN_CMD");
 }
 

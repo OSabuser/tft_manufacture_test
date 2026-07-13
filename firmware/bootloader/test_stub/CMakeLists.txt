@@ -4,10 +4,10 @@
 # firmware/bootloader/PLAN.md, "Аппаратная верификация Фазы 2". Не часть
 # продукта — удалить, когда появится реальный tft_app.
 #
-# Два таргета из одного main.c: разный адрес слота (--defsym __slot_base__)
-# и разная частота мигания (STUB_BLINK_MS) — чтобы на глаз отличить, какой
-# слот выбрал bootloader. Постройка .bin, дальше подписывается вручную
-# imgtool'ом (см. PLAN.md) — .bin сюда не должен попасть без подписи.
+# Два таргета из одного main.c: разный адрес слота (--defsym __slot_base__) и
+# разная частота мигания (STUB_BLINK_MS) — чтобы на глаз отличить, какой слот
+# выбрал bootloader. Постройка .bin, дальше подписывается вручную imgtool'ом
+# (см. PLAN.md) — .bin сюда не должен попасть без подписи.
 
 function(add_mcuboot_stub NAME SLOT_BASE BLINK_MS)
   add_executable(${NAME} main.c ${BSP_GENERATED}/clock_config.c
@@ -16,8 +16,11 @@ function(add_mcuboot_stub NAME SLOT_BASE BLINK_MS)
   target_compile_definitions(${NAME} PRIVATE STUB_BLINK_MS=${BLINK_MS}
                                              __STARTUP_CLEAR_BSS)
 
+  # bsp_wdog: загрузчик взводит WDOG перед прыжком, WDE — write-once, поэтому
+  # образ ОБЯЗАН его кормить (иначе reset-loop). Заглушка — стенд-ин tft_app,
+  # тоже кормит. См. bsp/wdog/README.md.
   target_link_libraries(${NAME} PRIVATE bsp_board bsp_led bsp_tick
-                                        bsp_boot_xip_no_dcd)
+                                        bsp_boot_xip_no_dcd bsp_wdog)
 
   target_link_options(
     ${NAME}
@@ -39,7 +42,7 @@ function(add_mcuboot_stub NAME SLOT_BASE BLINK_MS)
     COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${NAME}>
             ${CMAKE_BINARY_DIR}/${NAME}.bin
     COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${NAME}>
-    COMMENT "Generating ${NAME}.bin (не подписан — imgtool sign вручную, см. PLAN.md)")
+    COMMENT "Generating ${NAME}.bin")
 endfunction()
 
 # Slot A: 0x60040000, мигает раз в 500 мс ("версия 1")

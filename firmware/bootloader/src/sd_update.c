@@ -20,9 +20,9 @@
 #include "sd_update.h"
 
 #include "bootutil/image.h"
-#include "bsp/button.h"
 #include "bsp/sd.h"
 #include "bsp/usb_cdc.h"
+#include "bsp/wdog.h"
 #include "ff.h"
 #include "flash_map.h"
 #include "protocol.h"
@@ -105,6 +105,7 @@ static bool erase_and_copy_candidate(const struct flash_area *p_fap, uint32_t fi
     while (offset < file_size)
     {
         bsp_usb_cdc_poll();
+        bsp_wdog_refresh(); /* потоковое копирование — реальный прогресс на чанк */
 
         uint32_t want = file_size - offset;
         if (want > SD_UPDATE_CHUNK_SIZE)
@@ -138,7 +139,7 @@ static bool erase_and_copy_candidate(const struct flash_area *p_fap, uint32_t fi
 
 /* ── Основной сценарий ────────────────────────────────────────────────── */
 
-static void run_update(void)
+static void run_update(bool button_held)
 {
     struct image_version candidate_ver;
     struct image_version installed_ver;
@@ -147,7 +148,6 @@ static void run_update(void)
     update_policy_result_t decision;
     const struct flash_area *p_fap = NULL;
     uint32_t file_size;
-    bool button_held;
     bool copy_ok;
 
     if (bsp_sd_init() != BSP_OK)
@@ -174,11 +174,11 @@ static void run_update(void)
         goto cleanup;
     }
 
-    file_size   = (uint32_t) f_size(&g_s_file);
-    slot_a      = peek_slot(0U);
-    slot_b      = peek_slot(1U);
-    button_held = bsp_button_read(BSP_BUTTON_1);
-    decision    = update_policy_decide(&slot_a, &slot_b, &candidate_ver, button_held);
+    file_size = (uint32_t) f_size(&g_s_file);
+    slot_a    = peek_slot(0U);
+    slot_b    = peek_slot(1U);
+    /* button_held — сэмплирован при старте в main.c и передан сюда (см. sd_update.h). */
+    decision = update_policy_decide(&slot_a, &slot_b, &candidate_ver, button_held);
 
     if (decision.action == UPDATE_POLICY_SKIP)
     {
@@ -242,12 +242,12 @@ cleanup:
 
 /* ── Public API ────────────────────────────────────────────────────────── */
 
-void sd_update_check(void)
+void sd_update_check(bool downgrade_button_held)
 {
     if (!bsp_sd_is_inserted())
     {
         return;
     }
 
-    run_update();
+    run_update(downgrade_button_held);
 }

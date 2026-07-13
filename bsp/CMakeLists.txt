@@ -2,10 +2,7 @@ if(BUILD_TESTS_HOST)
   return()
 endif()
 
-# -----------------------------------------------------------------------------
-# bsp_board — генерированные файлы Config Tools, инициализация платы
-# -----------------------------------------------------------------------------
-
+# bsp_board — cгенерированные Config Tools файлы, инициализация платы
 add_library(bsp_board STATIC generated/board.c generated/pin_mux.c)
 
 add_subdirectory(common)
@@ -15,6 +12,7 @@ add_subdirectory(uart_host)
 add_subdirectory(opto)
 add_subdirectory(can)
 add_subdirectory(button)
+add_subdirectory(wdog)
 add_subdirectory(display)
 add_subdirectory(usb_cdc)
 add_subdirectory(sdram)
@@ -23,7 +21,6 @@ add_subdirectory(sd)
 add_subdirectory(mqs)
 add_subdirectory(provisioning)
 
-# Подавляем предупреждения при компиляции собственных .c файлов библиотеки
 target_compile_options(bsp_board PRIVATE -w)
 
 # SYSTEM подавляет предупреждения для всех внешних потребителей
@@ -67,10 +64,6 @@ target_compile_definitions(
 add_library(bsp_boot_ram INTERFACE)
 target_compile_definitions(bsp_boot_ram INTERFACE SKIP_SYSCLK_INIT)
 
-# bsp_boot_xip без DCD — для firmware/bootloader: XIP из Flash, но без
-# инициализации SDRAM (bootloader SDRAM не использует, см.
-# docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md). В отличие от bsp_boot_xip не
-# определяет XIP_BOOT_HEADER_DCD_ENABLE.
 add_library(bsp_boot_xip_no_dcd INTERFACE)
 target_compile_definitions(
   bsp_boot_xip_no_dcd INTERFACE XIP_EXTERNAL_FLASH=1 XIP_BOOT_HEADER_ENABLE=1

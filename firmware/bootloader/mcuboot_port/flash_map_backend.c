@@ -15,6 +15,7 @@
  */
 
 #include "bsp/qspi_flash.h"
+#include "bsp/wdog.h"
 #include "flash_map.h"
 #include "sysflash/sysflash.h"
 
@@ -146,6 +147,11 @@ int flash_area_erase(const struct flash_area *area, uint32_t off, uint32_t len)
         uint32_t block_addr = area->fa_off;
         for (; len > 0U; len -= BSP_QSPI_BLOCK_64K_SIZE)
         {
+            /* Кормим watchdog поблочно: стирание 2 МБ ~4.8 c — это реальный
+             * прогресс, но один блочный вызов не должен упереться в таймаут.
+             * Зависание самого стирания флеша всё равно ловится: refresh — по
+             * ЗАВЕРШЕНИИ блока, а не перед ним. */
+            bsp_wdog_refresh();
             if (bsp_qspi_erase_block_64k(block_addr) != BSP_OK)
             {
                 return -1;
@@ -158,6 +164,7 @@ int flash_area_erase(const struct flash_area *area, uint32_t off, uint32_t len)
     uint32_t addr = area->fa_off + off;
     for (; len > 0U; len -= BSP_QSPI_SECTOR_SIZE)
     {
+        bsp_wdog_refresh(); /* см. выше — посекторный путь тоже длинный */
         if (bsp_qspi_erase_sector(addr) != BSP_OK)
         {
             return -1;

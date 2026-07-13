@@ -28,9 +28,27 @@ static sd_io_voltage_t s_io_voltage = {
 volatile uint32_t g_sdmmc_dbg_dma_buf_addr         = 0U;
 volatile uint32_t g_sdmmc_dbg_usdhc1_src_clock_hz  = 0U;
 
-static bool sd_card_detect_gpio(void)
+/*
+ * Детект карты через USDHC PRES_STATE.CINST — ЕДИНЫЙ механизм и для нашего
+ * гейта bsp_sd_is_inserted() (bsp/sd/src/sd.c), и для внутреннего
+ * SD_PollingCardInsert() SDK (тот зовёт этот callback при kSD_DetectCardByGpioCD).
+ * Не GPIO_PinRead — исторически детект через GPIO2/28 давал ложный "card
+ * present" на пустом слоте (Фаза 3, симптом 1; DEBUG_LOG_PHASE3_SD.md, раунд 3).
+ * Работает, пока пин D13 замаплен на USDHC1_CD_B (см. BOARD_SD_Config ниже:
+ * прежний remux на GPIO2_IO28 убран, пин остаётся на USDHC1_CD_B постоянно —
+ * консолидация, item 1). Тактирование USDHC1 включается идемпотентно на случай
+ * вызова до полного SD_HostInit().
+ *
+ * Тот же PRSSTAT-бит читает и штатный host-CD путь SDK
+ * (SDMMCHOST_CardDetectStatus), но kSD_DetectCardByHostCD дополнительно взводит
+ * USDHC card-detect ПРЕРЫВАНИЯ — не нужны загрузчику (лишний источник IRQ перед
+ * прыжком), поэтому оставляем polling через callback (kSD_DetectCardByGpioCD).
+ */
+static bool sd_card_detect_prsstat(void)
 {
-    return GPIO_PinRead(BOARD_SDMMC_SD_CD_GPIO_BASE, BOARD_SDMMC_SD_CD_GPIO_PIN) == BOARD_SDMMC_SD_CD_INSERT_LEVEL;
+    CLOCK_EnableClock(kCLOCK_Usdhc1);
+    return (USDHC_GetPresentStatusFlags(BOARD_SDMMC_SD_HOST_BASEADDR) &
+            (uint32_t) kUSDHC_CardInsertedFlag) != 0U;
 }
 
 /* ---------------------------------------------------------------------------
@@ -125,19 +143,11 @@ static void sd_pin_config(uint32_t freq)
     IOMUXC_SetPinConfig(IOMUXC_GPIO_SD_B0_04_USDHC1_DATA2, pad);
     IOMUXC_SetPinConfig(IOMUXC_GPIO_SD_B0_05_USDHC1_DATA3, pad);
     /*
-     * CD_B pad config — байт-в-байт как TFT_BOOTLOADER::BOARD_SD_Pin_Config()
-     * (board/sdmmc_config.c: IOMUXC_SetPinConfig(..., 0x10B0U)), не "разумная
-     * по умолчанию" альтернатива. Отличие от прежней версии здесь: PKE=1 но
-     * PUE=0 — это KEEPER, не активная подтяжка (PUS игнорируется в этом
-     * режиме); HYS выключен. Прежняя версия (активная 47к подтяжка вверх +
-     * hysteresis) не была проверена на этой плате и не объяснила устойчивый
-     * ложный "card present" без карты на реальном железе (Фаза 3, симптом 1,
-     * см. DEBUG_LOG_PHASE3_SD.md) — pinmux сам по себе (GPIO2_IO28) это не
-     * лечит, раз симптом воспроизводится и после его отката.
+     * CD (D13) здесь НЕ конфигурируем: пин на USDHC1_CD_B (см. BOARD_SD_Config),
+     * pad задан в BOARD_InitPins() и на железе даёт корректный CINST. Прежняя
+     * настройка pad'а GPIO2_IO28 убрана вместе с GPIO-детектом (item 1,
+     * DEBUG_LOG_PHASE3_SD.md).
      */
-    IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_12_GPIO2_IO28, IOMUXC_SW_PAD_CTL_PAD_PKE_MASK |
-                                                       IOMUXC_SW_PAD_CTL_PAD_SPEED(2U) |
-                                                       IOMUXC_SW_PAD_CTL_PAD_DSE(6U));
 }
 
 /* ---------------------------------------------------------------------------
@@ -162,10 +172,10 @@ void BOARD_SD_Config(void *card, sd_cd_t cd, uint32_t host_irq_priority, void *u
     g_sdmmc_dbg_dma_buf_addr                = (uint32_t)(uintptr_t)s_dma_buf;
     g_sdmmc_dbg_usdhc1_src_clock_hz         = sd->host->hostController.sourceClock_Hz;
 
-    /* --- card detect: GPIO CD (active-low) --- */
+    /* --- card detect: USDHC PRES_STATE.CINST через callback (polling, без IRQ) --- */
     s_cd.cdDebounce_ms = BOARD_SDMMC_SD_CD_DEBOUNCE_MS;
-    s_cd.type          = BOARD_SDMMC_SD_CD_TYPE;
-    s_cd.cardDetected  = sd_card_detect_gpio;
+    s_cd.type          = BOARD_SDMMC_SD_CD_TYPE; /* kSD_DetectCardByGpioCD → callback ниже */
+    s_cd.cardDetected  = sd_card_detect_prsstat;
     s_cd.callback      = cd;   /* обычно NULL из bsp_sd */
     s_cd.userData      = user_data;
 
@@ -178,37 +188,19 @@ void BOARD_SD_Config(void *card, sd_cd_t cd, uint32_t host_irq_priority, void *u
     /* --- GPIO питания --- */
     sd_power_init();
     /*
-     * CD_B (GPIO_B1_12 / physical D13) — на этой плате детект работает через
-     * DVA механизма в разные моменты (см. DEBUG_LOG_PHASE3_SD.md, разрешение
-     * от 2026-07-10):
-     *
-     *  1. НАШ гейт bsp_sd_is_inserted() (bsp/sd/src/sd.c) — читает USDHC
-     *     PRES_STATE.CINST (USDHC_GetPresentStatusFlags). Это и есть настоящий
-     *     фикс симптома 1: на пустом слоте BOARD_SD_Config() ещё не вызывался,
-     *     пин остаётся на USDHC1_CD_B (замаплен в BOARD_InitPins()), и PRSSTAT
-     *     отражает реальность корректно — гейт стабильно возвращает false, и
-     *     блокирующий SD_PollingCardInsert() без карты просто не достигается.
-     *  2. Внутренний детект SDK (SD_PollingCardInsert внутри f_mount) — через
-     *     GPIO-callback sd_card_detect_gpio() (GPIO_PinRead(GPIO2, 28)). Он
-     *     достигается только ПОСЛЕ того, как гейт уже подтвердил карту, то
-     *     есть уже после этого IOMUXC_SetPinMux ниже — тогда пин на GPIO2_IO28
-     *     и GPIO-чтение корректно.
-     *
-     * Отсюда remux ниже на GPIO2_IO28: он нужен именно для (2). Пин остаётся
-     * эксклюзивным (одна альт-функция разом), поэтому (1) и (2) физически
-     * работают в разные моменты на разной маршрутизации одного пина — это
-     * подтверждено на железе (все 5 сценариев Фазы 3 пройдены), но хрупко:
-     * см. "латентная хрупкость re-scan" в DEBUG_LOG_PHASE3_SD.md и там же —
-     * рекомендованная консолидация на единый механизм (PRSSTAT везде).
+     * CD_B (GPIO_B1_12 / physical D13) остаётся на USDHC1_CD_B постоянно —
+     * единый механизм детекта через PRES_STATE.CINST (sd_card_detect_prsstat
+     * выше + гейт bsp_sd_is_inserted). Прежней двойной маршрутизации
+     * (remux на GPIO2_IO28 для GPIO-чтения внутри f_mount) больше нет —
+     * см. DEBUG_LOG_PHASE3_SD.md, раунд 3 «консолидация детекта» (item 1);
+     * она убирала латентную хрупкость: после первого bsp_sd_init() пин уходил
+     * на GPIO2_IO28 и повторный PRSSTAT-скан ослеп бы. Явно переустанавливаем
+     * альт-функцию (BOARD_InitPins() её тоже ставит — так модуль не зависит от
+     * порядка инициализации). Pad этого пина оставляем как задал BOARD_InitPins:
+     * на железе CINST на нём читается корректно (Фаза 3, все сценарии).
      */
-    IOMUXC_SetPinMux(IOMUXC_GPIO_B1_12_GPIO2_IO28, 0U);
-    const gpio_pin_config_t cd_cfg = {
-        .direction     = kGPIO_DigitalInput,
-        .outputLogic   = 0U,
-        .interruptMode = kGPIO_NoIntmode,
-    };
-    GPIO_PinInit(BOARD_SDMMC_SD_CD_GPIO_BASE, BOARD_SDMMC_SD_CD_GPIO_PIN, &cd_cfg);
-    /* Важно: применяем pad-конфиг сразу для ранних CMD (CMD0/CMD8/CMD55/ACMD41). */
+    IOMUXC_SetPinMux(IOMUXC_GPIO_B1_12_USDHC1_CD_B, 0U);
+    /* Pad-конфиг линий SD (CMD/CLK/DATA) сразу для ранних CMD (CMD0/CMD8/CMD55/ACMD41). */
     sd_pin_config(400000U);
 
     /* --- приоритет прерывания хоста --- */

@@ -52,7 +52,7 @@ target_compile_definitions(
 target_link_libraries(${TARGET_NAME} PRIVATE bsp_board bsp_led bsp_tick
                                              bsp_usb_cdc bsp_qspi_flash
                                              bsp_boot_xip_no_dcd bsp_button
-                                             bootloader_fatfs)
+                                             bsp_wdog bootloader_fatfs)
 
 # -----------------------------------------------------------------------------
 # Linker script — вариант flexspi_nor с m_text, ограниченным бюджетом

@@ -11,10 +11,18 @@
  * Фазы 2".
  *
  * Без USB/CDC — визуальной индикации достаточно, минимальный код.
+ *
+ * Watchdog: загрузчик взводит аппаратный WDOG перед прыжком сюда, а WDE —
+ * write-once (выключить нельзя). Поэтому заглушка ОБЯЗАНА его кормить, иначе
+ * WDOG сбросит плату через таймаут и получится reset-loop — заглушка тут
+ * играет роль tft_app, которая в проде тоже будет кормить watchdog
+ * (см. bsp/wdog/README.md). Период мигания (250/500 мс) << таймаута (~10 c),
+ * так что refresh на каждой итерации — с огромным запасом.
  */
 #include "board.h"
 #include "bsp/led.h"
 #include "bsp/tick.h"
+#include "bsp/wdog.h"
 
 #ifndef STUB_BLINK_MS
 #error "STUB_BLINK_MS must be defined (see firmware/bootloader/test_stub/CMakeLists.txt)"
@@ -28,6 +36,7 @@ int main(void)
 
     while (1)
     {
+        bsp_wdog_refresh(); /* обслуживаем унаследованный от загрузчика WDOG */
         bsp_led_toggle(LED_APP);
         bsp_delay(STUB_BLINK_MS);
     }
