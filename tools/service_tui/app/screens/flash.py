@@ -7,6 +7,7 @@ flash.py — экран прошивки (режим A).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
@@ -35,6 +36,14 @@ from ..widgets import AppFrame
 from .connection_watcher import ConnectionLost, ConnectionWatcherMixin
 
 logger = logging.getLogger(__name__)
+
+# Пожелание с производства/сервиса: после успешной прошивки Production/Custom
+# переход на WaitingScreen происходил мгновенно — оператор не успевал прочитать
+# статус в #flash-log (firmware_test в этой паузе не нуждается — там уже есть
+# 40с в PostFlashScreen, см. app.py::_on_flash_done). Кнопки остаются
+# заблокированными на время паузы, чтобы не запустить новую операцию поверх
+# уходящего экрана.
+_RESULT_HOLD_S = 3.0
 
 
 class FlashScreen(Screen, ConnectionWatcherMixin):
@@ -248,9 +257,15 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
             fcb_variant=preset.fcb_variant,
             progress_cb=self._on_progress,
         )
-        self._set_busy(False)
         self._finish_progress(result.ok)
         self._log("✅ Готово" if result.ok else "❌ Ошибка")
+
+        if result.ok and target != FlashTarget.FIRMWARE_TEST:
+            # Держим #flash-log на экране, пока оператор не прочитает статус —
+            # без этого экран уходил на WaitingScreen в тот же тик, что и лог.
+            await asyncio.sleep(_RESULT_HOLD_S)
+
+        self._set_busy(False)
 
         if result.ok:
             self.post_message(
@@ -358,6 +373,17 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
 
     def _log(self, msg: str) -> None:
         try:
-            self.query_one("#flash-log", Log).write_line(msg)
+            log = self.query_one("#flash-log", Log)
+            log.write_line(msg)
+            # Textual 8.x, Log.write_lines(): is_vertical_scroll_end читается
+            # ДО добавления новой строки, не после (см. _log.py в textual).
+            # Несколько write_line() подряд быстрее, чем успевает осесть
+            # layout (именно так летят события load_flashloader/configure/
+            # erase-decision из фонового потока), — снэпшот «были внизу»
+            # устаревает, и auto_scroll=True на самом Log молча не срабатывает
+            # для этих строк. Фаза "write" (медленнее, с троттлингом) успевает
+            # осесть между вызовами — там штатно и без этого. Принудительный
+            # scroll_end() обходит устаревший снэпшот целиком, а не чинит его.
+            log.scroll_end(animate=False, immediate=True)
         except NoMatches:
             pass
