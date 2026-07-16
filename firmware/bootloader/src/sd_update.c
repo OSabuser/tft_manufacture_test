@@ -15,6 +15,8 @@
  *
  * Целевой слот при установке — всегда НЕ активный (см. update_policy.h):
  * уже выбранный на этот момент слот этой функцией никогда не стирается.
+ * Исключение — recovery-режим (Фаза 6b, update_policy_decide(recovery_mode)):
+ * там целевой слот всегда Slot A, независимо от того, что было активно.
  */
 
 #include "sd_update.h"
@@ -39,9 +41,7 @@
 /** @brief Размер чанка потокового копирования SD → flash. */
 #define SD_UPDATE_CHUNK_SIZE 4096U
 
-/* ── Состояние модуля ──────────────────────────────────────────────────────
- * Статические буферы — не на стеке (см. firmware/test/src/tests/test_usd.c
- * про ограниченный стек bare-metal прошивок). */
+/* ── Состояние модуля ────────────────────────────────────────────────────── */
 
 static FATFS g_s_fs;
 static FIL g_s_file;
@@ -139,7 +139,11 @@ static bool erase_and_copy_candidate(const struct flash_area *p_fap, uint32_t fi
 
 /* ── Основной сценарий ────────────────────────────────────────────────── */
 
-static void run_update(bool button_held)
+/**
+ * @return true, если target_slot после этого вызова содержит новый,
+ *         подтверждённый (slot_version_get()) образ — см. sd_update.h.
+ */
+static bool run_update(bool button_held, bool recovery_mode)
 {
     struct image_version candidate_ver;
     struct image_version installed_ver;
@@ -149,23 +153,24 @@ static void run_update(bool button_held)
     const struct flash_area *p_fap = NULL;
     uint32_t file_size;
     bool copy_ok;
+    bool result = false;
 
     if (bsp_sd_init() != BSP_OK)
     {
-        return;
+        return false;
     }
 
     if (f_mount(&g_s_fs, SD_UPDATE_MOUNT_POINT, 1) != FR_OK)
     {
         (void) bsp_sd_deinit();
-        return; /* нет карты/файловой системы — штатно, не ошибка */
+        return false; /* нет карты/файловой системы — штатно, не ошибка */
     }
 
     if (f_open(&g_s_file, SD_UPDATE_FILE_PATH, FA_READ) != FR_OK)
     {
         (void) f_unmount(SD_UPDATE_MOUNT_POINT);
         (void) bsp_sd_deinit();
-        return; /* TFT_APP.BIN отсутствует — тоже штатно */
+        return false; /* TFT_APP.BIN отсутствует — тоже штатно */
     }
 
     if (!read_candidate_header(&candidate_ver))
@@ -177,8 +182,10 @@ static void run_update(bool button_held)
     file_size = (uint32_t) f_size(&g_s_file);
     slot_a    = peek_slot(0U);
     slot_b    = peek_slot(1U);
-    /* button_held — сэмплирован при старте в main.c и передан сюда (см. sd_update.h). */
-    decision = update_policy_decide(&slot_a, &slot_b, &candidate_ver, button_held);
+    /* button_held — сэмплирован при старте в main.c и передан сюда (см.
+     * sd_update.h). recovery_mode — ослабленный gate Фазы 6b, см.
+     * update_policy.h; решение "входить ли в recovery" — не здесь. */
+    decision = update_policy_decide(&slot_a, &slot_b, &candidate_ver, button_held, recovery_mode);
 
     if (decision.action == UPDATE_POLICY_SKIP)
     {
@@ -209,11 +216,17 @@ static void run_update(bool button_held)
         goto cleanup;
     }
 
-    /* Форс. даунгрейд (см. update_policy.h): без стирания прежнего активного
-     * слота он остался бы валиден и новее только что установленного, и
-     * снова выиграл бы в boot_go() — даунгрейд физически записался бы, но
-     * не загрузился. Стираем ТОЛЬКО теперь, когда новый образ уже подтверждён
-     * валидным — на диске никогда не бывает нуля рабочих слотов. */
+    /* target_slot подтверждён валидным — установка состоялась независимо от
+     * исхода стирания "второго" слота ниже (оно диагностируется отдельным
+     * protocol_send_error, но не отменяет уже подтверждённый результат). */
+    result = true;
+
+    /* Форс. даунгрейд и recovery (см. update_policy.h): без стирания
+     * прежнего активного/Slot Б он остался бы валиден (и новее в обычном
+     * режиме) и снова выиграл бы в boot_go() — даунгрейд/recovery физически
+     * записались бы, но не загрузились. Стираем ТОЛЬКО теперь, когда новый
+     * образ уже подтверждён валидным — на диске никогда не бывает нуля
+     * рабочих слотов. */
     if (decision.erase_previous_active)
     {
         const struct flash_area *p_peer_fap;
@@ -238,16 +251,17 @@ cleanup:
     (void) f_close(&g_s_file);
     (void) f_unmount(SD_UPDATE_MOUNT_POINT);
     (void) bsp_sd_deinit();
+    return result;
 }
 
 /* ── Public API ────────────────────────────────────────────────────────── */
 
-void sd_update_check(bool downgrade_button_held)
+bool sd_update_check(bool downgrade_button_held, bool recovery_mode)
 {
     if (!bsp_sd_is_inserted())
     {
-        return;
+        return false;
     }
 
-    run_update(downgrade_button_held);
+    return run_update(downgrade_button_held, recovery_mode);
 }

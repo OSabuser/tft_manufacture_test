@@ -16,8 +16,9 @@
  *   error            — ошибка протокола или парсинга
  *
  * Типы исходящих событий (Фаза 3):
- *   status           — top-level состояние bootloader (waiting_for_sd и т.д.,
- *                      см. protocol_send_status())
+ *   status           — top-level состояние bootloader (waiting_for_sd,
+ *                      installing, update_skipped, recovery_mode — см.
+ *                      protocol_send_status())
  *   wdog             — статус аппаратного watchdog (armed/timeout/recovered,
  *                      см. protocol_send_wdog_status())
  *

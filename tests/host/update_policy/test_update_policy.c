@@ -82,7 +82,7 @@ void test_no_valid_slots_installs_to_slot_a(void)
     struct image_version candidate = make_version(1, 0, 0, 0);
 
     update_policy_result_t result =
-        update_policy_decide(&K_INVALID_SLOT, &K_INVALID_SLOT, &candidate, false);
+        update_policy_decide(&K_INVALID_SLOT, &K_INVALID_SLOT, &candidate, false, false);
 
     TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
     TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_A, result.target_slot);
@@ -95,7 +95,7 @@ void test_only_slot_b_valid_targets_slot_a(void)
     struct image_version candidate    = make_version(2, 0, 0, 0);
 
     update_policy_result_t result =
-        update_policy_decide(&K_INVALID_SLOT, &slot_b, &candidate, false);
+        update_policy_decide(&K_INVALID_SLOT, &slot_b, &candidate, false, false);
 
     TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
     TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_A, result.target_slot);
@@ -109,7 +109,7 @@ void test_candidate_newer_installs_to_inactive_slot(void)
     struct image_version candidate    = make_version(2, 0, 0, 0);
 
     update_policy_result_t result =
-        update_policy_decide(&slot_a, &K_INVALID_SLOT, &candidate, false);
+        update_policy_decide(&slot_a, &K_INVALID_SLOT, &candidate, false, false);
 
     TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
     TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_B, result.target_slot);
@@ -126,7 +126,7 @@ void test_candidate_older_without_button_skips(void)
     struct image_version candidate    = make_version(1, 0, 0, 0);
 
     update_policy_result_t result =
-        update_policy_decide(&slot_a, &K_INVALID_SLOT, &candidate, false);
+        update_policy_decide(&slot_a, &K_INVALID_SLOT, &candidate, false, false);
 
     TEST_ASSERT_EQUAL(UPDATE_POLICY_SKIP, result.action);
 }
@@ -137,7 +137,7 @@ void test_candidate_older_with_button_forces_install(void)
     struct image_version candidate    = make_version(1, 0, 0, 0);
 
     update_policy_result_t result =
-        update_policy_decide(&slot_a, &K_INVALID_SLOT, &candidate, true);
+        update_policy_decide(&slot_a, &K_INVALID_SLOT, &candidate, true, false);
 
     TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
     TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_B, result.target_slot);
@@ -153,7 +153,7 @@ void test_candidate_equal_with_button_still_skips(void)
     struct image_version candidate    = make_version(1, 0, 0, 0);
 
     update_policy_result_t result =
-        update_policy_decide(&slot_a, &K_INVALID_SLOT, &candidate, true);
+        update_policy_decide(&slot_a, &K_INVALID_SLOT, &candidate, true, false);
 
     TEST_ASSERT_EQUAL(UPDATE_POLICY_SKIP, result.action);
 }
@@ -167,7 +167,7 @@ void test_active_slot_is_the_higher_version_when_both_valid(void)
     struct image_version candidate    = make_version(3, 0, 0, 0);
 
     /* Активный — Б (выше версия), значит целевой слот установки — А. */
-    update_policy_result_t result = update_policy_decide(&slot_a, &slot_b, &candidate, false);
+    update_policy_result_t result = update_policy_decide(&slot_a, &slot_b, &candidate, false, false);
 
     TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
     TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_A, result.target_slot);
@@ -191,7 +191,56 @@ void test_forced_downgrade_targets_and_erases_the_higher_version_slot(void)
     /* Активный — Б (v2, выше версия). Кандидат v1 старше активного, кнопка
      * удержана → форс. установка в Slot A (неактивный) + Slot Б обязан быть
      * стёрт, иначе Slot Б (всё ещё валидный v2) снова выиграет. */
-    update_policy_result_t result = update_policy_decide(&slot_a, &slot_b, &candidate, true);
+    update_policy_result_t result = update_policy_decide(&slot_a, &slot_b, &candidate, true, false);
+
+    TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
+    TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_A, result.target_slot);
+    TEST_ASSERT_TRUE(result.erase_previous_active);
+}
+
+/* ── update_policy_decide — recovery_mode (Фаза 6b, ослабленный gate) ────
+ *
+ * recovery_mode == true игнорирует версию/кнопку целиком и всегда целится в
+ * Slot A с erase_previous_active == true (Slot Б стирается вызывающим
+ * кодом) — независимо от того, какой слот "активен" по обычным правилам.
+ */
+
+void test_recovery_mode_installs_to_slot_a_ignoring_candidate_version(void)
+{
+    update_policy_slot_state_t slot_a = make_valid_slot(make_version(5, 0, 0, 0));
+    update_policy_slot_state_t slot_b = make_valid_slot(make_version(9, 0, 0, 0));
+    /* Кандидат СТАРШЕ обоих слотов — в обычном режиме это был бы SKIP. */
+    struct image_version candidate = make_version(1, 0, 0, 0);
+
+    update_policy_result_t result = update_policy_decide(&slot_a, &slot_b, &candidate, false, true);
+
+    TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
+    TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_A, result.target_slot);
+    TEST_ASSERT_TRUE(result.erase_previous_active);
+}
+
+void test_recovery_mode_targets_slot_a_even_when_slot_a_is_the_active_one(void)
+{
+    /* Slot A — активный (выше версия). Обычный режим целил бы в Slot Б —
+     * recovery всё равно должен ставить в Slot A (см. rationale в
+     * update_policy.h: "прежде чем что-то заменить, нужно на что менять"). */
+    update_policy_slot_state_t slot_a = make_valid_slot(make_version(9, 0, 0, 0));
+    update_policy_slot_state_t slot_b = make_valid_slot(make_version(1, 0, 0, 0));
+    struct image_version candidate    = make_version(2, 0, 0, 0);
+
+    update_policy_result_t result = update_policy_decide(&slot_a, &slot_b, &candidate, false, true);
+
+    TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
+    TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_A, result.target_slot);
+    TEST_ASSERT_TRUE(result.erase_previous_active);
+}
+
+void test_recovery_mode_installs_even_with_no_valid_slots(void)
+{
+    struct image_version candidate = make_version(1, 0, 0, 0);
+
+    update_policy_result_t result =
+        update_policy_decide(&K_INVALID_SLOT, &K_INVALID_SLOT, &candidate, false, true);
 
     TEST_ASSERT_EQUAL(UPDATE_POLICY_INSTALL, result.action);
     TEST_ASSERT_EQUAL(UPDATE_POLICY_SLOT_A, result.target_slot);
@@ -217,6 +266,10 @@ int main(void)
     RUN_TEST(test_candidate_equal_with_button_still_skips);
     RUN_TEST(test_active_slot_is_the_higher_version_when_both_valid);
     RUN_TEST(test_forced_downgrade_targets_and_erases_the_higher_version_slot);
+
+    RUN_TEST(test_recovery_mode_installs_to_slot_a_ignoring_candidate_version);
+    RUN_TEST(test_recovery_mode_targets_slot_a_even_when_slot_a_is_the_active_one);
+    RUN_TEST(test_recovery_mode_installs_even_with_no_valid_slots);
 
     return UNITY_END();
 }

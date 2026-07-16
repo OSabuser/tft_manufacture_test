@@ -128,11 +128,15 @@
         },
         {
             "name": "mcuboot-stub-debug",
-            "displayName": "mcuboot slot stub (Фаза 2 верификация) — Debug",
+            "displayName": "mcuboot slot stub (Фаза 2/6 верификация) — Debug",
             "configurePreset": "Debug",
             "targets": [
                 "test_slot_stub_a",
-                "test_slot_stub_b"
+                "test_slot_stub_b",
+                "test_slot_stub_a_hang",
+                "test_slot_stub_b_hang",
+                "test_slot_stub_a_confirm_hang",
+                "test_slot_stub_b_confirm_hang"
             ]
         },
         {

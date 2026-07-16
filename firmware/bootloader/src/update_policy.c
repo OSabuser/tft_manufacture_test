@@ -69,8 +69,18 @@ static update_policy_slot_t other_slot(update_policy_slot_t slot)
 update_policy_result_t update_policy_decide(const update_policy_slot_state_t *p_slot_a,
                                             const update_policy_slot_state_t *p_slot_b,
                                             const struct image_version *p_candidate_ver,
-                                            bool button_held)
+                                            bool button_held, bool recovery_mode)
 {
+    if (recovery_mode)
+    {
+        /* Ослабленный гейт: версия/кнопка не участвуют, целевой слот всегда
+         * A, Slot Б обязан быть стёрт (см. recovery.h — этот флаг не связан
+         * с recovery_decide() там). */
+        return (update_policy_result_t) { .action                = UPDATE_POLICY_INSTALL,
+                                          .target_slot           = UPDATE_POLICY_SLOT_A,
+                                          .erase_previous_active = true };
+    }
+
     active_slot_info_t active = find_active_slot(p_slot_a, p_slot_b);
 
     if (!active.have_active)

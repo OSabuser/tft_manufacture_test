@@ -238,8 +238,9 @@ hab-verify project="firmware_test" type="release":
 
 # =============================================================================
 # ГРУППА: mcuboot-stub — заглушка tft_app для аппаратной верификации bootutil
-# (Фаза 2, firmware/bootloader/PLAN.md). Временное — удалить вместе с
-# firmware/bootloader/test_stub/, когда появится реальный firmware/tft_app.
+# (Фаза 2) и recovery-логики (Фаза 6, firmware/bootloader/PLAN.md). Временное —
+# удалить вместе с firmware/bootloader/test_stub/, когда появится реальный
+# firmware/tft_app.
 # =============================================================================
 
 MCUBOOT_ROOT := justfile_directory() / 'sdk/middleware/mcuboot_opensource'
@@ -249,7 +250,7 @@ MCUBOOT_IMGTOOL := MCUBOOT_ROOT / 'scripts/imgtool.py'
 # не трогая основной venv (см. firmware/bootloader/PLAN.md, "Аппаратная верификация Фазы 2").
 MCUBOOT_UV := 'uv run --with cryptography --with intelhex --with click --with cbor2 --with pyyaml python3'
 
-[doc('Собрать и подписать заглушки Slot A/Б для аппаратной верификации bootutil (Debug)')]
+[doc('Собрать и подписать заглушки Slot A/Б для аппаратной верификации bootutil и recovery (Debug)')]
 [group('mcuboot-stub')]
 build-mcuboot-stub: _configure-debug
     cmake --build --preset mcuboot-stub-debug
@@ -263,7 +264,25 @@ build-mcuboot-stub: _configure-debug
     {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
         -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 1.0.0 --align 1 --pad-header --pad \
         "{{ BUILD_DIR }}/Debug/test_slot_stub_a.bin" "{{ BUILD_DIR }}/Debug/signed/stub_a_v1_unconfirmed.bin"
-    @echo "  ✅  build/Debug/signed/stub_{a,b}_*.bin готовы — прошивка через just host::flash-swd (см. PLAN.md)"
+    # Фаза 6, Класс A — БЕЗ --confirm: проверяем именно штатный MCUboot revert
+    # (copy_done без image_ok → стирание на втором boot_go()), стаб сам тоже
+    # никогда не подтверждается (CONFIRM_MODE=2).
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 1.0.0 --align 1 --pad-header --pad \
+        "{{ BUILD_DIR }}/Debug/test_slot_stub_a_hang.bin" "{{ BUILD_DIR }}/Debug/signed/stub_a_hang_class_a.bin"
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 2.0.0 --align 1 --pad-header --pad \
+        "{{ BUILD_DIR }}/Debug/test_slot_stub_b_hang.bin" "{{ BUILD_DIR }}/Debug/signed/stub_b_hang_class_a.bin"
+    # Фаза 6, Класс B — С --confirm: образ уже "здоров" с момента прошивки
+    # (стаб и сам подтвердит себя рантаймом почти сразу, CONFIRM_MODE=0, но
+    # подпись с --confirm исключает даже стартовое окно до этого момента).
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 1.0.0 --align 1 --pad-header --pad --confirm \
+        "{{ BUILD_DIR }}/Debug/test_slot_stub_a_confirm_hang.bin" "{{ BUILD_DIR }}/Debug/signed/stub_a_confirm_hang_class_b.bin"
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 2.0.0 --align 1 --pad-header --pad --confirm \
+        "{{ BUILD_DIR }}/Debug/test_slot_stub_b_confirm_hang.bin" "{{ BUILD_DIR }}/Debug/signed/stub_b_confirm_hang_class_b.bin"
+    @echo "  ✅  build/Debug/signed/stub_*.bin готовы — прошивка через just host::flash-swd (см. PLAN.md)"
 
 # =============================================================================
 # ГРУППА: quality

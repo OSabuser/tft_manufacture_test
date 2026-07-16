@@ -50,7 +50,7 @@ typedef struct
 /**
  * @brief Решить, устанавливать ли SD-кандидат, и в какой слот.
  *
- * Правила:
+ * Правила (обычный режим, recovery_mode == false):
  *   - "Активный" слот — валидный слот с более высокой версией; если валиден
  *     только один — он активный; если ни одного — активного слота нет.
  *   - Целевой слот установки — всегда НЕ активный (активный не перезаписываем
@@ -71,15 +71,36 @@ typedef struct
  *   - Кандидат равен активному, кнопка удержана → SKIP (не форсируем
  *     переустановку той же версии).
  *
+ * Recovery-режим (recovery_mode == true, Фаза 6b) — ослабленный version-gate:
+ *   - Версия кандидата и button_held игнорируются целиком — ЛЮБОЙ кандидат,
+ *     прошедший последующие (внешние по отношению к этой функции) проверки
+ *     заголовка и крипто-гейта, принимается безусловно.
+ *   - target_slot — всегда Slot A, независимо от того, какой слот был активен
+ *     до входа в recovery (в отличие от обычного режима, где целевой слот
+ *     вычисляется как "не активный").
+ *   - erase_previous_active — всегда true: вызывающий код обязан стереть
+ *     Slot Б перед/после установки в Slot A (см. rationale выше про порядок
+ *     "стереть только после подтверждения валидности нового образа") — вместе
+ *     с тем, что erase_and_copy_candidate() и так стирает сам target_slot
+ *     перед записью, это и даёт "чистый борт": оба слота гарантированно
+ *     стёрты, в Slot A — только что установленный и провалидированный образ.
+ *
  * @param[in] p_slot_a         Состояние Slot A.
  * @param[in] p_slot_b         Состояние Slot Б.
- * @param[in] p_candidate_ver  Версия образа-кандидата на SD.
+ * @param[in] p_candidate_ver  Версия образа-кандидата на SD. Не читается при
+ *                             recovery_mode == true.
  * @param[in] button_held      Кнопка даунгрейда (BSP_BUTTON_1) удержана на старте.
+ *                             Не читается при recovery_mode == true.
+ * @param[in] recovery_mode    Ослабленный version-gate (см. выше). Не путать с
+ *                             recovery_decide() (recovery.h) — та решает,
+ *                             входить ли в recovery-режим вообще (счётчик
+ *                             watchdog-сбросов), эта функция — что делать с
+ *                             SD-кандидатом, уже находясь в нём.
  */
 update_policy_result_t update_policy_decide(const update_policy_slot_state_t *p_slot_a,
                                             const update_policy_slot_state_t *p_slot_b,
                                             const struct image_version *p_candidate_ver,
-                                            bool button_held);
+                                            bool button_held, bool recovery_mode);
 
 /**
  * @brief Сравнить версии образов: major.minor.revision, без build_num — то

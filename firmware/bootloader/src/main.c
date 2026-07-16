@@ -68,14 +68,19 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* ── Одна попытка загрузки: SD-скан + recovery-гейт (Фаза 6) + прыжок ─────
+/* ── Одна попытка загрузки: recovery-гейт (Фаза 6) → SD-скан → прыжок ─────
  *
- * sd_update_check() — до чтения счётчика/состояния слотов: новый образ с SD
- * заслуживает полный бюджет попыток независимо от текущего счётчика (см.
- * "Правила обнуления счётчика" в PLAN.md), а не только после гейта.
+ * Порядок важен: recovery_decide() должна знать, входим ли мы в recovery, ДО
+ * SD-скана — от этого зависит, каким gate'ом сканировать SD (обычным строгим
+ * или ослабленным, update_policy_decide(recovery_mode), см. update_policy.h).
+ * Обратный порядок (сначала SD, потом решение) не дал бы recovery-режиму
+ * смысла: строгий gate никогда не поставит образ поверх "активного", даже
+ * если тот активный и есть подозреваемый в зависании слот.
  *
  * peek_slot() — та же логика, что private peek_slot() в sd_update.c: не
- * шарим напрямую между модулями (см. update_policy.h), копия минимальна. */
+ * шарим напрямую между модулями (см. update_policy.h), копия минимальна.
+ * Здесь — только для recovery_decide(); sd_update_check() независимо
+ * повторно пикает слоты внутри себя для update_policy_decide(). */
 static update_policy_slot_state_t peek_slot(uint8_t fa_id)
 {
     update_policy_slot_state_t state;
@@ -83,15 +88,47 @@ static update_policy_slot_state_t peek_slot(uint8_t fa_id)
     return state;
 }
 
-static void attempt_boot(bool downgrade_held, bool recovery_held)
+static void jump_now(void)
 {
-    sd_update_check(downgrade_held); /* no-op быстро, если SD не вставлена */
+    bsp_wdog_refresh(); /* образ унаследует полное окно таймаута */
+    boot_select_and_jump(); /* при успехе не возвращается */
+}
 
+/**
+ * @return true, если по итогам этой попытки мы (остаёмся) в recovery-режиме
+ *         — main() использует это для LED-паттерна/CDC-статуса (Фаза 6b).
+ */
+static bool attempt_boot(bool downgrade_held, bool recovery_held)
+{
     update_policy_slot_state_t slot_a = peek_slot(0U);
     update_policy_slot_state_t slot_b = peek_slot(1U);
 
     recovery_decision_t decision = recovery_decide(
         bsp_boot_attempt_count(), RECOVERY_DEFAULT_THRESHOLD, &slot_a, &slot_b, recovery_held);
+
+    bool enter_recovery = (decision.action == RECOVERY_ENTER_RECOVERY_MODE);
+
+    bool installed = sd_update_check(downgrade_held, enter_recovery);
+    if (installed)
+    {
+        bsp_boot_attempt_reset(); /* новый образ — новый полный бюджет попыток */
+    }
+
+    if (enter_recovery)
+    {
+        if (installed)
+        {
+            /* Recovery только что поставил валидный образ в Slot A —
+             * прыгаем немедленно, не дожидаясь следующего пере-скана.
+             * Инкремент — как и в обычном пути (см. RECOVERY_NORMAL_BOOT
+             * ниже): первая попытка прыжка в свежий образ тоже расходует
+             * бюджет попыток, симметрично обычной установке. */
+            bsp_boot_attempt_inc();
+            jump_now();
+        }
+        /* Кандидата не нашлось/не прошёл гейт — остаёмся в recovery. */
+        return true;
+    }
 
     switch (decision.action)
     {
@@ -99,7 +136,7 @@ static void attempt_boot(bool downgrade_held, bool recovery_held)
     {
         /* Подозреваемый в зависании слот — стереть, есть подтверждённый
          * фолбэк (recovery_decide() это уже проверила). boot_go() внутри
-         * boot_select_and_jump() ниже сам выберет оставшийся. */
+         * jump_now() сам выберет оставшийся. */
         const struct flash_area *p_fap;
         if (flash_area_open((uint8_t) decision.active_slot, &p_fap) == 0)
         {
@@ -107,23 +144,26 @@ static void attempt_boot(bool downgrade_held, bool recovery_held)
             flash_area_close(p_fap);
         }
         bsp_boot_attempt_reset(); /* ситуация изменилась — новый полный бюджет */
-        bsp_wdog_refresh(); /* образ унаследует полное окно таймаута */
-        boot_select_and_jump(); /* при успехе не возвращается */
+        jump_now();
         break;
     }
-    case RECOVERY_ENTER_RECOVERY_MODE:
-        /* TODO(Фаза 6b): отдельное recovery-состояние — LED-паттерн, CDC
-         * status:recovery_mode, ослабленный version-gate на SD-установке.
-         * Пока просто не прыгаем — падаем в обычный цикл ожидания main(),
-         * как и при отсутствии валидного образа. */
-        break;
     case RECOVERY_NORMAL_BOOT:
     default:
-        bsp_boot_attempt_inc(); /* перед попыткой — см. bsp/boot_state.h */
-        bsp_wdog_refresh(); /* образ унаследует полное окно таймаута */
-        boot_select_and_jump(); /* при успехе не возвращается */
+        /* Инкремент только если действительно ЕСТЬ что пытаться загрузить
+         * (слот уже валиден, либо только что установлен этим же вызовом) —
+         * иначе на чисто пустой плате без SD счётчик рос бы и на пустом
+         * месте, и через threshold попыток (несколько секунд) recovery_decide()
+         * ошибочно увела бы в recovery-режим при отсутствии какого-либо
+         * реального зависания (регрессия к сценарию 4 Фазы 3 — "оба слота
+         * пусты" должен оставаться в обычном ожидании SD бесконечно). */
+        if (installed || slot_a.valid || slot_b.valid)
+        {
+            bsp_boot_attempt_inc(); /* перед попыткой — см. bsp/boot_state.h */
+        }
+        jump_now();
         break;
     }
+    return false;
 }
 
 int main(void)
@@ -132,6 +172,11 @@ int main(void)
     const uint32_t SD_RETRY_PERIOD_MS  = 1500U;
     const uint32_t HEARTBEAT_ON_MS     = 50U;
     const uint32_t HEARTBEAT_PERIOD_MS = 500U;
+    /* Recovery-паттерн (Фаза 6b): оба LED синхронно, 100 мс вкл/100 мс выкл —
+     * чётко отличается от heartbeat (50/450, один LED) и app (500/250,
+     * один LED, см. test_stub) визуально, без дополнительной телеметрии. */
+    const uint32_t RECOVERY_BLINK_ON_MS     = 100U;
+    const uint32_t RECOVERY_BLINK_PERIOD_MS = 200U;
     /* Таймаут WDOG. С запасом над самым долгим НАКОРМЛЕННЫМ участком: между
      * соседними refresh худший легитимный интервал — одиночное стирание 64 КБ
      * блока (~0.15..2 c по даташиту W25Q) либо цепочка bsp_sd_init+f_mount+пик
@@ -166,9 +211,15 @@ int main(void)
     bool qspi_ok = (bsp_qspi_init() == BSP_OK);
     bool cdc_ok  = (bsp_usb_cdc_init() == BSP_OK);
 
+    /* Отслеживает recovery-состояние между попытками — main-loop использует
+     * его для LED-паттерна каждую итерацию, не только на попытках прыжка
+     * (attempt_boot() зовётся раз в SD_RETRY_PERIOD_MS, LED должен обновляться
+     * значительно чаще). */
+    bool in_recovery = false;
+
     if (qspi_ok)
     {
-        attempt_boot(DOWNGRADE_HELD, RECOVERY_HELD);
+        in_recovery = attempt_boot(DOWNGRADE_HELD, RECOVERY_HELD);
     }
 
     /* Нет валидного образа ни в одном слоте (или сбой QSPI) —
@@ -200,23 +251,32 @@ int main(void)
         bsp_usb_cdc_poll();
         cli_process();
 
-        uint32_t heartbeat_phase_ms = bsp_tick_get_ms() % HEARTBEAT_PERIOD_MS;
-        if (heartbeat_phase_ms < HEARTBEAT_ON_MS)
+        if (in_recovery)
         {
-            bsp_led_on(LED_HEARTBEAT);
+            bool recovery_led_on = (bsp_tick_get_ms() % RECOVERY_BLINK_PERIOD_MS) < RECOVERY_BLINK_ON_MS;
+            bsp_led_set(LED_HEARTBEAT, recovery_led_on);
+            bsp_led_set(LED_APP, recovery_led_on);
         }
         else
         {
-            bsp_led_off(LED_HEARTBEAT);
+            uint32_t heartbeat_phase_ms = bsp_tick_get_ms() % HEARTBEAT_PERIOD_MS;
+            if (heartbeat_phase_ms < HEARTBEAT_ON_MS)
+            {
+                bsp_led_on(LED_HEARTBEAT);
+            }
+            else
+            {
+                bsp_led_off(LED_HEARTBEAT);
+            }
         }
 
         if (qspi_ok && ((int32_t) (bsp_tick_get_ms() - next_sd_retry_ms) >= 0))
         {
             next_sd_retry_ms = bsp_tick_get_ms() + SD_RETRY_PERIOD_MS;
 
-            protocol_send_status("waiting_for_sd");
+            protocol_send_status(in_recovery ? "recovery_mode" : "waiting_for_sd");
 
-            attempt_boot(DOWNGRADE_HELD, RECOVERY_HELD);
+            in_recovery = attempt_boot(DOWNGRADE_HELD, RECOVERY_HELD);
         }
     }
 }
