@@ -77,8 +77,9 @@ target_compile_definitions(firmware_test PRIVATE
 /* Инициализация — вызвать до bsp_tick_init() */
 bsp_status_t bsp_qspi_init(void);
 
-/* Идентификация */
+/* Идентификация — bsp_qspi_read_jedec_id() работает и без успешного init() */
 bsp_status_t bsp_qspi_read_jedec_id(bsp_qspi_jedec_t *p_jedec);
+const char  *bsp_qspi_decode_chip(uint8_t cap_byte, uint32_t *p_size_mb); /* device_id & 0xFF → "W25Q128" + МБ */
 uint32_t     bsp_qspi_flash_size(void);   /* доступно после init() */
 
 /* Стирание */
@@ -117,9 +118,13 @@ board_hw_init();
 bsp_qspi_init();    /* ← до bsp_tick_init() */
 bsp_tick_init();
 
-/* Идентификация чипа */
+/* Идентификация чипа — работает даже если bsp_qspi_init() выше вернула
+   ошибку (LUT для JEDEC грузится безусловным первым шагом внутри неё) */
 bsp_qspi_jedec_t jedec;
 bsp_qspi_read_jedec_id(&jedec);
+uint32_t size_mb;
+const char *chip_name = bsp_qspi_decode_chip((uint8_t) (jedec.device_id & 0xFF), &size_mb);
+/* chip_name = "W25Q128", size_mb = 16 — либо "UNKNOWN"/0, если чип не опознан */
 
 /* Стереть сектор и записать страницу */
 bsp_qspi_erase_sector(0x00010000);

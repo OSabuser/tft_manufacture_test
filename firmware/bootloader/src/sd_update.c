@@ -27,6 +27,7 @@
 #include "bsp/wdog.h"
 #include "ff.h"
 #include "flash_map.h"
+#include "led_status.h"
 #include "protocol.h"
 #include "slot_version.h"
 #include "update_policy.h"
@@ -105,7 +106,8 @@ static bool erase_and_copy_candidate(const struct flash_area *p_fap, uint32_t fi
     while (offset < file_size)
     {
         bsp_usb_cdc_poll();
-        bsp_wdog_refresh(); /* потоковое копирование — реальный прогресс на чанк */
+        bsp_wdog_refresh();      /* потоковое копирование — реальный прогресс на чанк */
+        led_status_tick_install(); /* APP 250/250 всю установку, см. led_status.h */
 
         uint32_t want = file_size - offset;
         if (want > SD_UPDATE_CHUNK_SIZE)
@@ -176,6 +178,7 @@ static bool run_update(bool button_held, bool recovery_mode)
     if (!read_candidate_header(&candidate_ver))
     {
         protocol_send_error("SD_CANDIDATE_INVALID");
+        led_status_flash_image_rejected(); /* битый заголовок = негодный файл */
         goto cleanup;
     }
 
@@ -194,6 +197,7 @@ static bool run_update(bool button_held, bool recovery_mode)
     }
 
     protocol_send_status("installing");
+    led_status_install_begin(); /* открыть окно: tick_install() ниже начинает рисовать */
 
     if (flash_area_open((uint8_t) decision.target_slot, &p_fap) != 0)
     {
@@ -213,6 +217,7 @@ static bool run_update(bool button_held, bool recovery_mode)
     if (!slot_version_get((uint8_t) decision.target_slot, &installed_ver))
     {
         protocol_send_error("SD_INSTALL_REJECTED");
+        led_status_flash_image_rejected(); /* записан, но подпись не прошла = негодный файл */
         goto cleanup;
     }
 
@@ -248,6 +253,7 @@ static bool run_update(bool button_held, bool recovery_mode)
     }
 
 cleanup:
+    led_status_install_end(); /* закрыть окно (идемпотентно, если не открывали) */
     (void) f_close(&g_s_file);
     (void) f_unmount(SD_UPDATE_MOUNT_POINT);
     (void) bsp_sd_deinit();

@@ -11,6 +11,17 @@
  * Входящие типы (Фаза 1):
  *   "cmd" → handle_cmd() → protocol_send_pong() / protocol_send_version_response()
  *
+ * [Фаза 4] Команды "smoke_status"/"qspi_info" — переспросить результат
+ * boot-time smoke-теста SDRAM/SEMC и опознанный чип QSPI flash в любой
+ * момент сессии (сами события шлются один раз рано, до открытия хостом
+ * порта, и почти наверняка теряются — см. protocol.h).
+ *
+ * [DEV-ONLY, Фаза 4] Команда "sdram_test" — под BOOTLOADER_DEV_DIAGNOSTICS
+ * (только Debug, см. CMakeLists.txt): запускает dev_sdram_test_run(), которая
+ * блокирует главный цикл на ~4 с (пройденный прогон на железе: configure ~0,
+ * address_bus <1 мс, data_bus ~130 мс, sequential ~3.7 с, retention ~400 мс).
+ * Отсутствует в Release/HAB-бинаре.
+ *
  * Добавление новой команды типа "cmd":
  *   1. Добавить ветку if (strcmp(cmd_name, "FOO") == 0) в handle_cmd().
  */
@@ -19,6 +30,10 @@
 
 #include "bsp/usb_cdc.h"
 #include "protocol.h"
+
+#ifdef BOOTLOADER_DEV_DIAGNOSTICS
+#include "dev_sdram_test.h"
+#endif
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -140,6 +155,26 @@ static void handle_cmd(const char *p_line)
         protocol_send_wdog_status();
         return;
     }
+
+    if (strcmp(cmd_name, "smoke_status") == 0)
+    {
+        protocol_send_smoke_status();
+        return;
+    }
+
+    if (strcmp(cmd_name, "qspi_info") == 0)
+    {
+        protocol_send_qspi_info();
+        return;
+    }
+
+#ifdef BOOTLOADER_DEV_DIAGNOSTICS
+    if (strcmp(cmd_name, "sdram_test") == 0)
+    {
+        dev_sdram_test_run();
+        return;
+    }
+#endif
 
     protocol_send_error("UNKNOWN_CMD");
 }

@@ -17,6 +17,7 @@
 #include "bsp/qspi_flash.h"
 #include "bsp/wdog.h"
 #include "flash_map.h"
+#include "led_status.h"
 #include "sysflash/sysflash.h"
 
 #include <string.h>
@@ -152,6 +153,11 @@ int flash_area_erase(const struct flash_area *area, uint32_t off, uint32_t len)
              * Зависание самого стирания флеша всё равно ловится: refresh — по
              * ЗАВЕРШЕНИИ блока, а не перед ним. */
             bsp_wdog_refresh();
+            /* Прогресс-хук индикации — no-op вне окна установки (см.
+             * led_status.h). Нужен, чтобы APP не замирал на ~5 c стирания слота
+             * при установке; на revert/recovery-стирании (тоже зовут эту
+             * функцию) ничего не рисует. */
+            led_status_tick_install();
             if (bsp_qspi_erase_block_64k(block_addr) != BSP_OK)
             {
                 return -1;

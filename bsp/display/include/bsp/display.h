@@ -2,8 +2,6 @@
  * @file  display.h
  * @brief BSP: ELCDIF display driver — TFT4 / TFT7 / TFT8 / TFT10.
  *
- * Bare-metal compatible: callback-based FRAME_DONE notification.
- * No FreeRTOS dependency in this layer.
  */
 
 #ifndef BSP_DISPLAY_DISPLAY_H_

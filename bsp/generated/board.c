@@ -91,6 +91,16 @@ static void board_mpu_init(void)
     MPU->RBAR = ARM_MPU_RBAR(10U, 0x40000000U);
     MPU->RASR = ARM_MPU_RASR(0U, ARM_MPU_AP_FULL, 2U, 0U, 0U, 0U, 0U, ARM_MPU_REGION_SIZE_4MB);
 
+    /* Region 11: Device, NIC-301 GPV (bus-arbitration QoS) 0x41000000, 8 MB.
+     * Region 10 не покрывает — GPV0/SIM_MAIN (0x41000000) и GPV4/SIM_M7
+     * (0x41400000, "Cortex-M7 read/write_qos") лежат за пределами его 4 MB
+     * от 0x40000000, попадают только под Region 0 (deny-all, errata-воркэраунд
+     * выше) → запись фолтит, хотя регистры реальные и документированы (i.MX
+     * RT1050 RM, гл. 29 "Network Interconnect Bus System (NIC-301)"). Нужен
+     * bsp_sdram_configure() для read_qos/write_qos регионов SDRAM/LCD/M7. */
+    MPU->RBAR = ARM_MPU_RBAR(11U, 0x41000000U);
+    MPU->RASR = ARM_MPU_RASR(0U, ARM_MPU_AP_FULL, 2U, 0U, 0U, 0U, 0U, ARM_MPU_REGION_SIZE_8MB);
+
     ARM_MPU_Enable(MPU_CTRL_PRIVDEFENA_Msk);
 
     SCB_EnableDCache();

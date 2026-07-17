@@ -6,7 +6,7 @@
 USB CDC ACM (JSON-строки).
 
 **Принцип работы** (карта памяти, выбор образа, обновление, версии, даунгрейд, recovery) —
-[BOOT_FLOW.md](BOOT_FLOW.md).
+[BOOT_FLOW.md](../../docs/bootloader/BOOT_FLOW.md). LED-индикация — [LED_PATTERNS.md](../../docs/bootloader/LED_PATTERNS.md).
 
 ---
 

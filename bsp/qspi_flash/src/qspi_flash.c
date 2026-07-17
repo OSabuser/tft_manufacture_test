@@ -657,6 +657,42 @@ AT_QUICKACCESS_SECTION_CODE(static bsp_status_t qspi_detect_chip(uint8_t cap_byt
     return BSP_OK;
 }
 
+const char *bsp_qspi_decode_chip(uint8_t cap_byte, uint32_t *p_size_mb)
+{
+    const char *p_name;
+    uint32_t size_mb;
+
+    switch (cap_byte)
+    {
+    case BSP_QSPI_CAP_64MBIT:
+        p_name  = "W25Q64";
+        size_mb = 8U;
+        break;
+    case BSP_QSPI_CAP_128MBIT:
+        p_name  = "W25Q128";
+        size_mb = 16U;
+        break;
+    case BSP_QSPI_CAP_256MBIT:
+        p_name  = "W25Q256";
+        size_mb = 32U;
+        break;
+    case BSP_QSPI_CAP_512MBIT:
+        p_name  = "W25Q512";
+        size_mb = 64U;
+        break;
+    default:
+        p_name  = "UNKNOWN";
+        size_mb = 0U;
+        break;
+    }
+
+    if (p_size_mb != NULL)
+    {
+        *p_size_mb = size_mb;
+    }
+    return p_name;
+}
+
 /**
  * @brief Общая реализация erase-операций.
  *

@@ -90,8 +90,28 @@ bsp_status_t bsp_qspi_init(void);
  *
  * @param[out] p_jedec  Результат. Не NULL.
  * @retval BSP_OK / BSP_ERR.
+ *
+ * @note Работает и после проваленного bsp_qspi_init() — LUT-слот для чтения
+ *       JEDEC ID грузится безусловным первым шагом внутри него, до любой из
+ *       проверок, на которых init() мог отвалиться. Полезно для диагностики
+ *       "что именно распаяно", когда чип не опознан/не тот.
  */
 bsp_status_t bsp_qspi_read_jedec_id(bsp_qspi_jedec_t *p_jedec);
+
+/**
+ * @brief Человекочитаемое имя и ёмкость чипа по capacity byte JEDEC ID.
+ *
+ * Тот же байт, что различает поддерживаемые чипы в bsp_qspi_init() — вынесен
+ * отдельно, чтобы потребитель мог опознать чип из уже прочитанного
+ * bsp_qspi_jedec_t.device_id, не завися от успеха bsp_qspi_init().
+ *
+ * @param[in]  cap_byte   Байт ёмкости (device_id & 0xFF).
+ * @param[out] p_size_mb  Ёмкость чипа, МБ. 0, если байт не распознан.
+ *                        Может быть NULL, если размер не нужен.
+ * @return "W25Q64"/"W25Q128"/"W25Q256"/"W25Q512", либо "UNKNOWN" для
+ *         нераспознанного байта.
+ */
+const char *bsp_qspi_decode_chip(uint8_t cap_byte, uint32_t *p_size_mb);
 
 /**
  * @brief Стирание сектора 4 KB.

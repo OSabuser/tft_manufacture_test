@@ -4,10 +4,6 @@
  *        flash_map_backend.c (реальный, над bsp_qspi_flash) или
  *        fake_flash_map_backend.c (host-тесты, in-memory буфер).
  *
- * Урезано под наш случай относительно оригинального Apache-2.0 заголовка
- * MCUboot (sdk/middleware/mcuboot_opensource/boot/nxp_mcux_sdk/include/flash_map.h):
- * без sblconfig.h, без encrypted_xip externs, без boot_image_names[] — этого
- * NXP-специфичного слоя у нас нет.
  */
 
 #ifndef FLASH_MAP_H_
@@ -26,7 +22,7 @@ struct flash_area
     uint8_t fa_id;        /**< ID области, уникален в системе. */
     uint8_t fa_device_id; /**< ID flash-устройства. */
     uint16_t pad16;
-    uint32_t fa_off;  /**< Смещение области от начала устройства. */
+    uint32_t fa_off; /**< Смещение области от начала устройства. */
     uint32_t fa_size; /**< Размер области, байт. */
 };
 

@@ -30,6 +30,7 @@ add_executable(
   src/slot_version.c
   src/sd_update.c
   src/recovery.c
+  src/led_status.c
   mcuboot_port/flash_map_backend.c
   mcuboot_port/keys.c
   ${MCUBOOT_BOOTUTIL_SOURCES}
@@ -49,12 +50,26 @@ target_compile_definitions(
 # -----------------------------------------------------------------------------
 # Зависимости. bsp_button — downgrade-override (удержание BSP_BUTTON_1).
 # bootloader_fatfs — чтение TFT_APP.BIN с SD (Фаза 3, firmware/bootloader/fatfs/).
+# bsp_sdram — smoke-test SDRAM/SEMC (Фаза 4, bsp_sdram_configure()+_init()) —
+# bootloader без DCD, сам поднимает SEMC на время диагностики.
 # -----------------------------------------------------------------------------
 target_link_libraries(${TARGET_NAME} PRIVATE bsp_board bsp_led bsp_tick
                                              bsp_usb_cdc bsp_qspi_flash
                                              bsp_boot_xip_no_dcd bsp_button
                                              bsp_wdog bsp_boot_state
-                                             bootloader_fatfs)
+                                             bsp_sdram bootloader_fatfs)
+
+# -----------------------------------------------------------------------------
+# [DEV-ONLY] Диагностика Фазы 4 — CLI-команда "sdram_test" (dev_sdram_test.c):
+# 4-фазный тест SDRAM (адресная шина/шина данных/sequential/retention),
+# портирован из firmware_test/src/tests/test_sdram.c, прогоняется через
+# bsp_sdram_configure() вместо DCD. НЕ для production: только Debug —
+# Release/HAB-бинарь этот файл не содержит и о команде не знает.
+# -----------------------------------------------------------------------------
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_sources(${TARGET_NAME} PRIVATE src/dev_sdram_test.c)
+  target_compile_definitions(${TARGET_NAME} PRIVATE BOOTLOADER_DEV_DIAGNOSTICS)
+endif()
 
 # -----------------------------------------------------------------------------
 # Linker script — вариант flexspi_nor с m_text, ограниченным бюджетом

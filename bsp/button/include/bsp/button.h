@@ -1,24 +1,6 @@
 /*
  * bsp_button — тактовые кнопки TactBut1 / TactBut2
  *
- * Аппаратура:
- *   TactBut1 — GPIO2 pin 30 (GPIO_B1_14), подтяжка к 3V3 внешняя, нажатие = LOW
- *   TactBut2 — GPIO2 pin 31 (GPIO_B1_15), подтяжка к 3V3 внешняя, нажатие = LOW
- *
- * Пины инициализированы в BOARD_InitPins() (generated/pin_mux.c).
- * bsp_button_init() не трогает GPIO — только сбрасывает внутреннее состояние.
- *
- * Использование (bare-metal):
- *   bsp_button_init();
- *   // в tick-коллбэке каждые 5 мс:
- *   bsp_button_poll();
- *   // в основном цикле:
- *   if (bsp_button_get_event_pressed(BSP_BUTTON_1)) { ... }
- *
- * Использование (FreeRTOS):
- *   // в таске с vTaskDelay(5):
- *   bsp_button_poll();
- *   if (bsp_button_get_event_pressed(BSP_BUTTON_1)) { xQueueSend(...); }
  */
 
 #ifndef BSP_BUTTON_H

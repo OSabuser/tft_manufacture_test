@@ -32,10 +32,14 @@
  *   6. bsp_button_init()        — для проверки удержания BSP_BUTTON_1/2
  *   7. bsp_qspi_init()          — доступ к Slot A/Б
  *   8. bsp_usb_cdc_init()       — не блокирует, см. выше
- *   9. attempt_boot()           — SD-скан + recovery-гейт + прыжок; при
+ *   9. qspi_info (Фаза 4)       — идентификация чипа QSPI (JEDEC → имя +
+ *                                 ёмкость), не зависит от qspi_ok, только CDC
+ *  10. bsp_sdram_configure()+   — smoke-test SDRAM/SEMC (Фаза 4): диагностика,
+ *      bsp_sdram_init()           не блокирует, результат только на CDC
+ *  11. attempt_boot()           — SD-скан + recovery-гейт + прыжок; при
  *                                 успехе не возвращается
- *  10. Цикл ожидания            — CDC ping/pong + LED + периодический
- *                                 пере-скан SD (шаг 9 повторно)
+ *  12. Цикл ожидания            — CDC ping/pong + LED + периодический
+ *                                 пере-скан SD (шаг 11 повторно)
  *
  * Watchdog (bsp_wdog): единственная защита от бесконечных зависаний в
  * блокирующих вызовах SDMMC-стека, не возвращающих управление в наш код
@@ -46,8 +50,10 @@
  * копирования, перед прыжком) — НЕ перед f_mount/SD_Init, иначе watchdog
  * перестаёт защищать именно от них.
  *
- * Bootloader без SDRAM (см. docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md) — DCD
- * не используется (bsp_boot_xip_no_dcd).
+ * Bootloader не зависит от SDRAM (см. docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md)
+ * — DCD не используется (bsp_boot_xip_no_dcd), XIP только из W25Q. SEMC/SDRAM
+ * трогаются только диагностически, шагом 9 (bsp_sdram_configure(), см.
+ * bsp/sdram/README.md) — bootloader сам эту память ни для чего не использует.
  */
 #include "board.h"
 #include "boot_select.h"
@@ -55,11 +61,13 @@
 #include "bsp/button.h"
 #include "bsp/led.h"
 #include "bsp/qspi_flash.h"
+#include "bsp/sdram.h"
 #include "bsp/tick.h"
 #include "bsp/usb_cdc.h"
 #include "bsp/wdog.h"
 #include "cli.h"
 #include "flash_map.h"
+#include "led_status.h"
 #include "protocol.h"
 #include "recovery.h"
 #include "sd_update.h"
@@ -168,20 +176,18 @@ static bool attempt_boot(bool downgrade_held, bool recovery_held)
 
 int main(void)
 {
-    const uint32_t ERROR_BLINK_MS      = 250U;
-    const uint32_t SD_RETRY_PERIOD_MS  = 1500U;
-    const uint32_t HEARTBEAT_ON_MS     = 50U;
-    const uint32_t HEARTBEAT_PERIOD_MS = 500U;
-    /* Recovery-паттерн (Фаза 6b): оба LED синхронно, 100 мс вкл/100 мс выкл —
-     * чётко отличается от heartbeat (50/450, один LED) и app (500/250,
-     * один LED, см. test_stub) визуально, без дополнительной телеметрии. */
-    const uint32_t RECOVERY_BLINK_ON_MS     = 100U;
-    const uint32_t RECOVERY_BLINK_PERIOD_MS = 200U;
+    const uint32_t ERROR_BLINK_MS     = 250U;
+    const uint32_t SD_RETRY_PERIOD_MS = 1500U;
     /* Таймаут WDOG. С запасом над самым долгим НАКОРМЛЕННЫМ участком: между
      * соседними refresh худший легитимный интервал — одиночное стирание 64 КБ
      * блока (~0.15..2 c по даташиту W25Q) либо цепочка bsp_sd_init+f_mount+пик
      * слотов (~2-2.5 c). 10 c даёт кратный запас; зависание ловится ≤10 c. */
     const uint32_t WDOG_TIMEOUT_S = 10U;
+    /* Минимум по docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md §1 — карта
+     * (bootloader+Slot A+Slot Б+запас под ФС ассетов) рассчитана на W25Q128
+     * (16 МБ) и выше; W25Q64 драйвер технически поддерживает, но для этой
+     * платы это неверный BOM, а не "чуть меньше запас". */
+    const uint32_t QSPI_MIN_FLASH_SIZE_MB = 16U;
 
     board_hw_init();
 
@@ -210,6 +216,44 @@ int main(void)
 
     bool qspi_ok = (bsp_qspi_init() == BSP_OK);
     bool cdc_ok  = (bsp_usb_cdc_init() == BSP_OK);
+
+    /* Единый признак «плата не годна» (LED_BG_HW_FAULT, см. LED_PATTERNS.md) —
+     * накапливается по обоим boot-time чекам ниже (QSPI + SDRAM smoke).
+     * Детали, что именно не так, всегда есть по CDC (qspi_info/smoke_status);
+     * LED показывает лишь факт неисправности. */
+    bool hw_fault = false;
+
+    /* Идентификация QSPI-чипа (Фаза 4) — не зависит от qspi_ok:
+     * bsp_qspi_read_jedec_id() отрабатывает и после проваленного
+     * bsp_qspi_init() (см. её @note), так что "чип не тот"/"чип не опознан"
+     * репортится с деталями, а не просто as "не сработало". */
+    {
+        bsp_qspi_jedec_t jedec = { 0U, 0U };
+        uint32_t qspi_size_mb  = 0U;
+        const char *p_qspi_chip = "UNKNOWN";
+        uint8_t qspi_cap_byte    = 0U;
+
+        if (bsp_qspi_read_jedec_id(&jedec) == BSP_OK)
+        {
+            qspi_cap_byte = (uint8_t) (jedec.device_id & 0xFFU);
+            p_qspi_chip   = bsp_qspi_decode_chip(qspi_cap_byte, &qspi_size_mb);
+        }
+
+        const bool QSPI_PASS = (qspi_size_mb >= QSPI_MIN_FLASH_SIZE_MB);
+        hw_fault             = (!qspi_ok) || (!QSPI_PASS); /* чип не отвечает / не тот / мал */
+        protocol_set_qspi_info(jedec.manufacturer_id, p_qspi_chip, qspi_cap_byte, qspi_size_mb, QSPI_PASS);
+        protocol_send_qspi_info(); /* лучший случай — хост уже слушает; см. protocol.h */
+    }
+
+    /* Smoke-test SDRAM/SEMC (Фаза 4) — диагностический, неблокирующий: не
+     * влияет на attempt_boot() ниже (bootloader SDRAM ни для чего не
+     * использует, см. docstring файла), результат только репортится по CDC.
+     * Цель — поймать неисправность SEMC/SDRAM на плате раньше, чем её
+     * унаследует tft_app (см. bsp/sdram/README.md). */
+    bool sdram_ok = (bsp_sdram_configure() == BSP_OK) && (bsp_sdram_init() == BSP_OK);
+    hw_fault      = hw_fault || (!sdram_ok);
+    protocol_set_smoke_result(sdram_ok);
+    protocol_send_smoke_status(); /* лучший случай — хост уже слушает; см. protocol.h */
 
     /* Отслеживает recovery-состояние между попытками — main-loop использует
      * его для LED-паттерна каждую итерацию, не только на попытках прыжка
@@ -251,24 +295,11 @@ int main(void)
         bsp_usb_cdc_poll();
         cli_process();
 
-        if (in_recovery)
-        {
-            bool recovery_led_on = (bsp_tick_get_ms() % RECOVERY_BLINK_PERIOD_MS) < RECOVERY_BLINK_ON_MS;
-            bsp_led_set(LED_HEARTBEAT, recovery_led_on);
-            bsp_led_set(LED_APP, recovery_led_on);
-        }
-        else
-        {
-            uint32_t heartbeat_phase_ms = bsp_tick_get_ms() % HEARTBEAT_PERIOD_MS;
-            if (heartbeat_phase_ms < HEARTBEAT_ON_MS)
-            {
-                bsp_led_on(LED_HEARTBEAT);
-            }
-            else
-            {
-                bsp_led_off(LED_HEARTBEAT);
-            }
-        }
+        /* Фоновый паттерн: recovery > неисправность железа > норма (ждём SD).
+         * Паттерн «установка» здесь не участвует — он рисуется изнутри самой
+         * (блокирующей) установки, см. led_status_tick_install(). */
+        led_bg_t bg = in_recovery ? LED_BG_RECOVERY : (hw_fault ? LED_BG_HW_FAULT : LED_BG_WAITING);
+        led_status_draw_background(bg);
 
         if (qspi_ok && ((int32_t) (bsp_tick_get_ms() - next_sd_retry_ms) >= 0))
         {
