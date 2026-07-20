@@ -61,8 +61,10 @@ watchdog приостановлен, пошаговая отладка сбро�
 
 ## Архитектура
 
-Загрузчик работает **без SDRAM** (SEMC поднимает само приложение в своём раннем startup) и без
-дисплея/RTOS: инициализация, доступ к QSPI-flash, чтение FatFS с SD, проверка и выбор образа, прыжок.
+Загрузчик **не зависит от SDRAM** для своей работы (XIP только из W25Q, без DCD) и без дисплея/RTOS:
+инициализация, доступ к QSPI-flash, чтение FatFS с SD, проверка и выбор образа, прыжок. SEMC/SDRAM
+трогаются только диагностически (`bsp_sdram_configure()`, boot-time smoke-test) — реально их поднимает
+для себя уже само приложение в своём раннем startup.
 Линкер жёстко ограничивает код бюджетом области загрузчика (256 КБ) с `ASSERT` на границу Slot A —
 превышение становится ошибкой сборки, а не тихим заездом в чужую область.
 
@@ -80,6 +82,8 @@ firmware/bootloader/
 │   │                       установить в целевой слот с потоковой verify-записью
 │   ├── cli.*             — построчный IO + диспетчеризация команд
 │   ├── protocol.*        — сериализация исходящих событий
+│   ├── led_status.*      — словарь LED-паттернов (см. ../../docs/bootloader/LED_PATTERNS.md)
+│   ├── dev_sdram_test.*  — [DEV-ONLY, Debug] глубокий тест SDRAM по команде "sdram_test"
 │   └── version.h.in      — шаблон версии (CMake → generated/version.h)
 │
 ├── mcuboot_port/         — интеграция bootutil (MCUboot) поверх bsp_qspi_flash:
@@ -96,30 +100,44 @@ firmware/bootloader/
 
 ## Протокол
 
-USB CDC ACM, JSON-строки, максимум 128 байт на строку.
+USB CDC ACM, JSON-строки. Входящая строка — до `CLI_LINE_BUF_SIZE` (128) байт, исходящее сообщение —
+до `PROTO_BUF_SIZE` (192) байт (несимметрично: `qspi_info`/`sdram_test` длиннее старых сообщений).
 
 **Команды хоста:**
 
-| Команда                              | Ответ                                                                                 |
-| ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `{"type":"cmd","cmd":"ping"}`        | `{"type":"pong"}`                                                                     |
-| `{"type":"cmd","cmd":"get_version"}` | `{"type":"version_response","fw":"X.Y.Z"}`                                            |
-| `{"type":"cmd","cmd":"wdog"}`        | `{"type":"wdog","armed":…,"timeout_s":…,"recovered":…,"reset_count":…,"threshold":…}` |
+| Команда                                | Ответ                                                                                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `{"type":"cmd","cmd":"ping"}`             | `{"type":"pong"}`                                                                                                                          |
+| `{"type":"cmd","cmd":"get_version"}`      | `{"type":"version_response","fw":"X.Y.Z"}`                                                                                                |
+| `{"type":"cmd","cmd":"wdog"}`             | `{"type":"wdog","armed":…,"timeout_s":…,"recovered":…,"reset_count":…,"threshold":…}`                                                    |
+| `{"type":"cmd","cmd":"smoke_status"}`     | `{"type":"status","state":"smoke_pass"}` / `"smoke_fail"` — результат boot-time smoke-теста SDRAM/SEMC (переспрос, см. ниже)               |
+| `{"type":"cmd","cmd":"qspi_info"}`        | `{"type":"qspi_info","chip":"W25Q128","mfr":"0xEF","cap_byte":"0x18","size_mb":16,"pass":true}` (переспрос, см. ниже)                     |
+| `{"type":"cmd","cmd":"sdram_test"}` <br> **[DEV-ONLY, Debug-сборка]** | серия из 6 `{"type":"sdram_test","phase":"…","pass":…,"duration_ms":…,"fail_addr":"…","expected":"…","got":"…"}` (`configure`/`address_bus`/`data_bus`/`sequential`/`retention`/`summary`) — блокирует главный цикл на ~4 с. Нет в Release/HAB (`BOOTLOADER_DEV_DIAGNOSTICS`) |
+
+`smoke_status`/`qspi_info` ничего не отвечают, если соответствующий boot-time чек ещё не отработал —
+в штатной последовательности `main.c` такого не бывает.
 
 **Исходящие статусы** `{"type":"status","state":"…"}`:
 
-| Состояние        | Когда                           |
-| ---------------- | ------------------------------- |
-| `waiting_for_sd` | нет валидного слота, ждём карту |
-| `installing`     | идёт запись образа в слот       |
-| `update_skipped` | кандидат отклонён по версии     |
-| `recovery_mode`  | плата в режиме восстановления   |
+| Состояние        | Когда                                    |
+| ---------------- | ------------------------------------------ |
+| `waiting_for_sd` | нет валидного слота, ждём карту          |
+| `installing`     | идёт запись образа в слот                |
+| `update_skipped` | кандидат отклонён по версии              |
+| `recovery_mode`  | плата в режиме восстановления            |
+| `smoke_pass`     | boot-time smoke-тест SDRAM/SEMC прошёл   |
+| `smoke_fail`     | boot-time smoke-тест SDRAM/SEMC провалился |
 
 **Ошибки** `{"ok":false,"error":"…"}`: `SD_CANDIDATE_INVALID`, `SD_INSTALL_WRITE_FAILED`,
 `SD_INSTALL_REJECTED`, `SD_DOWNGRADE_ERASE_FAILED`, `PARSE_ERR`, `UNKNOWN_CMD`, `LINE_TOO_LONG`.
 
-Событие `wdog` эмитится также автоматически один раз на старте, если предыдущий сброс был по
-watchdog (`recovered:true`).
+**Автоматически на старте, без команды:** `wdog` — если предыдущий сброс был по watchdog
+(`recovered:true`); `qspi_info` и `smoke_pass`/`smoke_fail` — сразу после соответствующей проверки.
+Все три — best-effort: хост почти никогда не успевает открыть порт к этому моменту (USB enumeration),
+поэтому у `qspi_info`/`smoke_status` (но не у одноразового boot-time `wdog`) есть команда-переспрос
+в таблице выше.
+
+LED-индикация, соответствующая этим состояниям, — [LED_PATTERNS.md](../../docs/bootloader/LED_PATTERNS.md).
 
 ---
 

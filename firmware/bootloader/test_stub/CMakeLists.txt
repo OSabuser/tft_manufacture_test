@@ -34,9 +34,16 @@ function(add_mcuboot_stub)
     ${BSP_STARTUP_FILE}
     ${BSP_SYSCALLS_FILE}
     ${CMAKE_SOURCE_DIR}/firmware/bootloader/mcuboot_port/flash_map_backend.c
+    ${CMAKE_SOURCE_DIR}/firmware/bootloader/src/led_status.c
     ${MCUBOOT_BOOTUTIL_DIR}/src/bootutil_public.c)
 
-  target_include_directories(${ARG_NAME} PRIVATE ${MCUBOOT_BOOTUTIL_INCLUDES})
+  # led_status.h — flash_map_backend.c (общий с bootloader) зовёт
+  # led_status_tick_install() из поблочного erase (см. led_status.h) — не
+  # добавляет стабу нового поведения (окно установки здесь никогда не
+  # открыто, tick — no-op), просто нужен для компиляции общего файла.
+  target_include_directories(
+    ${ARG_NAME} PRIVATE ${MCUBOOT_BOOTUTIL_INCLUDES}
+                        ${CMAKE_SOURCE_DIR}/firmware/bootloader/src)
 
   target_compile_definitions(
     ${ARG_NAME}
