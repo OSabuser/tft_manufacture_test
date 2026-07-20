@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(
   bootloader
-  VERSION 0.1.0
+  VERSION 1.0.0
   LANGUAGES C ASM)
 
 set(TARGET_NAME bootloader)
@@ -13,8 +13,8 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in"
                "${CMAKE_CURRENT_BINARY_DIR}/generated/version.h" @ONLY)
 
 # bootutil (MCUboot Direct-XIP) + TinyCrypt + ASN.1 — общий список с
-# host-тестами (tests/host/mcuboot_port/), см. firmware/bootloader/PLAN.md,
-# Фаза 2.
+# host-тестами (tests/host/mcuboot_port/), см. firmware/bootloader/PLAN.md, Фаза
+# 2.
 include(${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_port/bootutil_sources.cmake)
 
 # bootloader_fatfs — bare-metal FatFS для чтения TFT_APP.BIN с SD (Фаза 3).
@@ -38,7 +38,8 @@ add_executable(
   ${BSP_STARTUP_FILE}
   ${BSP_SYSCALLS_FILE})
 
-target_include_directories(${TARGET_NAME} PRIVATE src/ ${MCUBOOT_BOOTUTIL_INCLUDES})
+target_include_directories(${TARGET_NAME} PRIVATE src/
+                                                  ${MCUBOOT_BOOTUTIL_INCLUDES})
 
 target_include_directories(${TARGET_NAME}
                            PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -49,15 +50,24 @@ target_compile_definitions(
 
 # -----------------------------------------------------------------------------
 # Зависимости. bsp_button — downgrade-override (удержание BSP_BUTTON_1).
-# bootloader_fatfs — чтение TFT_APP.BIN с SD (Фаза 3, firmware/bootloader/fatfs/).
-# bsp_sdram — smoke-test SDRAM/SEMC (Фаза 4, bsp_sdram_configure()+_init()) —
-# bootloader без DCD, сам поднимает SEMC на время диагностики.
+# bootloader_fatfs — чтение TFT_APP.BIN с SD (Фаза 3,
+# firmware/bootloader/fatfs/). bsp_sdram — smoke-test SDRAM/SEMC (Фаза 4,
+# bsp_sdram_configure()+_init()) — bootloader без DCD, сам поднимает SEMC на
+# время диагностики.
 # -----------------------------------------------------------------------------
-target_link_libraries(${TARGET_NAME} PRIVATE bsp_board bsp_led bsp_tick
-                                             bsp_usb_cdc bsp_qspi_flash
-                                             bsp_boot_xip_no_dcd bsp_button
-                                             bsp_wdog bsp_boot_state
-                                             bsp_sdram bootloader_fatfs)
+target_link_libraries(
+  ${TARGET_NAME}
+  PRIVATE bsp_board
+          bsp_led
+          bsp_tick
+          bsp_usb_cdc
+          bsp_qspi_flash
+          bsp_boot_xip_no_dcd
+          bsp_button
+          bsp_wdog
+          bsp_boot_state
+          bsp_sdram
+          bootloader_fatfs)
 
 # -----------------------------------------------------------------------------
 # [DEV-ONLY] Диагностика Фазы 4 — CLI-команда "sdram_test" (dev_sdram_test.c):
@@ -72,9 +82,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # -----------------------------------------------------------------------------
-# Linker script — вариант flexspi_nor с m_text, ограниченным бюджетом
-# bootloader (256 KB, см. docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md). Без SDRAM
-# (в отличие от firmware_test) — bootloader SDRAM не использует.
+# Linker script — вариант flexspi_nor с m_text, ограниченным бюджетом bootloader
+# (256 KB, см. docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md). Без SDRAM (в отличие от
+# firmware_test) — bootloader SDRAM не использует.
 # -----------------------------------------------------------------------------
 target_link_options(
   ${TARGET_NAME}

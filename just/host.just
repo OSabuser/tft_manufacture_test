@@ -604,6 +604,16 @@ package-tui:
         echo "      Бандл TUI без Debug-образа нерабочий (см. README/DEV_ARCH.md)."
         exit 1
     fi
+    # Flasher.PRODUCTION (Фаза 5) резолвит bootloader ЖЁСТКО из Release, без
+    # фоллбэка на Debug (см. flasher.py) — в отличие от firmware_test выше,
+    # здесь недостаточно "хоть какой-то hab нашёлся", нужен именно этот файл,
+    # иначе «Серийная прошивка» в готовом бандле молча падает в рантайме.
+    if [[ ! -f "{{ _prod_build_dir }}/Release/bootloader_hab.bin" ]]; then
+        echo "  ❌  Не найден {{ _prod_build_dir }}/Release/bootloader_hab.bin — соберите"
+        echo "      заранее (just build::hab-bootloader-release)."
+        echo "      Серийная прошивка в бандле TUI без него не работает."
+        exit 1
+    fi
 
     VERSION=$(grep -m1 '^version' pyproject.toml | sed -E 's/.*"(.+)".*/\1/')
     case "$(uname -s)" in

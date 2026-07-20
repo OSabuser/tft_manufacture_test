@@ -19,7 +19,13 @@ from textual.binding import Binding
 from .firmware_client import FirmwareClient
 from .m5_client import M5Client
 from .models import AppMode, FlashPreset, FlashTarget
-from .screens import DiagScreen, FlashScreen, PostFlashScreen, WaitingScreen
+from .screens import (
+    DiagScreen,
+    FlashScreen,
+    PostFlashScreen,
+    VerifyScreen,
+    WaitingScreen,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +88,8 @@ class ServiceApp(App):
         """
         После прошивки:
           - firmware_test + успех → PostFlashScreen (промпт смены BootMode)
-          - production/custom + успех → WaitingScreen
+          - production + успех + preset.verify → VerifyScreen (Тир-1, Фаза 5)
+          - production (без verify) / custom + успех → WaitingScreen
           - target=None — обрыв USB (watcher в простое ИЛИ backend во время
             активной операции, см. models.FlashResult, Фаза 4a вариант 2)
             → WaitingScreen с причиной (конкретный текст, если есть, иначе
@@ -102,8 +109,20 @@ class ServiceApp(App):
 
         if event.success and event.target == FlashTarget.FIRMWARE_TEST:
             self.switch_screen(PostFlashScreen())
+        elif (
+            event.success
+            and event.target == FlashTarget.PRODUCTION
+            and event.preset is not None
+            and event.preset.verify
+        ):
+            self.switch_screen(VerifyScreen())
         else:
             self._switch_to_waiting()
+
+    @on(VerifyScreen.Done)
+    def _on_verify_done(self) -> None:
+        """Оператор завершил/пропустил верификацию загрузчика (Тир-1)."""
+        self._switch_to_waiting()
 
     @on(PostFlashScreen.Done)
     def _on_post_flash_done(self) -> None:

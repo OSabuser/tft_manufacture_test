@@ -93,7 +93,7 @@ in-process через Python API `spsdk` (`app/flash_backend.py`: `HabImage`,
   `configure-memory 0xF000000F`) — auto-config для 4-байтной адресации не
   проверялся, решили на него не полагаться
 
-Подробности конвейера — в [tools/service_tui/docs/DEV_ARCH.md](../tools/service_tui/docs/DEV_ARCH.md),
+Подробности конвейера — в [tools/service_tui/docs/ARCHITECTURE.md](../tools/service_tui/docs/ARCHITECTURE.md),
 §8. Штатный путь (`--firmware`, три сборки этого репозитория, что через
 `just host::flash`, что через `service-tui`) не меняется и по-прежнему
 использует auto-config Flashloader, как описано в 1.4.

@@ -242,7 +242,13 @@ def _mock_mcuboot_ctx(monkeypatch, **method_returns):
     у fill_memory/configure_memory/flash_erase_region/write_memory (все True
     по умолчанию, кроме явно переопределённых). read_memory по умолчанию
     возвращает «пустой чип» (Р16) — существующие happy-path тесты ожидают
-    flash_erase_region, не flash_erase_all."""
+    flash_erase_region, не flash_erase_all.
+
+    Фаза 5 (Тир-0): read_memory теперь stateful — write_memory кладёт байты в
+    `ctx.flash_model` (dict addr→bytes), а read_memory по записанному адресу
+    отдаёт ровно записанное (эхо), иначе — `read_memory`-дефолт (blank-check
+    Р16 читает FLASH_BASE ДО любой записи → модель пуста → дефолт). Так
+    verify-readback happy-path совпадает без явной настройки в каждом тесте."""
     defaults = dict(
         configure_memory=True,
         flash_erase_region=True,
@@ -254,8 +260,25 @@ def _mock_mcuboot_ctx(monkeypatch, **method_returns):
 
     ctx = MagicMock()
     ctx.__enter__.return_value = ctx
-    for name, ret in defaults.items():
-        getattr(ctx, name).return_value = ret
+
+    flash_model: dict = {}
+    ctx.flash_model = flash_model  # доступ для тестов, переопределяющих write
+
+    def _write_memory(address, data, mem_id=0, progress_callback=None):
+        if defaults["write_memory"]:
+            flash_model[address] = bytes(data)
+        return defaults["write_memory"]
+
+    def _read_memory(address, length, mem_id=0):
+        if address in flash_model:  # Тир-0 readback: эхо записанного
+            return flash_model[address][:length]
+        return defaults["read_memory"]  # Р16 blank-check по умолчанию
+
+    ctx.write_memory.side_effect = _write_memory
+    ctx.read_memory.side_effect = _read_memory
+    ctx.configure_memory.return_value = defaults["configure_memory"]
+    ctx.flash_erase_region.return_value = defaults["flash_erase_region"]
+    ctx.flash_erase_all.return_value = defaults["flash_erase_all"]
 
     monkeypatch.setattr(fb, "McuBoot", Mock(return_value=ctx))
     return ctx
@@ -357,12 +380,15 @@ def test_flash_happy_path_auto_fcb(monkeypatch, events, tmp_path):
 
     ctx.reset.assert_called_once_with(reopen=False)
     # Р16: два "erase"-события — проверка блочности + собственно стирание.
+    # Фаза 5: два "verify"-события (старт + OK) между write и reset.
     assert _phases(events) == [
         "configure",
         "erase",
         "erase",
         "fcb",
         "write",
+        "verify",
+        "verify",
         "reset",
         "done",
     ]
@@ -405,6 +431,48 @@ def test_flash_write_memory_fails(monkeypatch, events, tmp_path):
     assert "done" not in _phases(events)
 
 
+def test_flash_verify_readback_mismatch(monkeypatch, events, tmp_path):
+    """Тир-0 (Фаза 5): write-команда вернула успех, но readback не совпал с
+    образом → FlashVerifyError (логическая ошибка, не обрыв), reset не
+    происходит."""
+    hab_bin = tmp_path / "fw_hab.bin"
+    hab_bin.write_bytes(b"\xd1" + b"\x00" * 63)
+
+    monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=Mock()))
+    ctx = _mock_mcuboot_ctx(monkeypatch)
+    # read_memory всегда отдаёт нули нужной длины: blank-check видит непустой
+    # чип (полный erase — не важно для теста), verify видит данные ≠ образу.
+    ctx.read_memory.side_effect = lambda addr, length, mem_id=0: b"\x00" * length
+
+    with pytest.raises(fb.FlashVerifyError, match="не совпадает"):
+        fb.flash(hab_bin, progress_cb=_collector(events))
+
+    assert ctx.reset.call_count == 0
+    assert "done" not in _phases(events)
+    # Логическая ошибка — не обрыв связи.
+    with pytest.raises(fb.FlashVerifyError) as ei:
+        fb.flash(hab_bin)
+    assert ei.value.connection_lost is False
+
+
+def test_flash_verify_disabled_skips_readback(monkeypatch, events, tmp_path):
+    """verify_readback=False → фаза 'verify' не эмитится, read_memory по
+    write-адресу не вызывается; reset/done в порядке."""
+    hab_bin = tmp_path / "fw_hab.bin"
+    hab_bin.write_bytes(b"\xd1" + b"\x00" * 63)
+    write_addr = fb.FLASH_BASE + fb.HAB_OFFSET
+
+    monkeypatch.setattr(fb, "load_flashloader", Mock(return_value=Mock()))
+    ctx = _mock_mcuboot_ctx(monkeypatch)
+
+    fb.flash(hab_bin, verify_readback=False, progress_cb=_collector(events))
+
+    assert "verify" not in _phases(events)
+    assert "done" in _phases(events)
+    read_addrs = [call.args[0] for call in ctx.read_memory.call_args_list]
+    assert write_addr not in read_addrs  # только blank-check по FLASH_BASE
+
+
 def test_flash_progress_callback_reports_bytes(monkeypatch, events, tmp_path):
     """write_memory реально дёргает progress_callback(current, total) — см.
     Фазу 0. Проверяем, что наш адаптер конвертирует это в FlashProgress."""
@@ -416,6 +484,7 @@ def test_flash_progress_callback_reports_bytes(monkeypatch, events, tmp_path):
     ctx = _mock_mcuboot_ctx(monkeypatch)
 
     def _fake_write_memory(address, data, mem_id=0, progress_callback=None):
+        ctx.flash_model[address] = bytes(data)  # чтобы Тир-0 readback совпал
         progress_callback(len(data) // 2, len(data))
         progress_callback(len(data), len(data))
         return True

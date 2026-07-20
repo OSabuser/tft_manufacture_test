@@ -1,11 +1,16 @@
 # =============================================================================
-# HAB Container — firmware/bootloader
-# Расположение: tools/host/hab/hab_bootloader.yaml
+# HAB Container — firmware/bootloader (Release, ПОДПИСАННЫЙ — flags=0x08)
+# Расположение: tools/host/hab/hab_bootloader_release.yaml
 #
+# Подпись — HAB4 NOCAK (fast authentication, один ключ и на CSF, и на данные),
+# ключ tools/host/hab/keys/ — ТЕСТОВЫЙ, не production (см. keys/README.md и
+# docs/bootloader/HAB_GUIDE.md §8). Настоящий production-ключ — отдельная
+# SRK-церемония, ключ хранится вне репозитория (HSM/vault), в этот файл не
+# попадает.
 # =============================================================================
 
 options:
-  flags: 0x00
+  flags: 0x08
   startAddress: 0x60000000
   ivtOffset: 0x1000
   initialLoadSize: 0x2000
@@ -14,4 +19,21 @@ options:
 
 inputImageFile: "../../../build/Release/bootloader.bin"
 
-sections: []
+sections:
+  - Header:
+      Header_Version: "4.2"
+      Header_HashAlgorithm: sha256
+      Header_Engine: ANY
+      Header_EngineConfiguration: 0
+      Header_CertificateFormat: x509
+      Header_SignatureFormat: CMS
+  - InstallNOCAK:
+      InstallNOCAK_File: keys/bootloader_test_hab_crt.pem
+      InstallNOCAK_CertificateFormat: x509
+  - AuthenticateCSF:
+      Signer: "type=file;file_path=keys/bootloader_test_hab_key.pem"
+  - AuthenticateData:
+      AuthenticateData_VerificationIndex: 0
+      AuthenticateData_Engine: ANY
+      AuthenticateData_EngineConfiguration: 0
+      Signer: "type=file;file_path=keys/bootloader_test_hab_key.pem"

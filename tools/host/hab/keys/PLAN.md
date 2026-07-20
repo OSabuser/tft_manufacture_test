@@ -9,7 +9,7 @@
 | 2 — bootutil (Direct-XIP) | ✅ завершена | host-тесты 5/5, аппаратная верификация — все 5 сценариев пройдены на реальной плате (детали и 3 найденных/исправленных бага — [DEBUG_LOG_PHASE2.md](DEBUG_LOG_PHASE2.md)) |
 | 3 — SD-путь установки | ✅ полностью верифицирована (2026-07-13) | все 5 сценариев + раунд 4 (консолидация детекта на единый PRSSTAT + ранний сэмпл кнопки) + **аппаратный watchdog** (`bsp/wdog`, см. ниже) пройдены на реальной плате. По пути найден и исправлен баг чек-листа сценария 1 (стабы не PIC, см. ниже) — не регресс кода. См. [DEBUG_LOG_PHASE3_SD.md](DEBUG_LOG_PHASE3_SD.md), чек-лист — [test_stub/HARDWARE_VERIFICATION_PHASE3.md](test_stub/HARDWARE_VERIFICATION_PHASE3.md) |
 | 4 — SDRAM/W25Q smoke-test + LED-паттерны | ✅ полностью верифицирована (2026-07-20) | `bsp_sdram_configure()` (C-порт DCD) + `qspi_info` (JEDEC → чип/ёмкость) + словарь LED-паттернов. Host-тесты 16/16 (без изменений — вся новая логика аппаратная, host-тестировать нечего). Аппаратная верификация: SDRAM 4-фазный dev-тест (`sdram_test`) все фазы green; сценарии LED 1-5 из чек-листа пройдены (6 сознательно не гонялся — реальная проверка smoke-тестов идёт через service-tui сразу после прошивки, не через синтетический чек-лист). По пути найдено/исправлено 3 бага — детали ниже. Чек-лист — [test_stub/HARDWARE_VERIFICATION_LED_PATTERNS.md](test_stub/HARDWARE_VERIFICATION_LED_PATTERNS.md), словарь для сервисных инженеров — [docs/bootloader/LED_PATTERNS.md](../../docs/bootloader/LED_PATTERNS.md) |
-| 5 — HAB Release + service-tui | не начата | |
+| 5 — HAB Release + service-tui | ✅ полностью верифицирована (2026-07-20) | Подписанный HAB Release (`flags=0x08`, тестовый NOCAK-ключ), `BootloaderClient` + Тир-0/Тир-1 верификация в service-tui, production-путь сужен до bootloader-only (сценарий A). Аппаратно: CSF на чипе подтверждён напрямую через SWD (`csf`-поле IVT ненулевое), полный UI-цикл (прошивка → верификация → отчёт) пройден на реальной плате. Детали ниже. |
 | 6 — Устойчивость и восстановление (recovery) | ✅ полностью верифицирована (2026-07-14) | 6a (счётчик `SRC_GPR3` + фолбэк) + 6b (recovery-режим, BTN_2, ослабленный gate) + стенд `test_stub` реализованы; host-тесты 16/16, ARM+HAB зелёные. Все 6 сценариев чек-листа пройдены на реальной плате; по пути найдено/исправлено 4 бага (2 в коде, 2 в стенде/чек-листе — детали ниже). 6c (контракт tft_app) — документация под будущий план. Чек-лист — [test_stub/HARDWARE_VERIFICATION_PHASE6.md](test_stub/HARDWARE_VERIFICATION_PHASE6.md) |
 
 ## Контекст
@@ -814,6 +814,79 @@ SysTick, на котором целиком держится `bsp_tick_get_ms()`
 
 **Верификация**: чистая плата → `just host::flash-production`-путь для bootloader (или его bootloader-only
 подмножество) → service-tui показывает "bootloader alive" на основе реального ping/version с платы.
+
+### ✅ Реализовано (2026-07-20): подписанный HAB Release + Тир-0/Тир-1 верификация в service-tui
+
+**HAB Release — реально подписанный (`flags=0x08`), схема HAB4 NOCAK.** Полной SRK-церемонии в проекте
+ещё нет (см. решение по Фазе 2 и `docs/mimxrt1052/UPDATE_FLOW.md`) — вместо неё сгенерирован тестовый
+RSA-2048 ключ (тот же принцип, что и у тестового ключа MCUboot), вендорен в
+[tools/host/hab/keys/](../../tools/host/hab/keys/) с явной пометкой "НЕ production". Это ровно стадия
+"Предсерийные образцы" (HAB Open + Signed) из жизненного цикла в
+[docs/bootloader/HAB_GUIDE.md §8](../../docs/bootloader/HAB_GUIDE.md). Полный разбор команд CSF-секции
+(`Header`/`InstallNOCAK`/`AuthenticateCSF`/`AuthenticateData`) и чем NOCAK отличается от полной
+production-схемы с SRK-таблицей — [HAB_GUIDE.md §5.1](../../docs/bootloader/HAB_GUIDE.md). По пути
+найден и исправлен баг самого рецепта `just build::hab-verify` — `nxpimage hab parse` требовал `-f
+mimxrt1050`, без него падал ещё до моих изменений (не регресс Фазы 5).
+
+**Найденный и исправленный баг: production мог тихо взять unsigned Debug-образ.** `Flasher.PRODUCTION`
+резолвил `bootloader_hab.bin` через `_FIRMWARE_BUILD_TYPE` — ту же переменную окружения, что переключает
+Debug/Release **только для диагностической прошивки firmware_test** (дефолт `"Debug"`, см.
+`tools/service_tui/README.md` §"Конфигурация"). Без явного `FIRMWARE_BUILD_TYPE=Release` в окружении
+серийная прошивка залила бы `build/Debug/bootloader_hab.bin` — unsigned (`flags=0x00`, Debug HAB-конфиг
+сознательно не трогали). Исправлено: production-путь резолвит `Release` жёстко, в обход переменной
+окружения.
+
+**Найденный и исправленный архитектурный баг: production затирал только что записанный bootloader.**
+Существовавший `Flasher.PRODUCTION` шил bootloader И app **по одному и тому же адресу** `FLASH_BASE`
+(0x60000000) — второй шаг стирал первый. Наследие монолитной пре-bootloader эпохи, для Direct-XIP
+в принципе неверно (tft_app должен идти в Slot A/Б, другим механизмом подписи — imgtool, не HAB).
+tft_app ещё не реализован, поэтому в рамках Фазы 5 **production сужен до сценария A** (только
+загрузчик) — правильный бандл (сценарий B: bootloader HAB @0x60000000 + подписанный imgtool'ом образ
+@Slot A) явно оставлен как будущая работа вместе с реальным tft_app, см.
+[UPDATE_FLOW.md §5, §7](../../docs/mimxrt1052/UPDATE_FLOW.md).
+
+**Тир-0 (readback-верификация записи) — включена по умолчанию для ЛЮБОЙ прошивки через service-tui**,
+не только production. `flash_backend.flash()` после `write_memory`, до `reset`, читает записанный
+диапазон обратно и сверяет sha256 с исходным образом — ловит silent-corruption, не пойманную кодом
+статуса самой write-команды. Логическая ошибка (`FlashVerifyError`, `connection_lost=False`) — плата
+остаётся на экране с сообщением, не уходит на WaitingScreen. Параметр `verify_readback` есть, но
+дефолт `True` везде — согласовано, readback дёшев и полезен одинаково для firmware_test/production/custom.
+
+**Тир-1 (живая проверка загрузчика по CDC) — по чек-боксу «Верификация», OFF по умолчанию.** Новый
+[BootloaderClient](../../tools/service_tui/app/bootloader_client.py) (тонкий подкласс `FirmwareClient` —
+общий JSON-lines протокол и один VID:PID с firmware_test, намеренно, см. контекст плана выше) добавляет
+`get_smoke_status()`/`get_qspi_info()` поверх унаследованных `ping()`/`get_version()`. Новый
+[VerifyScreen](../../tools/service_tui/app/screens/verify.py): промпт смены `BOOT_MOD_1 → GND → Reset`
+(тот же ручной шаг, что и в `PostFlashScreen`, — SDP/Flashloader не может сам перезапустить плату в
+обычный режим) → поллинг CDC (до 45с) → отчёт по 3 полям (версия/SDRAM smoke/QSPI-чип). `None` от
+клиента (нет ответа) показывается как ⚠, не как ❌ — это разные вещи ("неизвестно" и "провал").
+Чек-бокс виден только при выбранном production-радио, «липкий» на весь запуск TUI (как остальные
+пресеты `FlashScreen`).
+
+**Смоделированные и обсуждённые trade-off'ы (решения, не пересматриваются в рамках этой фазы):**
+- Двухуровневая верификация (Тир-0 всегда / Тир-1 по чек-боксу) — вместо единого включай/выключай:
+  Тир-0 бесплатен по действиям оператора, Тир-1 стоит одного ручного тоггла BOOT_MOD на плату и
+  раздражает при массовой заливке в кучу (сценарий A).
+- Только сценарий A в этой фазе — сценарий B (бандл bootloader+tft_app) отложен до реального tft_app,
+  подписанная заглушка не даёт проверить настоящий dual-link (см. предупреждение в UPDATE_FLOW.md §1
+  про случайную позиционную терпимость `test_stub`).
+
+**Не исправлено, сознательно оставлено (известное ограничение, не блокирует эту фазу):** `WaitingScreen`
+любой обнаруженный CDC ведёт в `DiagScreen`, который ждёт firmware_test-протокол (`list_tests` и т.п.) —
+у загрузчика (тот же VID:PID) их нет. В сценарии A плата снимается со стенда сразу после прошивки, риск
+не проявляется на практике; актуально станет при появлении сценария B или при повторном подключении
+только что верифицированного загрузчика без последующего reset в SD-режим.
+
+**Аппаратная верификация.** Полный UI-цикл (регрессия существующих потоков firmware_test/custom/erase →
+Тир-0 незаметно проходит на обычных прошивках → production OFF грузит только bootloader → production ON
+→ `VerifyScreen` → живой отчёт pass/pass/pass → `WaitingScreen`; плюс отдельно кнопка «Пропустить» и
+таймаут-ветка; плюс sticky-пресет между платами) пройден на реальной плате. Отдельно, независимо от
+service-tui — подпись подтверждена прямым чтением IVT с чипа через SWD
+(`pyocd commander --target mimxrt1050_quadspi -c "read32 0x60001000 32"`): поле `csf` (`0x60001018`) —
+`0x6000f000`, совпадает с локальной проверкой `nxpimage hab parse` из Шага 1.
+
+**Host-тесты**: `uv run pytest tests/` (`tools/service_tui`) — **76/76** (было 68; +8 `BootloaderClient`,
+обновлены/добавлены тесты Тир-0 в `test_flash_backend.py`).
 
 ---
 

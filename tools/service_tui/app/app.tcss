@@ -123,6 +123,24 @@ AppFrame {
     margin-right: 1;
 }
 
+#flash-production-group {
+    margin-top: 1;
+    height: auto;
+}
+
+#flash-production-group.hidden {
+    display: none;
+}
+
+#flash-verify-row {
+    height: auto;
+    align: left middle;
+}
+
+#flash-verify-switch {
+    margin-right: 1;
+}
+
 #flash-btn-row {
     height: auto;
     margin-top: 1;
@@ -200,6 +218,74 @@ AppFrame {
 #post-flash-instruction-row {
     width: 100%;
     height: auto;
+}
+
+/* ── VerifyScreen (Тир-1) ───────────────────────────────── */
+
+#verify-frame {
+    align: center middle;
+}
+
+#verify-title {
+    text-style: bold;
+    content-align: center middle;
+    margin-bottom: 2;
+}
+
+#verify-instruction {
+    border: round $warning;
+    padding: 1 3;
+    color: $text;
+    content-align: center middle;
+    width: auto;
+}
+
+#verify-status {
+    margin-top: 2;
+    content-align: center middle;
+    width: auto;
+}
+
+#verify-status.verify-pass {
+    color: $success;
+    text-style: bold;
+}
+
+#verify-status.verify-fail {
+    color: $error;
+    text-style: bold;
+}
+
+#verify-title-row,
+#verify-instruction-row,
+#verify-status-row {
+    width: 100%;
+    height: auto;
+}
+
+#verify-results {
+    margin-top: 2;
+    height: auto;
+    align: center middle;
+}
+
+#verify-results.hidden {
+    display: none;
+}
+
+.verify-result-line {
+    width: auto;
+    content-align: center middle;
+}
+
+#verify-btn-row {
+    margin-top: 2;
+    height: auto;
+    align: center middle;
+}
+
+#verify-btn-done {
+    margin-right: 2;
 }
 /* ── DiagScreen ─────────────────────────────────────────── */
 

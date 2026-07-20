@@ -17,7 +17,7 @@ tools/host/
 ├── flash_swd.py      — прошивка через SWD: FCB + HAB → pyOCD → Flash
 ├── hab/              — HAB yaml-конфиги для nxpimage (по одному на проект × тип;
 │                        service-tui генерирует такие же временно, на лету —
-│                        см. tools/service_tui/DEV_ARCH.md, §8)
+│                        см. tools/service_tui/docs/ARCHITECTURE.md, §8)
 ├── dcd/
 │   ├── ivt_flashloader.bin   — NXP Flashloader (загружается в RAM через SDP)
 │   ├── dcd.bin               — DCD: инициализация SDRAM (SEMC + MT48LC16M16A2P)
@@ -32,7 +32,7 @@ tools/host/
 > Все бинарники в `dcd/` получены из NXP SecureProvisioningTool и хранятся
 > в репозитории — пересоздавать не нужно. `w25q128`/`w25q512` — единственные
 > два варианта в реальном использовании (64 и 256 сведены к ним же, см.
-> `tools/service_tui/DEV_ARCH.md`, §8.2); `w25q64_fdcb.bin` пока не подключён
+> `tools/service_tui/docs/ARCHITECTURE.md`, §8.2); `w25q64_fdcb.bin` пока не подключён
 > нигде — оставлен про запас.
 
 ---
@@ -44,7 +44,7 @@ tools/host/
 
 Прошивка сторонних/легаси бинарников с нестандартной памятью (явный FCB,
 без auto-config) — через `service-tui` (`tools/service_tui/`), не напрямую
-через `flash_usb.py` из терминала. Детали конвейера — `tools/service_tui/DEV_ARCH.md`, §8.
+через `flash_usb.py` из терминала. Детали конвейера — `tools/service_tui/docs/ARCHITECTURE.md`, §8.
 
 ---
 

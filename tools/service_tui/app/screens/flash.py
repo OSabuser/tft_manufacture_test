@@ -120,7 +120,7 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
                         value=self._preset.target == FlashTarget.FIRMWARE_TEST,
                     )
                     yield RadioButton(
-                        "Серийная прошивка (bootloader + tft_app)",
+                        "Серийная прошивка (загрузчик)",
                         id="radio-production",
                         value=self._preset.target == FlashTarget.PRODUCTION,
                     )
@@ -129,6 +129,20 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
                         id="radio-custom",
                         value=self._preset.target == FlashTarget.CUSTOM,
                     )
+                is_production = self._preset.target == FlashTarget.PRODUCTION
+                with Vertical(
+                    id="flash-production-group",
+                    classes="" if is_production else "hidden",
+                ):
+                    with Horizontal(id="flash-verify-row"):
+                        yield Switch(
+                            value=self._preset.verify, id="flash-verify-switch"
+                        )
+                        yield Label(
+                            "Верификация (smoke-test, требует смены BOOT_MOD)",
+                            classes="section-title",
+                        )
+
                 is_custom = self._preset.target == FlashTarget.CUSTOM
                 with Vertical(
                     id="flash-custom-group",
@@ -197,9 +211,14 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
 
     @on(RadioSet.Changed, "#flash-radio")
     def _on_radio_changed(self, event: RadioSet.Changed) -> None:
-        is_custom = event.pressed.id == "radio-custom"
-        group = self.query_one("#flash-custom-group")
-        if is_custom:
+        self._toggle_group("#flash-custom-group", event.pressed.id == "radio-custom")
+        self._toggle_group(
+            "#flash-production-group", event.pressed.id == "radio-production"
+        )
+
+    def _toggle_group(self, selector: str, visible: bool) -> None:
+        group = self.query_one(selector)
+        if visible:
             group.remove_class("hidden")
         else:
             group.add_class("hidden")
@@ -220,6 +239,8 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
                 use_dcd=self._current_use_dcd(),
                 fcb_variant=self._current_fcb_variant(),
             )
+        elif target == FlashTarget.PRODUCTION:
+            preset = FlashPreset(target=target, verify=self._current_verify())
         else:
             preset = FlashPreset(target=target)
 
@@ -332,6 +353,9 @@ class FlashScreen(Screen, ConnectionWatcherMixin):
 
     def _current_use_dcd(self) -> bool:
         return self.query_one("#flash-dcd-switch", Switch).value
+
+    def _current_verify(self) -> bool:
+        return self.query_one("#flash-verify-switch", Switch).value
 
     async def _on_progress(self, progress: FlashProgress) -> None:
         bar = self.query_one("#flash-progress-bar", ProgressBar)

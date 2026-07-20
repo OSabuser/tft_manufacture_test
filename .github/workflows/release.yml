@@ -1,17 +1,22 @@
 name: Release
 
-# Раздельные теги (FIRST_RELEASE_PLAN.md, Шаг 2.1): firmware_test и
-# service-tui версионируются и релизятся независимо друг от друга.
-#   firmware-vX.Y.Z → publish-firmware (только firmware_test_hab.bin, Debug)
-#   tui-vX.Y.Z       → publish-tui (service-tui-vX.Y.Z-{macos,windows}.zip)
-# HAB firmware_test, вшиваемый в TUI-бандл, всегда собирается заново из
-# текущего HEAD тега tui-v*, а не берётся из отдельного firmware-релиза —
-# так проще и не тянет зависимость на чужой GitHub Release.
+# Раздельные теги (bootloader — Фаза 5, firmware/bootloader/PLAN.md):
+# firmware_test, bootloader и service-tui версионируются и релизятся
+# независимо друг от друга.
+#   firmware-vX.Y.Z   → publish-firmware   (только firmware_test_hab.bin, Debug)
+#   bootloader-vX.Y.Z → publish-bootloader (только bootloader_hab.bin, Release,
+#                        подписан ТЕСТОВЫМ HAB-ключом — см.
+#                        firmware/bootloader/SIGNING_CEREMONY.md)
+#   tui-vX.Y.Z        → publish-tui (service-tui-vX.Y.Z-{macos,windows}.zip)
+# HAB firmware_test/bootloader, вшиваемые в TUI-бандл, всегда собираются заново
+# из текущего HEAD тега tui-v*, а не берутся из отдельных релизов — так проще
+# и не тянет зависимость на чужой GitHub Release.
 on:
   push:
     tags:
       - "tui-v*"
       - "firmware-v*"
+      - "bootloader-v*"
   workflow_dispatch:
     inputs:
       release_type:
@@ -20,6 +25,7 @@ on:
         options:
           - tui
           - firmware
+          - bootloader
         default: tui
 
 concurrency:
@@ -30,11 +36,12 @@ permissions:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
-  # firmware — собирает HAB Debug firmware_test. Нужна как для standalone
-  # firmware-релиза, так и для вшивания в TUI-бандл — выполняется всегда.
+  # firmware — собирает HAB Debug firmware_test И HAB Release bootloader.
+  # Нужна как для standalone firmware-/bootloader-релизов, так и для вшивания
+  # обоих образов в TUI-бандл (package-tui, Фаза 5) — выполняется всегда.
   # ─────────────────────────────────────────────────────────────────────────
   firmware:
-    name: Build firmware_test HAB (Debug)
+    name: Build firmware_test HAB (Debug) + bootloader HAB (Release)
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -86,6 +93,30 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Проверить, что тег совпадает с версией в CMakeLists.txt (bootloader)
+        if: startsWith(github.ref, 'refs/tags/bootloader-v')
+        run: |
+          tag_version="${GITHUB_REF_NAME#bootloader-v}"
+          file_version=$(grep -m1 -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' firmware/bootloader/CMakeLists.txt | awk '{print $2}')
+          if [[ "$tag_version" != "$file_version" ]]; then
+            echo "::error::Тег ${GITHUB_REF_NAME} (версия ${tag_version}) не совпадает с VERSION в firmware/bootloader/CMakeLists.txt (${file_version})"
+            exit 1
+          fi
+          echo "  ✅  Версия тега совпадает с CMakeLists.txt: ${file_version}"
+
+      - name: Собрать bootloader HAB (Release)
+        run: |
+          docker run --rm --user root -v "$GITHUB_WORKSPACE":/workspace -w /workspace \
+            tft-devcontainer-ci:latest bash -lc 'just build::hab-bootloader-release'
+
+      - name: Upload bootloader_hab.bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootloader-hab-release
+          path: build/Release/bootloader_hab.bin
+          if-no-files-found: error
+          retention-days: 14
+
   # ─────────────────────────────────────────────────────────────────────────
   # publish-firmware — только на тег firmware-v*, отдельный standalone-релиз
   # HAB-образа (для tools/host/flash_usb.py и ручной прошивки, не через TUI).
@@ -117,6 +148,40 @@ jobs:
             --generate-notes
 
   # ─────────────────────────────────────────────────────────────────────────
+  # publish-bootloader — только на тег bootloader-v*, отдельный standalone-
+  # релиз HAB-образа (для tools/host/flash_usb.py / SWD, не через TUI).
+  # ⚠️ Подписан ТЕСТОВЫМ HAB-ключом (dev/pre-series, HAB Open чип всё равно
+  # загрузит и unsigned) — реальная SRK-церемония не проведена, см.
+  # firmware/bootloader/SIGNING_CEREMONY.md. Явно проговорено в release notes,
+  # чтобы этот asset не приняли за production-подписанный постфактум.
+  # ─────────────────────────────────────────────────────────────────────────
+  publish-bootloader:
+    name: Publish bootloader release
+    needs: firmware
+    if: startsWith(github.ref, 'refs/tags/bootloader-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download bootloader_hab.bin
+        uses: actions/download-artifact@v4
+        with:
+          name: bootloader-hab-release
+          path: release-assets/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            release-assets/bootloader_hab.bin \
+            --title "bootloader ${GITHUB_REF_NAME#bootloader-v}" \
+            --notes "⚠️ HAB-подпись — ТЕСТОВЫЙ ключ (dev/pre-series, HAB Open). Не production. Реальная SRK-церемония — firmware/bootloader/SIGNING_CEREMONY.md."
+
+  # ─────────────────────────────────────────────────────────────────────────
   # service-tui-{macos,windows} — упаковка PyInstaller-бандла с вшитым HAB
   # из job firmware. Запускается на тег tui-v* и на workflow_dispatch с
   # release_type=tui (для тестового прогона без публикации).
@@ -143,6 +208,12 @@ jobs:
         with:
           name: firmware-hab-debug
           path: build/Debug/
+
+      - name: Download bootloader_hab.bin
+        uses: actions/download-artifact@v4
+        with:
+          name: bootloader-hab-release
+          path: build/Release/
 
       - name: Проверить, что тег совпадает с версией в pyproject.toml
         if: startsWith(github.ref, 'refs/tags/tui-v')
@@ -196,6 +267,12 @@ jobs:
         with:
           name: firmware-hab-debug
           path: build/Debug/
+
+      - name: Download bootloader_hab.bin
+        uses: actions/download-artifact@v4
+        with:
+          name: bootloader-hab-release
+          path: build/Release/
 
       - name: Проверить, что тег совпадает с версией в pyproject.toml
         if: startsWith(github.ref, 'refs/tags/tui-v')

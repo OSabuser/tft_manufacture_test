@@ -21,7 +21,8 @@ tools/service_tui/
 ├── custom_binaries/                     ← runtime, gitignored, создаётся автоматически
 │                                          сырые (без FCB/IVT/DCD) бинарники для FlashScreen → «Другое»
 ├── tests/
-│   └── test_flash_backend.py            ← unit-тесты flash_backend.py (45 тестов, без event loop)
+│   ├── test_flash_backend.py            ← unit-тесты flash_backend.py, включая Тир-0 readback (Фаза 5)
+│   └── test_bootloader_client.py        ← unit-тесты BootloaderClient (фейковый serial, Фаза 5)
 ├── spike/                               ← Фаза 0, де-риск spsdk API (в релиз не идёт)
 └── app/
     ├── app.py                           ← ServiceApp — роутинг экранов, жизненный цикл клиентов
@@ -29,20 +30,27 @@ tools/service_tui/
     ├── models.py                        ← все типы данных (dataclass/Enum)
     ├── boot_art.py                      ← LOGO_ART — растеризованный логотип для WaitingScreen
     ├── firmware_client.py               ← async USB CDC клиент firmware_test (UTF-8)
+    ├── bootloader_client.py             ← async CDC клиент bootloader (Фаза 5) — тонкий подкласс
+    │                                       FirmwareClient, добавляет get_smoke_status()/get_qspi_info()
     ├── m5_client.py                     ← async M5StampPLC клиент (Serial JSON-lines, UTF-8)
     ├── usb_ports.py                     ← resolve_serial_port() — резолв COM/tty по VID:PID (Р8)
     ├── flash_backend.py                 ← синхронное ядро прошивки: прямой spsdk API (McuBoot/SDP/HabImage),
-    │                                       zero Textual/asyncio импортов, тестируется без event loop
-    ├── flasher.py                       ← async-обёртка над flash_backend.py (asyncio.to_thread)
+    │                                       zero Textual/asyncio импортов, тестируется без event loop.
+    │                                       Фаза 5: Тир-0 readback-верификация записи, всегда включена
+    ├── flasher.py                       ← async-обёртка над flash_backend.py (asyncio.to_thread).
+    │                                       Фаза 5: PRODUCTION = только bootloader, Release жёстко
     ├── orchestrator.py                  ← маршрутизация confirm_request, progress, таймауты
     ├── widgets/
     │   ├── __init__.py
     │   └── app_frame.py                 ← AppFrame — общий адаптивный контейнер всех экранов
     └── screens/
-        ├── __init__.py                  ← реэкспорт: WaitingScreen, FlashScreen, PostFlashScreen, DiagScreen
+        ├── __init__.py                  ← реэкспорт: WaitingScreen, FlashScreen, PostFlashScreen,
+        │                                    VerifyScreen, DiagScreen
         ├── waiting.py                   ← WaitingScreen — ожидание USB, лого, версия, баннер причины возврата
         ├── flash.py                     ← FlashScreen — прошивка / chip erase
-        ├── post_flash.py                ← PostFlashScreen — промпт смены BootMode после прошивки
+        ├── post_flash.py                ← PostFlashScreen — промпт смены BootMode после прошивки firmware_test
+        ├── verify.py                    ← VerifyScreen (Фаза 5) — Тир-1: живой smoke-test bootloader
+        │                                    по CDC после серийной прошивки, по чек-боксу «Верификация»
         ├── connection_watcher.py        ← ConnectionWatcherMixin — мониторинг обрыва USB
         └── diag/
             ├── __init__.py              ← DiagScreen — координатор диагностики
@@ -130,13 +138,21 @@ stateDiagram-v2
     WAITING --> DIAGNOSING : VID:PID 1996:00AD\n+ ping→pong по CDC
 
     FLASHING --> POST_FLASH : firmware_test прошит успешно
-    FLASHING --> WAITING    : Production/Custom прошит, ошибка,\nили потеря USB в простое
+    FLASHING --> VERIFYING  : Production прошит успешно\n+ чек-бокс «Верификация» ON (Фаза 5)
+    FLASHING --> WAITING    : Production (verify OFF)/Custom прошит,\nошибка, или потеря USB в простое
 
     POST_FLASH --> WAITING : оператор подтвердил / таймаут 40с
+    VERIFYING  --> WAITING : «Готово» / «Пропустить» / таймаут 45с (Фаза 5)
 
     DIAGNOSING --> WAITING : DiagDone / ESC /\nпотеря USB в простое
     DIAGNOSING --> FLASHING: плата переведена в SDP (перемычка BOOT_MOD)
 ```
+
+**VERIFYING (Фаза 5, bootloader `PLAN.md`)** — Тир-1: живая проверка
+загрузчика по USB CDC (`BootloaderClient`, см. §16). Не идёт через обычный
+`WaitingScreen`-автодетект (bootloader и firmware_test делят VID:PID, но у
+bootloader нет `list_tests` — автодетект увёл бы в `DIAGNOSING` и там
+завис бы) — отдельная ветка сразу из `FLASHING`, симметрично `POST_FLASH`.
 
 Состояния соответствуют `AppMode` в `models.py`; переключение экранов —
 `ServiceApp.push_screen()`/`switch_screen()` в `app.py`, реагирующий на
@@ -404,6 +420,9 @@ class FlashPreset:
     custom_bin_name: Optional[str] = None
     use_dcd: bool = False
     fcb_variant: FcbVariant = FcbVariant.W25Q128
+    verify: bool = False   # Фаза 5 — Тир-1 при PRODUCTION, см. §16. OFF по
+                           # умолчанию: массовая заливка партии не должна
+                           # требовать смены BOOT_MOD на каждой плате
 ```
 
 `FlashPreset` — «липкий» выбор оператора, живёт в `ServiceApp._last_flash_preset`
@@ -571,6 +590,7 @@ graph TB
         WS["WaitingScreen"]
         FS["FlashScreen"]
         PF["PostFlashScreen"]
+        VS["VerifyScreen (Фаза 5)"]
         DS["DiagScreen"]
     end
 
@@ -583,6 +603,7 @@ graph TB
 
     subgraph Clients["Клиенты"]
         FC["FirmwareClient"]
+        BC["BootloaderClient (Фаза 5)\nподкласс FirmwareClient"]
         M5["M5Client"]
         FL["Flasher"]
     end
@@ -590,11 +611,14 @@ graph TB
     WS -->|"DeviceDetected(FLASHING)"| FS
     WS -->|"DeviceDetected(DIAGNOSING)"| DS
     FS -->|"FlashDone(success=True, target=FIRMWARE_TEST)"| PF
+    FS -->|"FlashDone(success=True, target=PRODUCTION,\npreset.verify=True)"| VS
     FS -->|"FlashDone(остальное)"| WS
     PF -->|"Done"| WS
+    VS -->|"Done"| WS
     DS -->|"DiagDone(reason)"| WS
 
     FS --> FL
+    VS --> BC
     DS --> OR
     DS --> TL
     DS --> RP
@@ -607,6 +631,12 @@ graph TB
     FS -.->|"ConnectionWatcherMixin"| FL
     DS -.->|"ConnectionWatcherMixin"| FL
 ```
+
+`VerifyScreen` намеренно **не** использует `ConnectionWatcherMixin` — та
+логика предполагает уже установленное соединение, которое может разорваться,
+а здесь наоборот: соединения ещё нет, экран сам поллит появление CDC (до
+45с) и подключается, когда оператор физически переведёт плату в обычный
+режим. См. §16.
 
 ---
 
@@ -800,9 +830,23 @@ service-tui-vX.Y.Z-<os>/
 │   ├── data/         ← dcd.bin, *_fdcb.bin, ivt_flashloader.bin, spsdk data
 │   └── ...           ← рантайм PyInstaller, libusbsio
 ├── firmware/
-│   └── <Type>/firmware_test_hab.bin
+│   ├── Debug/firmware_test_hab.bin      ← firmware_test всегда Debug (см. ниже)
+│   └── Release/bootloader_hab.bin       ← bootloader всегда Release, подписанный
+│                                           (Фаза 5, bootloader PLAN.md — production
+│                                           жёстко требует именно этот файл)
 └── custom_binaries/  ← пустая, создаётся оператором/автоматически
 ```
+
+**Гвард на `bootloader_hab.bin` (Фаза 5).** `just host::package-tui`
+копирует `*_hab.bin` из `build/Debug/` и `build/Release/` по маске — до
+Фазы 5 отсутствие Release-образа bootloader проходило незамеченным (просто
+не копировался файл, которого никто ещё не требовал). После того как
+`Flasher.PRODUCTION` стал жёстко резолвить `firmware/Release/bootloader_hab.bin`
+(без фоллбэка на Debug — см. §16), молчаливое отсутствие стало тихой
+runtime-бомбой: бандл собирается «успешно», но «Серийная прошивка» в нём
+не работает. Рецепт теперь падает явно (`❌ Не найден .../Release/
+bootloader_hab.bin`), если файла нет — симметрично уже существовавшей
+проверке `found_debug` для firmware_test.
 
 Каждый модуль, которому нужен путь к данным, сам решает dev vs frozen через
 `getattr(sys, "frozen", False)` — единообразный паттерн по всему `app/`:
@@ -823,7 +867,7 @@ service-tui-vX.Y.Z-<os>/
 означает, что `libusb-1.0.*`/Zadig в бандле **не нужны** ни на Windows, ни
 на macOS — детект BootROM SDP и Flashloader работает из коробки.
 
-`service_tui.spec` актуализирован и ужесточён (FIRST_RELEASE_PLAN.md, Шаг 1):
+`service_tui.spec` актуализирован и ужесточён:
 `collect_data_files("spsdk")`, `collect_dynamic_libs("libusbsio")`, `datas`
 для `tools/host/dcd/*.bin` (→ `data/` внутри `_internal`) и `pyproject.toml`.
 Сборка падает с `FileNotFoundError` уже на этапе генерации спека, если в
@@ -834,7 +878,7 @@ service-tui-vX.Y.Z-<os>/
 `.gitignore`) — собранные бандлы это build-артефакты, не история репозитория.
 Пересобрано и провалидировано на живом железе macOS + Windows после
 актуализации spec (Гейт 5: детект SDP → прошивка `firmware_test` →
-диагностика → выход) — см. `FIRST_RELEASE_PLAN.md`, Шаг 1.4.
+диагностика → выход).
 
 ---
 
@@ -862,16 +906,145 @@ service-tui-vX.Y.Z-<os>/
 
 ---
 
+## 16. Верификация после серийной прошивки (Тир-0/Тир-1, Фаза 5)
+
+Полный контекст решения (HAB-подпись bootloader тестовым ключом, CI,
+обсуждённые trade-off'ы) — `firmware/bootloader/PLAN.md`, Фаза 5. Здесь —
+только service-tui-специфичная реализация: `BootloaderClient`,
+`VerifyScreen`, Тир-0 в `flash_backend.py`, и два бага, найденных в
+`flasher.py` по пути.
+
+### 16.1 Почему два уровня, а не один чек-бокс
+
+После SDP-прошивки плата остаётся в режиме Flashloader — `mboot.reset()`
+без физической смены `BOOT_MOD` вернёт её обратно в SDP, не запустит
+свежезалитый образ. Любая проверка «плата реально ожила» стоит одного
+ручного тоггла пина на плату, не секунд на CDC-обмен. Отсюда разделение:
+
+| Тир | Что проверяет | Стоимость оператору | Включение |
+| --- | --- | --- | --- |
+| Тир-0 | Байты во Flash совпадают с записанным образом (readback + sha256) | Ноль — автоматически, для ЛЮБОЙ прошивки | Всегда, `verify_readback=True` |
+| Тир-1 | Загрузчик реально грузится и отвечает (SDRAM smoke + QSPI-чип) | Один тоггл `BOOT_MOD` на плату | Чек-бокс «Верификация» на `FlashScreen`, OFF по умолчанию — сценарий A (bootloader-only, платы уходят в кучу) не должен требовать тоггла на каждую |
+
+### 16.2 Тир-0 — `flash_backend._verify_written()`
+
+Внутри `flash()`, между `write_memory()` и `reset()`: читает записанный
+диапазон обратно (`mboot.read_memory`) и сравнивает `sha256` с исходными
+байтами образа — не побайтово (короче для текста ошибки, не зависит от
+чанкинга spsdk). Несовпадение/короткое чтение → `FlashVerifyError`
+(подкласс `FlashBackendError`, `connection_lost=False` — логическая
+ошибка, плата на месте, экран не уходит на `WaitingScreen`). НЕ
+оборачивается в `_run_flash_cmd()` (retry, Р14) — это чтение, не команда с
+состоянием «выполнена/не выполнена»; любой сбой читается как провал
+верификации напрямую.
+
+`verify_readback: bool = True` — единый дефолт для **всех** целей
+(`firmware_test`/`PRODUCTION`/`CUSTOM`), не только production: readback
+дёшев (обычный `read_memory`, без смены `BOOT_MOD`) и одинаково полезен
+везде, гейтить его отдельным флагом сочли ненужным усложнением.
+
+### 16.3 Тир-1 — `BootloaderClient`
+
+Тонкий подкласс `FirmwareClient` (`app/bootloader_client.py`) — транспорт,
+`ping()`, `get_version()` наследуются как есть (bootloader и firmware_test
+делят один JSON-lines протокол и VID:PID намеренно). Добавляет:
+
+- `get_smoke_status() -> Optional[bool]` — фильтрует `status`-эвенты именно
+  на `smoke_pass`/`smoke_fail`, пропуская мимо `waiting_for_sd`/`installing`
+  (тот же тип события, другой смысл).
+- `get_qspi_info() -> Optional[dict]` — `chip`/`mfr`/`cap_byte`/`size_mb`/`pass`
+  as-is с прошивки.
+- Общий приватный `_query_event(cmd, match, timeout_s)` — тем же
+  read-loop-паттерном, что уже использует `ping()` в `FirmwareClient`.
+
+**`None` — не провал, а «неизвестно».** Прошивка (`protocol_send_smoke_status`/
+`protocol_send_qspi_info`) отвечает **только если результат уже закэширован**
+на раннем `main()` — иначе молчит совсем. Таймаут (`_SMOKE_TIMEOUT_S`/
+`_QSPI_TIMEOUT_S = 3.0`с) трактуется как «нет ответа», не «провалено» —
+`VerifyScreen` рисует такие пункты как `⚠`, не `❌` (см. §16.4).
+
+`connect()` переопределён только ради текста ошибки («Загрузчик не
+отвечает…» вместо «firmware_test не отвечает…») — в QC-контексте важно не
+путать оператора, что именно проверяется.
+
+### 16.4 `VerifyScreen`
+
+Показывается вместо `WaitingScreen` сразу после успешной `PRODUCTION`-
+прошивки, если `preset.verify == True` (см. `app.py::_on_flash_done`).
+Поток: промпт `BOOT_MOD_1 → GND → Reset` → поллинг `Flasher.detect_cdc()`
+раз в секунду (до `_BOOT_WAIT_TIMEOUT_S = 45`с) → на детекте —
+`BootloaderClient.auto_connect()` с ретраем на самой функции (порт может
+быть виден в `comports()`, но ещё не готов к открытию сразу после
+энумерации — тот же класс гонки, что уже описан в §10 для M5) → запрос
+`get_version()`/`get_smoke_status()`/`get_qspi_info()` → рендер отчёта.
+
+Итоговый вердикт («✅ Верификация пройдена») требует **все три** пункта
+успешными (версия получена, smoke `True`, qspi `pass: true`) — частичный
+успех или `None` по любому пункту даёт общий ❌ с построчной детализацией,
+что именно не ответило/провалилось. Кнопка «⏭ Пропустить проверку»
+доступна всё время ожидания; после отчёта (успешного или по таймауту)
+меняет подпись на «✓ Готово» — после результата уже нечего пропускать.
+
+**Сознательно не через `WaitingScreen`-автодетект.** Bootloader и
+firmware_test делят VID:PID — если пустить проверку через общий
+`_poll_usb()`, он определит режим как `DIAGNOSING` и уведёт в `DiagScreen`,
+которая ждёт `list_tests`/`run_selected` (их у bootloader нет). Поэтому
+`VerifyScreen` — отдельная, самодостаточная ветка сразу из `FlashScreen`
+(см. диаграмму состояний §3).
+
+### 16.5 Два бага, найденные в `flasher.py` по пути
+
+1. **`PRODUCTION` затирал только что записанный bootloader.** Старый код
+   шил bootloader И app **по одному и тому же адресу** `FLASH_BASE`
+   (0x60000000) — наследие монолитной пре-bootloader эпохи. Для Direct-XIP
+   в принципе неверно: tft_app должен идти в Slot A/Б, другим механизмом
+   подписи (imgtool, не HAB). tft_app ещё не реализован — production сужен
+   до **сценария A** (только загрузчик); правильный бандл (сценарий B) —
+   будущая работа вместе с реальным tft_app, см.
+   `docs/mimxrt1052/UPDATE_FLOW.md` §5, §7.
+2. **`PRODUCTION` мог тихо взять unsigned Debug-образ.** Путь резолвился
+   через `_FIRMWARE_BUILD_TYPE` — ту же переменную окружения, что
+   переключает Debug/Release **только для диагностической прошивки**
+   (дефолт `"Debug"`, см. `README.md` §«Конфигурация»). Без явного
+   `FIRMWARE_BUILD_TYPE=Release` в окружении серийная прошивка залила бы
+   `build/Debug/bootloader_hab.bin` — unsigned, Debug HAB-конфиг сознательно
+   не подписывается. Исправлено: `PRODUCTION` резолвит `Release` жёстко
+   (`flash_backend.firmware_hab_path("bootloader", "Release")`), в обход
+   переменной окружения.
+
+### 16.6 Аппаратная верификация
+
+Полный UI-цикл пройден на реальной плате: регрессия существующих потоков
+(firmware_test/custom/erase не задеты) → Тир-0 незаметно проходит на
+обычных прошивках (новая строка «Верификация записи: OK» в
+`#flash-log`) → `PRODUCTION` OFF грузит только bootloader → `PRODUCTION`
+ON → `VerifyScreen` → живой отчёт pass/pass/pass → `WaitingScreen`; отдельно
+проверены кнопка «Пропустить» и ветка таймаута; «липкий» `FlashPreset`
+переносит состояние чек-бокса на следующую плату. Подпись HAB-образа
+подтверждена независимо от TUI — прямым чтением IVT с чипа через SWD
+(`pyocd commander ... read32 0x60001000 32`, поле `csf` ненулевое).
+
+Host-тесты: `uv run pytest tests/` — **76/76** (было 68; +8
+`test_bootloader_client.py`, обновлены/добавлены тесты Тир-0 в
+`test_flash_backend.py`).
+
+### 16.7 Известное ограничение (не исправлено, задокументировано)
+
+Загрузчик, оставленный подключённым **после** успешной верификации (минуя
+`WaitingScreen`, оператор не отключил плату), будет неправильно
+маршрутизирован при следующем автодетекте — см. §16.4 выше про причину
+(общий VID:PID, нет `list_tests`). На практике не мешает: в сценарии A
+плата снимается со стенда сразу после прошивки/верификации, не остаётся
+подключённой к TUI. Актуальным станет при появлении сценария B.
+
+---
+
 ## Известные открытые вопросы
 
-- **Документация — Фаза 6 (текущая).** Инженерные фазы 0–5 (backend на spsdk,
-  обработка обрыва USB, троттлинг логов, упаковка PyInstaller) закрыты в
-  коде; `docs/DEV_ARCH.md`/`README.md` актуализированы этой правкой. Осталось
-  по `RELEASE_ROADMAP.md` §Фаза 6: `CHANGELOG.md` (не заведён), grep-зачистка
-  устаревших docstring-упоминаний `flash_usb.py`/`subprocess` в
-  `app/flash.py` (комментарий `_check_sdp_present`) и `flasher.py`
-  (docstring модуля упоминает Фазу 2 буквально, что нормально как история
-  провенанса, но стоит перепроверить при следующей правке этих файлов).
+- ~~Grep-зачистка устаревших docstring-упоминаний `flash_usb.py`/
+  `subprocess`~~ — перепроверено при правках Фазы 5 (bootloader
+  `PLAN.md`): `app/flash.py` уже чист, упоминание в `flasher.py` — легитимная
+  история провенанса (Фаза 2), не ошибка. Закрыто.
 - **Release-сборка firmware нестабильна** (медленное мигание — подозрение на
   проблему с FCB/clock конфигурацией в Release HAB-образе) — TUI временно
   форсирует Debug через `FIRMWARE_BUILD_TYPE`.
@@ -881,8 +1054,7 @@ service-tui-vX.Y.Z-<os>/
 - Пункты плана TUI «экспорт результатов в JSON с привязкой к UID» и
   «копирование UID с экрана» — отложены, не начаты.
 - **POST-1 (циклический прогон неинтерактивных тестов на DiagScreen)** —
-  сознательно отложен на пост-релиз, вне `MONOLITH_APP_PLAN.md` (см.
-  `RELEASE_ROADMAP.md`).
+  сознательно отложен на пост-релиз, не начат.
 - **Массовое программирование** — решено НЕ делать авто-прошивку по факту
   детекта SDP (см. §8.2); ограничились «липким» `FlashPreset`. Если в будущем
   понадобится полный батч-режим — потребуется отдельный предохранитель

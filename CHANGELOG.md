@@ -52,19 +52,195 @@
 
 ### Что отслеживать
 
-- Проверять, остаётся ли `.github/workflows/ci.yml` только сборочным workflow через `just ci::build` или начинает запускать host-тесты.
+- ~~Проверять, остаётся ли `.github/workflows/ci.yml` только сборочным workflow~~ — решено: job `test` уже запускает host-тесты (`just ci::test` → `just build::test-host-release`).
 - Отслеживать появление self-hosted runner, регулярных аппаратных прогонов или отчётов по HIL.
 - Проверять новые firmware-test модули в `firmware/test/src/tests/` и синхронные обновления протокола/документации.
-- Следить за развитием BSP: RGB (частично закрыто display-тестом), bootloader или `tft_app` — обе директории всё ещё не заведены.
-- Отслеживать локальные патчи поверх vendor SDK, которые нужно вести отдельным patch log.
-- Отслеживать мерж ветки `feature-tui-monolith` в `dev` — после мержа эту запись нужно закрыть датой и финальным диапазоном SHA.
+- Следить за развитием BSP: RGB (частично закрыто display-тестом); `tft_app` — директория всё ещё не заведена (bootloader — реализован, Фазы 0–6, см. запись ниже).
+- Отслеживать локальные патчи поверх vendor SDK, которые нужно вести отдельным patch log (пример — точечный патч `fault_injection_hardening.c` под `#if defined(__arm__)`, bootloader Фаза 3, см. запись ниже).
+- ~~Отслеживать мерж ветки `feature-tui-monolith` в `dev`~~ — смёржено (`b4c664f`), запись закрыта датой ниже.
+- Отслеживать тег `bootloader-v*` — после первого релиза закрыть запись «bootloader: полная реализация» датой и финальным SHA (сейчас часть диапазона — незакоммиченные изменения рабочего дерева).
 
-## [Не выпущено] — service-tui: монолитный spsdk-бэкенд, устойчивость к обрыву USB, упаковка PyInstaller
+## [Не выпущено] — bootloader: полная реализация, Фазы 0–6 (MCUboot Direct-XIP, HAB, service-tui интеграция)
 
-Диапазон: `1801f1beb959d610d31ee3dcd1f91046953117d4..22c40779ef0ec9911031d7a5272c4611b596d3e8` + незакоммиченные изменения рабочего дерева (документация)
+Диапазон: `4644f21507d3..6c564f16388a` + незакоммиченные изменения рабочего дерева (HAB-подпись
+тестовым ключом, Тир-0/Тир-1 верификация в service-tui, CI `bootloader-v*`, документация)
+Сравнение: <https://github.com/OSabuser/tft_manufacture_test/compare/4644f21...6c564f1>
+
+> `firmware/bootloader/` была пустой директорией на момент базового среза (см. "Что отслеживать"
+> выше — теперь снята с наблюдения, кроме тега релиза). Диапазон охватывает всю реализацию с нуля до
+> готовности к первому релизу (`VERSION 1.0.0`), шесть фаз согласно (уже удалённому после завершения,
+> см. "Удалено" ниже) `firmware/bootloader/PLAN.md`.
+
+### Кратко
+
+- Загрузчик MIMXRT1052 реализован целиком: XIP из Flash, выбор и запуск `tft_app` из одного из двух
+  слотов (MCUboot Direct-XIP), обновление с microSD, устойчивость к зависшим образам (watchdog +
+  recovery), HAB-подпись Release-сборки, интеграция с `service-tui` для контроля производственной
+  прошивки.
+- По пути на реальном железе найдено и исправлено более десятка багов — от неверной трактовки
+  регистров FlexSPI/SRC до архитектурных пробелов в чек-листах верификации; детали по фазам ниже.
+- `firmware/bootloader/CMakeLists.txt` → `VERSION 1.0.0`; все 6 фаз аппаратно верифицированы.
+
+### Добавлено
+
+- **Фаза 0 — карта Flash.** `docs/mimxrt1052/BOOTLOADER_FLASH_MAP.md` — смещения
+  `BOOTLOADER`/`SLOT_A`/`SLOT_B`, зафиксированы до написания кода.
+- **Фаза 1 — скелет.** `firmware/bootloader/{CMakeLists.txt,src/main.c,src/cli.c,src/protocol.{c,h}}` —
+  bring-up (LED/tick/USB CDC), урезанный протокол (`ping`/`get_version`), HAB unsigned Debug-конфиг.
+- **Фаза 2 — bootutil (Direct-XIP).** `mcuboot_port/` — шим `flash_area_*` над `bsp_qspi_flash`,
+  `sysflash.h`, `mcuboot_config.h` (TinyCrypt ECDSA-P256, `MCUBOOT_DIRECT_XIP_REVERT`),
+  `src/boot_select.{c,h}`. `test_stub/` — заглушка `tft_app` (два слота, разная линковка) для
+  аппаратной проверки выбора слота.
+- **Фаза 3 — SD-путь установки.** `src/{update_policy,slot_version,sd_update}.{c,h}` — сканирование
+  microSD, установка в неактивный слот, top-level состояние «нет валидного образа»;
+  `bootloader_fatfs` (read-only FatFS); аппаратный watchdog (`bsp/wdog`).
+- **Фаза 4 — SDRAM/QSPI smoke-test.** `bsp/sdram::bsp_sdram_configure()` — C-порт DCD (SEMC/CCM);
+  `bsp_qspi_decode_chip()` — идентификация чипа по JEDEC; `src/led_status.{c,h}` — единый словарь
+  LED-паттернов; `dev_sdram_test.c` (dev-only, `BOOTLOADER_DEV_DIAGNOSTICS`).
+- **Фаза 6 — recovery.** `bsp/boot_state` — счётчик попыток загрузки в `SRC_GPR3` (переживает
+  watchdog-сброс, обнуляется на POR); `src/recovery.{c,h}` — чистая функция `recovery_decide()`
+  (таксономия отказов A–D); recovery-режим по `BSP_BUTTON_2` с ослабленным version-gate.
+- **Фаза 5 — HAB Release + service-tui.** Тестовый HAB-ключ (`tools/host/hab/keys/`, схема NOCAK) —
+  `hab_bootloader_release.yaml` реально подписывает Release-образ (`flags=0x08`);
+  `tools/service_tui/app/bootloader_client.py` — CDC-клиент bootloader
+  (`get_smoke_status`/`get_qspi_info`); `tools/service_tui/app/screens/verify.py` — экран живой
+  проверки загрузчика после серийной прошивки (Тир-1); Тир-0 (readback-верификация записи,
+  `flash_backend._verify_written()`) — включена по умолчанию для любой прошивки через `service-tui`;
+  `firmware/bootloader/SIGNING_CEREMONY.md` — план настоящей production-подписи (HAB SRK + MCUboot
+  production-ключ) на будущее.
+
+### Изменено
+
+- **Фаза 3**: детект SD консолидирован на единый `PRSSTAT`; ранний сэмпл кнопки даунгрейда.
+- **Фаза 4**: `board_mpu_init()` (общий для всех прошивок код) — добавлен Region 11 под NIC-301
+  GPV-регистры (`0x41000000`, 8 МБ).
+- **Фаза 5**: `Flasher.PRODUCTION` (`tools/service_tui/app/flasher.py`) сужен до сценария A (только
+  загрузчик) — бандл с `tft_app` (сценарий B) отложен до реализации `tft_app`; production жёстко
+  резолвит Release, независимо от переменной `FIRMWARE_BUILD_TYPE`. `just host::package-tui` —
+  новый явный гвард на `build/Release/bootloader_hab.bin`. `.github/workflows/release.yml` — тег
+  `bootloader-v*` (симметрично `firmware-v*`), общий job `firmware` теперь собирает и подписывает
+  Release-образ bootloader.
+- Корневой `README.md` — статус bootloader `запланирован` → `реализован, v1.0.0`.
+
+### Исправлено
+
+- **Фаза 2** (3 бага, аппаратная верификация): `jump_to_image()` маскировал IRQ перед прыжком (не по
+  референсу NXP) — вешал `bsp_delay()` в любом целевом образе; `bsp_qspi_read()` не округлял
+  `IDATSZ` до кратного 4 при IP-чтении — контроллер недодавал слово на хвостах не кратной длины
+  (впервые проявилось на чтении хэша образа bootutil); `qspi_read_tail()` сравнивал
+  `IPRXFSTS.FILL` (watermark-юниты по 8 байт) напрямую со счётчиком слов — зависал на хвостах ровно
+  в 2 слова (чтение подписи ECDSA).
+- **Фаза 3**: форсированный даунгрейд физически записывался, но не загружался бы (`boot_go()` всегда
+  выбирает более высокую версию) — добавлено поле `erase_previous_active`; `fih_panic_loop()`
+  (вендоренный bootutil) ронял `test-host-release` в CI на x86_64-раннере (`invalid instruction
+  mnemonic 'b'` — ARM/Thumb-only мнемоника, на arm64 devcontainer случайно ассемблировалась,
+  маскируя проблему); стабы `test_stub` не позиционно-независимы — линковка под конкретный слот
+  обязательна и для реального `tft_app`, не только для заглушки.
+- **Фаза 6** (4 бага): счётчик попыток загрузки рос и на пустой плате без SD (без реального
+  зависания) — ошибочно уводил бы в recovery через ~4.5 с в штатном ожидании; в стенде `test_stub`
+  health-mark вызывался безусловно до проверки `HANG_MODE`, из-за чего счётчик никогда не
+  накапливался выше 1 (фолбэк не срабатывал); в самом чек-листе Фазы 6 предписывался файл для
+  чужого слота при проверке recovery-установки; `attempt_boot()` не инкрементировал счётчик перед
+  первым прыжком в свежеустановленный recovery-образ (симметрия с обычным путём).
+- **Фаза 4** (3 бага): AXI-QoS регистры (NIC-301 GPV) валили C-код фолтом — не покрыты
+  `board_mpu_init()`, DCD успевал их записать до включения MPU, C-порт — нет; результаты
+  smoke-теста терялись (шлются один раз сразу после `init()`, хост не успевает открыть порт) —
+  кэширование + переспрос по команде; оценка длительности SDRAM-теста в комментарии оригинала
+  завышена ~в 6 раз (реальный прогон ~4.2 с, не ~30 с).
+- **Фаза 5** (2 бага в `service-tui`, до публикации): production шил bootloader и (будущий) app по
+  одному адресу `FLASH_BASE` — второй шаг затёр бы первый (наследие до-bootloader архитектуры, для
+  Direct-XIP неверно); production мог тихо взять unsigned Debug-образ bootloader через
+  `FIRMWARE_BUILD_TYPE` (переменная предназначена только для firmware_test, дефолт `Debug`) — теперь
+  Release резолвится жёстко.
+
+### Тесты
+
+- Host-тесты выросли с 13 (Фаза 2) до 16 (Фазы 3/6: `update_policy`, `slot_version`, `recovery`) —
+  зелёные, Debug и Release, обе платформы (macOS + devcontainer Linux).
+- `tools/service_tui`: 68 → 76 тестов (Фаза 5) — Тир-0 readback (`test_flash_backend.py`) + новый
+  `test_bootloader_client.py`.
+- Полный аппаратный чек-лист пройден на каждой фазе (Фазы 2–6); детали были в удалённых
+  `HARDWARE_VERIFICATION_*.md`/`DEBUG_LOG_*.md` (см. git-история, "Удалено" ниже).
+
+### CI
+
+- `.github/workflows/release.yml`: новый job `publish-bootloader` (тег `bootloader-v*`), общий job
+  `firmware` расширен на сборку Release HAB bootloader; `service-tui-{macos,windows}` теперь
+  докачивают `bootloader_hab.bin` в `build/Release/` перед упаковкой — без этого `just
+  host::package-tui` падал бы с новым гвардом (см. "Изменено").
+- CI-баг `fih_panic_loop`/x86_64 (Фаза 3, см. "Исправлено") — точечный патч вендоренного
+  `fault_injection_hardening.c` под `#if defined(__arm__)`.
+
+### Документация
+
+- `docs/bootloader/HAB_GUIDE.md` — новый §5.1 (разбор команд CSF-секции `nxpimage`, NOCAK vs полная
+  SRK-иерархия).
+- `firmware/bootloader/SIGNING_CEREMONY.md` — новый план настоящей production-подписи (HAB
+  SRK-церемония + MCUboot production-ключ), на будущее.
+- `docs/DEV_ARCH.md` (корневой) — исправлена фактическая ошибка (bootloader описывался как
+  «копирование в ITCM», реально XIP без ITCM/DCD) и устаревший путь `tools/production/`.
+- `tools/service_tui/docs/DEV_ARCH.md` → переименован в `tools/service_tui/docs/ARCHITECTURE.md`
+  (коллизия имени с корневым `docs/DEV_ARCH.md`); новый §16 (Тир-0/Тир-1); синхронизирован со всеми
+  изменениями Фазы 5; починены 10 битых/несогласованных ссылок на файл в трёх других README.
+- `docs/CI_WORKFLOW.md` — синхронизирован с `bootloader-v*` (диаграмма, триггеры, таблица job'ов).
+
+### Удалено
+
+- `firmware/bootloader/PLAN.md`, `DEBUG_LOG_PHASE2.md`, `DEBUG_LOG_PHASE3_SD.md`,
+  `test_stub/HARDWARE_VERIFICATION_{PHASE2,PHASE3,PHASE6,LED_PATTERNS}.md`, `docs/CI_PLAN.md` —
+  планирующие/трекинговые документы и чек-листы, отработавшие своё после завершения всех фаз;
+  фактическое содержание либо перенесено в постоянные документы (`README.md`,
+  `docs/bootloader/HAB_GUIDE.md`, `docs/CI_WORKFLOW.md`), либо остаётся доступным в git-истории. Тот
+  же паттерн, что уже применялся к `FIRST_RELEASE_PLAN.md`/`RELEASE_ROADMAP.md`/`just/ci_workflow.md`
+  при предыдущем релизе (см. запись ниже).
+
+## [2026-07-07 .. 2026-07-13] — Первый релиз: `tui-v0.2.0`/`firmware-v0.1.2`, точечный `tui-v0.2.1`
+
+Диапазон: `8869b3c8..d9fb813b`
+Сравнение: <https://github.com/OSabuser/tft_manufacture_test/compare/8869b3c...d9fb813>
+
+### Кратко
+
+- Первый тег-релиз проекта: `firmware-v0.1.2` (firmware_test HAB Debug) и `tui-v0.2.0` (service-tui
+  PyInstaller-бандл, macOS + Windows) — итог ветки `feature-tui-monolith` (см. запись ниже, закрыта
+  этим же релизом).
+- Директория service-tui переименована `tools/production/` → `tools/service_tui/`.
+- Точечный релиз `tui-v0.2.1` (отдельная ветка `service-tui-fixes`) — найден и исправлен полевой баг
+  записи во Flash, воспроизводившийся на случайном подмножестве плат.
+
+### Изменено
+
+- `tools/production/` → `tools/service_tui/` (директория и все внутренние пути/ссылки).
+- Из репозитория убран ранее случайно закоммиченный `dist/` (собранные PyInstaller-бандлы) —
+  добавлен `.gitignore`.
+
+### Исправлено
+
+- **QE-бит (Winbond) не выставлялся при auto-config Flashloader — ~50/500 плат в поле падали на
+  ЛЮБОЙ flash-операции.** Option word `0xC0000007` (со старта проекта, унаследован
+  `flash_backend.py`/`flash_usb.py`) не включает Quad Enable; часть партий W25Q128 приходит с завода
+  с QE=0, из-за чего чип остаётся в SPI-режиме при LUT, настроенных на quad-команды →
+  `status 20106 FlexSPINOR: Command Failure` на любой команде. Две промежуточные гипотезы (порядок
+  commit-FCB/erase; маргинальный электрический контакт) проверены на живом железе и опровергнуты.
+  Причина найдена пересчётом (не «на глаз») десятичного option word из логов NXP MCUBootUtility:
+  `0xC0000207`. QE энергонезависимый — после одной корректной установки (в т.ч. случайно, через
+  сторонний инструмент) плата «чинится» навсегда, что и маскировало баг как нестабильный.
+- M5StampPLC: два раунда фиксов детекта порта и CAN-обмена в `service-tui`.
+
+### Удалено
+
+- Планирующие документы, отработавшие своё к моменту релиза — `FIRST_RELEASE_PLAN.md`,
+  `RELEASE_ROADMAP.md`, `just/ci_workflow.md`, `tools/production/docs/MONOLITH_APP_PLAN.md`.
+  Содержание перенесено в постоянные `README.md`/`docs/DEV_ARCH.md` (тогда ещё под именем
+  `tools/production/`).
+
+## [2026-07-07] — service-tui: монолитный spsdk-бэкенд, устойчивость к обрыву USB, упаковка PyInstaller
+
+Диапазон: `1801f1beb959d610d31ee3dcd1f91046953117d4..22c40779ef0ec9911031d7a5272c4611b596d3e8` (мёрж в `dev` — `b4c664fe121226c4231675a150fba809e73b21d6`)
 Сравнение: <https://github.com/OSabuser/tft_manufacture_test/compare/1801f1beb959d610d31ee3dcd1f91046953117d4...22c40779ef0ec9911031d7a5272c4611b596d3e8>
 
-> Ветка `feature-tui-monolith` (от `dev`, поверх мержа `feature-tui-python`).
+> Ветка `feature-tui-monolith` (от `dev`, поверх мержа `feature-tui-python`). Смёржено в `dev` и
+> выпущено как часть первого релиза (`tui-v0.2.0`/`firmware-v0.1.2`) — см. запись выше.
 > **Полностью заменяет предыдущую версию этой записи**: прошивка сторонних
 > бинарников через subprocess (`tools/host/flash_usb.py --fcb-path` +
 > `nxpimage`) была реализацией на момент Фазы 0/раннего мержа и с тех пор

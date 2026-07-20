@@ -232,7 +232,7 @@ hab-verify project="firmware_test" type="release":
             exit 1 ;;
     esac
     OUT="/tmp/hab_parse_{{ project }}_{{ type }}.yaml"
-    cd "{{ TOOLS_DIR }}" && uv run nxpimage hab parse -b "${BIN}" -o "${OUT}"
+    cd "{{ TOOLS_DIR }}" && uv run nxpimage hab parse -f mimxrt1050 -b "${BIN}" -o "${OUT}"
     echo "  ✅  ${OUT}"
     grep -E "(entry|csf|tag)" "${OUT}" || true
 

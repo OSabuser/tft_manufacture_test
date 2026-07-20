@@ -349,6 +349,16 @@ class HabBuildError(FlashBackendError):
     """Ошибка сборки HAB-образа через HabImage (см. build_custom_hab)."""
 
 
+class FlashVerifyError(FlashBackendError):
+    """Тир-0: readback записанного диапазона не совпал с исходным образом.
+
+    Логическая ошибка (плата на месте, но байты во Flash не те, что писали —
+    редкий silent-corruption, не пойманный кодом статуса самой write-команды).
+    connection_lost наследуется False → UI остаётся на экране и показывает
+    сообщение, не уходит на WaitingScreen (вариант 2, Гейт 4a).
+    """
+
+
 # SPSDKTimeoutError НЕ наследует SPSDKConnectionError (оба — потомки SPSDKError,
 # проверено по исходникам spsdk 3.7.0), поэтому один `except SPSDKConnectionError`
 # его пропускал → safety net в Flasher показывал «Непредвиденная ошибка» вместо
@@ -478,6 +488,37 @@ def _is_blank(mboot: McuBoot, address: int, length: int) -> bool:
     if not data:
         return False
     return all(b == 0xFF for b in data)
+
+
+def _verify_written(mboot: McuBoot, address: int, expected: bytes) -> None:
+    """Тир-0 (Фаза 5): прочитать записанный диапазон и сверить с оригиналом.
+
+    Читаем ровно тот же диапазон, что записали (`address`, `len(expected)`),
+    и сравниваем sha256 — не побайтово, чтобы не тащить весь буфер в текст
+    ошибки и не зависеть от того, чанками ли spsdk вернул чтение. Любой сбой
+    (короткое/пустое чтение, несовпадение хэша) — FlashVerifyError: это
+    логическая ошибка «данные во Flash не те», плата на месте, обрыв тут ни
+    при чём (обрыв ловится _CONNECTION_LOST_EXCEPTIONS в вызывающем flash()).
+
+    read_memory здесь НЕ оборачивается в _run_flash_cmd: это чтение, а не
+    команда с состоянием «выполнена/не выполнена» — короткое/пустое чтение
+    трактуется прямо как провал верификации (безопасный дефолт).
+
+    :raises FlashVerifyError: readback короче ожидаемого или хэш не совпал.
+    """
+    length = len(expected)
+    actual = mboot.read_memory(address, length, mem_id=0)
+    if not actual or len(actual) != length:
+        got = 0 if not actual else len(actual)
+        raise FlashVerifyError(
+            f"Верификация записи не удалась: прочитано {got} из {length} байт "
+            f"по 0x{address:08X} (status: {mboot.status_string})"
+        )
+    if hashlib.sha256(actual).digest() != hashlib.sha256(expected).digest():
+        raise FlashVerifyError(
+            f"Верификация записи не удалась: содержимое Flash по 0x{address:08X} "
+            f"не совпадает с образом ({length} байт) — возможна порча при записи"
+        )
 
 
 def _emit(
@@ -638,6 +679,7 @@ def flash(
     *,
     ram_only: bool = False,
     fcb_path: Optional[Path] = None,
+    verify_readback: bool = True,
     progress_cb: Optional[ProgressCallback] = None,
 ) -> None:
     """Прошить HAB-образ в Flash либо загрузить в RAM (см. flash_usb.py::flash).
@@ -647,7 +689,14 @@ def flash(
     :param ram_only: Загрузить в RAM через SDP, во Flash не писать.
     :param fcb_path: Явный FCB-блоб (custom-бинари). None → auto-config
                       (write_fcb_auto, только для штатных firmware_test/production).
+    :param verify_readback: Тир-0 (Фаза 5) — после записи прочитать записанный
+                     диапазон обратно и сверить sha256 с исходными байтами.
+                     Ловит silent-corruption (write-команда вернула успех, но во
+                     Flash попало не то), не пойманный кодом статуса. Дёшево по
+                     действиям оператора (обычный read_memory, без смены BOOT_MOD).
+                     Игнорируется при ram_only (во Flash ничего не пишем).
     :raises FlashBackendError: и подклассы — на любой ошибке.
+    :raises FlashVerifyError: readback не совпал с образом (плата на месте).
     :raises ConnectionLostError: обрыв USB посреди операции.
     """
     if not hab_bin.exists():
@@ -738,6 +787,11 @@ def flash(
                     write_addr, data, mem_id=0, progress_callback=_on_progress
                 ),
             )
+
+            if verify_readback:
+                _emit(progress_cb, "verify", 0, "Верификация записи (readback)")
+                _verify_written(mboot, write_addr, data)
+                _emit(progress_cb, "verify", 100, "Верификация записи: OK")
 
             _emit(progress_cb, "reset", 0, "Reset")
             mboot.reset(reopen=False)

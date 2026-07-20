@@ -68,7 +68,7 @@ graph TB
     end
 ```
 
----
+--- 
 
 ## 3. Что устанавливается и где
 
@@ -198,9 +198,9 @@ flowchart LR
 │   │   │                            dcd.bin, ivt_flashloader.bin
 │   │   └── uv.lock
 │   │
-│   ├── production/               ← service-tui: TUI сервисного инженера (Textual)
+│   ├── service_tui/               ← service-tui: TUI сервисного инженера (Textual)
 │   │                                прошивка/диагностика готовых плат, см.
-│   │                                tools/service_tui/README.md + DEV_ARCH.md
+│   │                                tools/service_tui/README.md
 │   │
 │   └── hil/                      ← HIL pytest-окружение
 │       ├── conftest.py           ← фикстуры: m5, loaded_<n>, uart_<n>
@@ -356,8 +356,8 @@ buildPresets (HIL):
 | Прошивка                     | Стратегия                          | Инструмент загрузки |
 | ---------------------------- | ---------------------------------- | ------------------- |
 | `firmware_test`              | XIP из Flash (`flexspi_nor.ld`)    | SPSDK → Flash       |
-| `bootloader`                 | Копирование в ITCM                 | SPSDK → Flash       |
-| `tft_app`                    | XIP + буферы в SDRAM               | SPSDK → Flash       |
+| `bootloader`                 | XIP из Flash, без ITCM/DCD (не трогает SDRAM) — выбирает и запускает `tft_app` из слота (MCUboot Direct-XIP) | SPSDK → Flash |
+| `tft_app`                    | XIP из своего слота (Direct-XIP, два слота A/Б) + буферы в SDRAM (SEMC поднимает сама) | SPSDK → Flash |
 | HIL target (`tests/target/`) | Исполнение из ITCM/DTCM (`ram.ld`) | pyOCD → RAM         |
 
 **HIL boot-стратегия:** pyOCD настраивает FLEXRAM (128 KB ITCM + 128 KB DTCM + 256 KB OCRAM), записывает PT_LOAD сегменты ELF по физическим адресам, устанавливает SP/PC из таблицы векторов и запускает выполнение. Flash не используется — прошивка исчезает при отключении питания.

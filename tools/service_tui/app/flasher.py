@@ -262,20 +262,33 @@ class Flasher:
             )
 
         elif target == FlashTarget.PRODUCTION:
-            result = await self._run_flash_op(
+            # Release ЖЁСТКО, в обход _FIRMWARE_BUILD_TYPE/FIRMWARE_BUILD_TYPE
+            # (та переменная — переключатель Debug/Release ТОЛЬКО для
+            # диагностической прошивки firmware_test, дефолт "Debug", см. её
+            # комментарий выше). Serial-прошивка не должна тихо зависеть от
+            # окружения: build/Debug/bootloader_hab.bin не подписан
+            # (flags=0x00 — Debug HAB-конфиг намеренно не трогали в Фазе 5),
+            # а именно подписанный Release — весь смысл production-пути.
+            hab_bin = flash_backend.firmware_hab_path("bootloader", "Release")
+
+            # Сценарий A (Фаза 5): production = ТОЛЬКО загрузчик. Платы уходят в
+            # кучу и потом массово прошиваются tft_app с SD-карт.
+            #
+            # Прежний код здесь шил ещё и app_hab.bin, но ПО ТОМУ ЖЕ адресу
+            # FLASH_BASE (0x60000000) — второй шаг затирал только что записанный
+            # загрузчик. Это наследие монолитной эпохи (app как единственный
+            # XIP-образ) и для Direct-XIP неверно: tft_app живёт в СЛОТЕ
+            # (0x60040000, Slot A), проверяется bootutil'ом и подписывается
+            # imgtool'ом (НЕ HAB). Бандл bootloader+tft_app (сценарий B) —
+            # отдельная будущая работа вместе с реальным tft_app: писать
+            # bootloader_hab.bin → 0x60000000 и слинкованный-под-A подписанный
+            # образ → 0x60040000. См. docs/mimxrt1052/UPDATE_FLOW.md §5, §7.
+            return await self._run_flash_op(
                 flash_backend.flash,
-                _firmware_hab_path("bootloader"),
+                hab_bin,
                 async_progress_cb=progress_cb,
                 sync_progress_cb=sync_cb,
             )
-            if result.ok:
-                result = await self._run_flash_op(
-                    flash_backend.flash,
-                    _firmware_hab_path("app"),
-                    async_progress_cb=progress_cb,
-                    sync_progress_cb=sync_cb,
-                )
-            return result
 
         elif target == FlashTarget.CUSTOM:
             if bin_path is None:

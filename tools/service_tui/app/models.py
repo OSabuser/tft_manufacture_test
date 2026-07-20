@@ -33,7 +33,7 @@ class FlashTarget(Enum):
     """Что прошиваем."""
 
     FIRMWARE_TEST = "firmware_test"
-    PRODUCTION = "production"  # bootloader + tft_app
+    PRODUCTION = "production"  # сценарий A: только загрузчик (бандл B — будущее, см. flasher.py)
     CUSTOM = "custom"  # произвольный HAB-бинарь, путь задаётся отдельно
 
 
@@ -72,12 +72,18 @@ class FlashPreset:
     выбор был неверным).
 
     DCD/FCB-поля имеют смысл только при target == FlashTarget.CUSTOM.
+    verify имеет смысл только при target == FlashTarget.PRODUCTION.
     """
 
     target: FlashTarget = FlashTarget.FIRMWARE_TEST
     custom_bin_name: Optional[str] = None
     use_dcd: bool = False
     fcb_variant: FcbVariant = FcbVariant.W25Q128
+    # Тир-1 (Фаза 5): после серийной прошивки прогнать живую проверку загрузчика
+    # (smoke-test SDRAM + идентификация QSPI по CDC). Требует смены BOOT_MOD +
+    # reset — раздражает при массовой заливке, поэтому OFF по умолчанию. Тир-0
+    # (readback записи) выполняется всегда, независимо от этого флага.
+    verify: bool = False
 
 
 @dataclass(frozen=True)
