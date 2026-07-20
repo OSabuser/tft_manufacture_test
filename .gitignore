@@ -78,3 +78,8 @@ tools/host/.venv-host-win/
 .zed/
 project_tree.txt
 tools/service_tui/dist/
+
+# Референсные дампы старых серийных проектов (не коммитим)
+firmware/tft_app/OLD_PROJECT/
+firmware/tft_app/OLD_PROJECT_*/
+firmware/tft_app/special/
