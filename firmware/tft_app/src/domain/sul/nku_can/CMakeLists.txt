@@ -1,0 +1,5 @@
+add_library(tft_app_sul_nku_can STATIC src/nku_can.c)
+
+target_include_directories(tft_app_sul_nku_can PUBLIC include/)
+
+target_link_libraries(tft_app_sul_nku_can PUBLIC tft_app_elevator_model tft_app_sul_headers)

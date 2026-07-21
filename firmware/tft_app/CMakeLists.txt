@@ -43,6 +43,14 @@ target_link_libraries(freertos_kernel PUBLIC sdk_device)
 target_compile_options(freertos_kernel PRIVATE -w)
 
 # -----------------------------------------------------------------------------
+# Доменные/сервисные/презентационные слои — каждый своя статическая либа
+# (ARCH.md §3, конвенция bsp/<module>). tft_app_* префикс — коллизии имён.
+# -----------------------------------------------------------------------------
+add_subdirectory(src/domain)
+add_subdirectory(src/services)
+add_subdirectory(src/ui)
+
+# -----------------------------------------------------------------------------
 # app — исполняемый образ слота
 # -----------------------------------------------------------------------------
 include(${CMAKE_SOURCE_DIR}/firmware/bootloader/mcuboot_port/bootutil_sources.cmake)
@@ -70,11 +78,15 @@ target_include_directories(
 
 # __STARTUP_INITIALIZE_RAMFUNCTION — startup копирует .ram_function из flash в
 # ITCM. БЕЗ него ramfunc-код bsp_qspi (AT_QUICKACCESS_SECTION_CODE) в ITCM не
-# попадает → запись QSPI виснет (см. bsp/qspi_flash/README.md). Без USB CDC
-# __STARTUP_INITIALIZE_NONCACHEDATA не нужен — ни один линкуемый модуль не
-# кладёт данные в NonCacheable/NonCacheable.init (проверено).
+# попадает → запись QSPI виснет (см. bsp/qspi_flash/README.md).
+# __STARTUP_INITIALIZE_NONCACHEDATA — аналогично для .ncache/.ncache.init:
+# framebuffer (services/gfx, AT_NONCACHEABLE_SECTION_ALIGN) размещён в SDRAM
+# non-cacheable регионе (cmake/linker/..._app_slot.ld, m_sdram_ncache) — по
+# рекомендации NXP для буферов, которые ELCDIF читает по DMA (см.
+# bsp/sdram/README.md и OLD_PROJECT/source/display/image_cache.c).
 target_compile_definitions(
-  app PRIVATE APP_OWN_SLOT_ID=0 __STARTUP_CLEAR_BSS __STARTUP_INITIALIZE_RAMFUNCTION)
+  app PRIVATE APP_OWN_SLOT_ID=0 __STARTUP_CLEAR_BSS __STARTUP_INITIALIZE_RAMFUNCTION
+              __STARTUP_INITIALIZE_NONCACHEDATA)
 
 # Вендоренный bootutil_public.c — под своими warnings (как в bootloader/stub).
 set_source_files_properties(
@@ -97,9 +109,16 @@ target_link_libraries(
           bsp_boot_state
           bsp_qspi_flash
           bsp_uart_host
+          bsp_sdram
           bsp_boot_xip_no_dcd
           freertos_kernel
-          port_log_uart) # UART диагностика (utils_log + bsp_uart_host, LPUART1/MCU-Link VCOM)
+          port_log_uart # UART диагностика (utils_log + bsp_uart_host, LPUART1/MCU-Link VCOM)
+          # Фаза 1: walking skeleton (CAN → декодер → контроллер → fallback-рендер)
+          tft_app_sul
+          tft_app_sul_transport_can
+          tft_app_controller
+          tft_app_gfx
+          tft_app_ui_fallback)
 
 target_link_options(
   app

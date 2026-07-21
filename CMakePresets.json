@@ -168,7 +168,9 @@
                 "test_slot_version",
                 "test_update_policy",
                 "test_recovery",
-                "test_tft_app_smoke"
+                "test_tft_app_smoke",
+                "test_sul_nku_can",
+                "test_tft_app_controller"
             ]
         },
         {
@@ -192,7 +194,9 @@
                 "test_slot_version",
                 "test_update_policy",
                 "test_recovery",
-                "test_tft_app_smoke"
+                "test_tft_app_smoke",
+                "test_sul_nku_can",
+                "test_tft_app_controller"
             ]
         },
         {

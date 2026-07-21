@@ -45,14 +45,22 @@ MEMORY
   m_text       (RX) : ORIGIN = SLOT_BASE + IMGTOOL_HDR_SZ + VECTOR_SIZE, LENGTH = SLOT_SIZE - IMGTOOL_HDR_SZ - VECTOR_SIZE
   m_qacode     (RX) : ORIGIN = 0x00000000, LENGTH = 0x00020000 /* SRAM_ITC 128 КБ — ramfunc */
   m_data       (RW) : ORIGIN = 0x20000000, LENGTH = 0x00020000 /* SRAM_DTC 128 КБ — .data/.bss/heap/stack */
-  m_data2      (RW) : ORIGIN = 0x20200000, LENGTH = 0x00040000 /* SRAM_OC 256 КБ — ncache */
-  m_sdram      (RW) : ORIGIN = 0x80000000, LENGTH = 0x02000000 /* SDRAM 32 МБ — Фаза 0 не используется */
+  m_data2        (RW) : ORIGIN = 0x20200000, LENGTH = 0x00040000 /* SRAM_OC 256 КБ */
+  /* SDRAM 32 МБ, разбита на 2: некэшируемый framebuffer (ELCDIF DMA читает
+   * его напрямую — MPU Region 9 в board_mpu_init() параметризован ЭТИМИ
+   * __NCACHE_REGION_* символами, C-код не трогаем) + остаток под кэшируемые
+   * буферы будущих фаз (ассеты, аудио). Framebuffer TFT8 800×600×4 ≈ 1.83 МБ
+   * — 2 МБ (степень двойки, MPU-регион обязан быть степенью двойки и
+   * выровнен по своему размеру) с запасом. См. bsp/sdram/README.md про NXP-
+   * рекомендацию некэшируемых DMA-буферов в SDRAM. */
+  m_sdram_ncache (RW) : ORIGIN = 0x80000000, LENGTH = 0x00200000 /* 2 МБ — framebuffer (non-cacheable) */
+  m_sdram        (RW) : ORIGIN = 0x80200000, LENGTH = 0x01E00000 /* ~30 МБ — кэшируемый остаток, Фаза 1 не использует */
 }
 
 SECTIONS
 {
-  __NCACHE_REGION_START = ORIGIN(m_data2);
-  __NCACHE_REGION_SIZE  = 0x2000; /* 8 КБ non-cacheable */
+  __NCACHE_REGION_START = ORIGIN(m_sdram_ncache);
+  __NCACHE_REGION_SIZE  = LENGTH(m_sdram_ncache); /* 2 МБ non-cacheable — framebuffer */
 
   /* Vector table (imgtool header зарезервирован до неё в MEMORY). */
   .interrupts :
@@ -175,6 +183,10 @@ SECTIONS
   } > m_qacode
 
   __NDATA_ROM = __ram_function_flash_start + (__ram_function_end__ - __ram_function_start__);
+  /* framebuffer (gfx, AT_NONCACHEABLE_SECTION_ALIGN, без инициализатора) —
+   * в .ncache (bare/zero-init), НЕ .ncache.init (copy-from-flash, сейчас
+   * ничего не использует, оставлена под будущие initialized non-cacheable
+   * буферы). Обе — в m_sdram_ncache, см. MEMORY выше. */
   .ncache.init :
   {
     . = ALIGN(32);
@@ -182,20 +194,21 @@ SECTIONS
     *(NonCacheable.init)
     . = ALIGN(4);
     __noncachedata_init_end__ = .;
-  } > m_data2
+  } > m_sdram_ncache
   . = __noncachedata_init_end__;
   .ncache :
   {
     *(NonCacheable)
     . = ALIGN(4);
     __noncachedata_end__ = .;
-  } > m_data2
+  } > m_sdram_ncache
 
   __DATA_END = __NDATA_ROM;
   text_end = ORIGIN(m_text) + LENGTH(m_text);
   ASSERT(__DATA_END <= text_end, "region m_text overflowed with text and data")
   ASSERT(text_end <= SLOT_BASE + SLOT_SIZE, "app вышел за пределы слота (2 МБ)")
-  ASSERT((__noncachedata_end__ - ORIGIN(m_data2)) <= LENGTH(m_data2), "m_data2 ncache overflow")
+  ASSERT((__noncachedata_end__ - ORIGIN(m_sdram_ncache)) <= LENGTH(m_sdram_ncache),
+         "m_sdram_ncache overflow — framebuffer(ы) не влезли в 2 МБ")
 
   .bss :
   {

@@ -323,3 +323,31 @@ add_host_test(
   test_tft_app_smoke
   SOURCES
   tft_app_smoke/test_tft_app_smoke.c)
+
+# -----------------------------------------------------------------------------
+# tft_app — domain (Фаза 1: чистый декодер НКУ-CAN + контроллер)
+# -----------------------------------------------------------------------------
+set(TFT_APP_DOMAIN_DIR ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/domain)
+
+add_host_test(
+  NAME
+  test_sul_nku_can
+  SOURCES
+  tft_app_sul_nku/test_sul_nku_can.c
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
+  ${TFT_APP_DOMAIN_DIR}/sul/nku_can/src/nku_can.c
+  INCLUDES
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/include
+  ${TFT_APP_DOMAIN_DIR}/sul/include
+  ${TFT_APP_DOMAIN_DIR}/sul/nku_can/include)
+
+add_host_test(
+  NAME
+  test_tft_app_controller
+  SOURCES
+  tft_app_controller/test_controller.c
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
+  ${TFT_APP_DOMAIN_DIR}/controller/src/controller.c
+  INCLUDES
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/include
+  ${TFT_APP_DOMAIN_DIR}/controller/include)

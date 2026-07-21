@@ -1,0 +1,5 @@
+add_library(tft_app_sul_transport_can STATIC src/can_transport.c)
+
+target_include_directories(tft_app_sul_transport_can PUBLIC include/)
+
+target_link_libraries(tft_app_sul_transport_can PUBLIC tft_app_sul_headers bsp_can)
