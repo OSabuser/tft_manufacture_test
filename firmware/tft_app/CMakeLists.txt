@@ -118,7 +118,9 @@ target_link_libraries(
           tft_app_sul_transport_can
           tft_app_controller
           tft_app_gfx
-          tft_app_ui_fallback)
+          tft_app_ui_fallback
+          # Фаза 3.1: персист ядра настроек (QSPI 0x450000)
+          tft_app_settings_store)
 
 target_link_options(
   app

@@ -352,3 +352,18 @@ add_host_test(
   INCLUDES
   ${TFT_APP_DOMAIN_DIR}/elevator_model/include
   ${TFT_APP_DOMAIN_DIR}/controller/include)
+
+# tft_app — settings_store (Фаза 3.1: чистый кодек настроек magic/version/CRC)
+set(TFT_APP_SETTINGS_DIR ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/services/settings_store)
+
+add_host_test(
+  NAME
+  test_tft_app_settings_store
+  SOURCES
+  tft_app_settings_store/test_settings_codec.c
+  ${TFT_APP_SETTINGS_DIR}/src/settings_codec.c
+  INCLUDES
+  ${TFT_APP_SETTINGS_DIR}/include
+  ${TFT_APP_SETTINGS_DIR}/src
+  ${PROJECT_SOURCE_DIR}/bsp/qspi_flash/include
+  ${PROJECT_SOURCE_DIR}/bsp/common/include)

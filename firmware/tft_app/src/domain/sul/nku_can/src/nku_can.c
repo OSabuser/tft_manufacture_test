@@ -3,15 +3,19 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-/* Адрес станции захардкожен в 0 (Фаза 1/2) — базовые ID без сдвига группы
- * (легаси: 0x506|group4, group4 = nku_address<<4; для address=0 group4=0;
- * PACKET5 — group6 = nku_address<<6). Фаза 3 параметризует через настройки. */
-#define PACKET1_ID 0x506U /* направление, режимы, начало движения, двери */
-#define PACKET2_ID 0x408U /* перегруз (вариант 1)                        */
-#define PACKET3_ID 0x508U /* позиция кабины, гонг, временная погрузка    */
-#define PACKET4_ID 0x50BU /* перегруз (вариант 2), сейсмоопасность       */
-#define PACKET5_ID 0x606U /* следующий этаж                             */
-#define PROTO_DLC  8U
+/* Базовые ID (для адреса станции 0). Реальный ID = base | сдвиг группы адреса:
+ * PACKET1..4 — group4 = nku_address<<4 (биты [7:4]); PACKET5 — group6 =
+ * nku_address<<6 (биты [8:6]). Адрес приходит из настроек (Фаза 3.1,
+ * proto_slice[0]); nku_can_set_address(). Для адреса 0 сдвиг нулевой — поведение
+ * идентично Фазам 1/2. */
+#define PACKET1_BASE 0x506U /* направление, режимы, начало движения, двери */
+#define PACKET2_BASE 0x408U /* перегруз (вариант 1)                        */
+#define PACKET3_BASE 0x508U /* позиция кабины, гонг, временная погрузка    */
+#define PACKET4_BASE 0x50BU /* перегруз (вариант 2), сейсмоопасность       */
+#define PACKET5_BASE 0x606U /* следующий этаж                             */
+#define PROTO_DLC    8U
+
+#define NKU_ADDRESS_MAX 15U /* адрес 0..15; group4 = addr<<4 */
 
 #define ARROW_MASK     0x03U /* PACKET1 data[6][1:0] — стрелка                */
 #define MOVEMENT_MASK  0x0CU /* PACKET1 data[6][3:2] — начало движения        */
@@ -57,6 +61,12 @@ void nku_can_init(nku_can_ctx_t *p_ctx)
     p_ctx->overload_p4   = false;
     p_ctx->lading_instr  = false;
     p_ctx->current_level = 0U;
+    p_ctx->nku_address   = 0U; /* Фаза 3.1: caller задаёт из настроек через set_address() */
+}
+
+void nku_can_set_address(nku_can_ctx_t *p_ctx, uint8_t nku_address)
+{
+    p_ctx->nku_address = (nku_address <= NKU_ADDRESS_MAX) ? nku_address : NKU_ADDRESS_MAX;
 }
 
 /* Пересчёт выходных полей, кормящихся несколькими пакетами (см. nku_can.h). */
@@ -227,56 +237,51 @@ sul_status_t nku_can_decode(void *p_ctx, const sul_frame_t *p_frame, sul_result_
 {
     nku_can_ctx_t *p_state = (nku_can_ctx_t *) p_ctx;
 
-    switch (p_frame->id)
+    /* Сдвиг ID по адресу станции (id пакетов адресно-зависим). */
+    const uint32_t G4 = (uint32_t) p_state->nku_address << 4U;
+    const uint32_t G6 = (uint32_t) p_state->nku_address << 6U;
+    const uint32_t ID = p_frame->id;
+
+    /* ID известного пакета совпал, но DLC не тот — малформированный кадр. */
+    if ((ID == (PACKET1_BASE | G4)) || (ID == (PACKET2_BASE | G4)) ||
+        (ID == (PACKET3_BASE | G4)) || (ID == (PACKET4_BASE | G4)) ||
+        (ID == (PACKET5_BASE | G6)))
     {
-    case PACKET1_ID:
         if (p_frame->len != PROTO_DLC)
         {
             return SUL_STATUS_ERR;
         }
+    }
+
+    if (ID == (PACKET1_BASE | G4))
+    {
         decode_packet1(p_state, p_frame->p_data);
-        break;
-
-    case PACKET2_ID:
-        if (p_frame->len != PROTO_DLC)
-        {
-            return SUL_STATUS_ERR;
-        }
+    }
+    else if (ID == (PACKET2_BASE | G4))
+    {
         p_state->overload_p2 = ((p_frame->p_data[7] & WEIGHT_MASK) == WEIGHT_MASK);
-        break;
-
-    case PACKET3_ID:
-        if (p_frame->len != PROTO_DLC)
-        {
-            return SUL_STATUS_ERR;
-        }
+    }
+    else if (ID == (PACKET3_BASE | G4))
+    {
         if (!decode_packet3(p_state, p_frame->p_data))
         {
             return SUL_STATUS_ERR;
         }
-        break;
-
-    case PACKET4_ID:
-        if (p_frame->len != PROTO_DLC)
-        {
-            return SUL_STATUS_ERR;
-        }
+    }
+    else if (ID == (PACKET4_BASE | G4))
+    {
         p_state->overload_p4   = ((p_frame->p_data[5] & WEIGHT_MASK) == WEIGHT_MASK);
         p_state->state.seismic = ((p_frame->p_data[0] & SEISMIC_MASK) == SEISMIC_MASK);
-        break;
-
-    case PACKET5_ID:
-        if (p_frame->len != PROTO_DLC)
-        {
-            return SUL_STATUS_ERR;
-        }
+    }
+    else if (ID == (PACKET5_BASE | G6))
+    {
         if (!decode_packet5(p_state, p_frame->p_data))
         {
             return SUL_STATUS_ERR;
         }
-        break;
-
-    default:
+    }
+    else
+    {
         return SUL_STATUS_IGNORED;
     }
 

@@ -37,6 +37,7 @@
 #include "port/log_uart.h"
 #include "queue.h"
 #include "services/gfx.h"
+#include "services/settings_store.h"
 #include "task.h"
 #include "ui/fallback.h"
 
@@ -183,6 +184,18 @@ static void sul_rx_task(void *p_arg)
     const bool QSPI_OK = (bsp_qspi_init() == BSP_OK);
     LOG_I(LOG_TAG, "tft_app phase1 boot: qspi=%s", QSPI_OK ? "OK" : "FAIL");
 
+    /* Настройки ядра (§8, §10): с флеша если QSPI поднялся, иначе дефолты. */
+    if (QSPI_OK)
+    {
+        const bsp_status_t S_RC = settings_store_load();
+        LOG_I(LOG_TAG, "settings: load rc=%d proto_addr=%u", S_RC,
+              settings_store_get()->user.proto_slice[0]);
+    }
+    else
+    {
+        settings_store_init_defaults();
+    }
+
     /* «Дошёл до устойчивого состояния» — сбрасывает счётчик попыток загрузки
      * (recovery загрузчика). SRC GPR, без flash. Безусловно, до потенциально
      * рискованного bring-up дисплея/CAN ниже. */
@@ -201,6 +214,8 @@ static void sul_rx_task(void *p_arg)
 
     nku_can_ctx_t nku_ctx;
     nku_can_init(&nku_ctx);
+    /* Адрес станции из настроек (§8, proto_slice[0]) → сдвиг ID пакетов. */
+    nku_can_set_address(&nku_ctx, settings_store_get()->user.proto_slice[0]);
 
     controller_ctx_t ctrl_ctx;
     controller_init(&ctrl_ctx);

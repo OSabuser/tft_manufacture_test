@@ -577,6 +577,45 @@ static void test_wrong_dlc_on_packet2_4_5_is_error(void)
     TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &f5, &out));
 }
 
+/* ── Адрес станции (Фаза 3.1): сдвиг ID пакетов ──────────────────────────── */
+
+/* Адрес N сдвигает ID: PACKET1 = 0x506 | (N<<4). Базовый ID адреса 0 при этом
+ * становится чужим (IGNORED). */
+static void test_address_shifts_packet_ids(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    nku_can_set_address(&ctx, 1U); /* group4 = 0x10 */
+    sul_result_t out;
+
+    uint8_t data[8] = { 0 };
+    data[6]         = 1U; /* стрелка вверх */
+
+    const sul_frame_t shifted = { .id = 0x506U | 0x10U, .bus = 0, .p_data = data, .len = 8U };
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &shifted, &out));
+    TEST_ASSERT_EQUAL(SUL_DIR_UP, out.direction);
+
+    /* Базовый ID адреса 0 теперь не наш. */
+    const sul_frame_t base = { .id = 0x506U, .bus = 0, .p_data = data, .len = 8U };
+    TEST_ASSERT_EQUAL(SUL_STATUS_IGNORED, nku_can_decode(&ctx, &base, &out));
+}
+
+/* Адрес > 15 клампится к 15 (не выходит за 4-битный group4). */
+static void test_address_clamped_to_max(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    nku_can_set_address(&ctx, 200U); /* клампится к 15 → group4 = 0xF0 */
+    sul_result_t out;
+
+    uint8_t data[8] = { 0 };
+    data[6]         = 2U; /* вниз */
+
+    const sul_frame_t f = { .id = 0x506U | 0xF0U, .bus = 0, .p_data = data, .len = 8U };
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &f, &out));
+    TEST_ASSERT_EQUAL(SUL_DIR_DOWN, out.direction);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -623,6 +662,9 @@ int main(void)
     RUN_TEST(test_packet5_next_cleared_on_arrival);
 
     RUN_TEST(test_wrong_dlc_on_packet2_4_5_is_error);
+
+    RUN_TEST(test_address_shifts_packet_ids);
+    RUN_TEST(test_address_clamped_to_max);
 
     return UNITY_END();
 }
