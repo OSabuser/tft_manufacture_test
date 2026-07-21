@@ -12,6 +12,7 @@
 
 **1.1 Индикация в реальном времени.** Местоположение кабины, спецрежимы, музыкальное
 сопровождение при движении, озвучка сигналов.
+
 - Сигналы от СУЛ приходят по последовательному интерфейсу (+24 В UART, кастомный
   бинарный протокол) либо по CAN.
 - Отображение состояния двух диспетчерских оптовходов: «Вызов подан» / «Вызов принят» / пусто.
@@ -56,7 +57,7 @@ A/B Direct-XIP; ассеты/layout — задача tft-app, см. §12).
 
 ### 4. Слои
 
-```
+```bash
 ┌──────────────────────────────────────────────────────────────────────┐
 │ app/         FreeRTOS-задачи, wiring, main            (firmware/tft_app)│  L4
 ├──────────────────────────────────────────────────────────────────────┤
@@ -77,7 +78,7 @@ A/B Direct-XIP; ассеты/layout — задача tft-app, см. §12).
 
 **Поток данных** (адаптирован из проекта `special`, поверх FreeRTOS):
 
-```
+```bash
 транспорт (CAN/UART) ─► sul_driver.transport ─► sul_driver.decode(frame) ─► sul_result_t
                                                                                   │ poll + timeout→default
                                                                                   ▼
@@ -92,12 +93,12 @@ A/B Direct-XIP; ассеты/layout — задача tft-app, см. §12).
 
 ### 5. Размещение и тестируемость
 
-| Слой | Где живёт | Тип | Host-тест |
-|---|---|---|---|
-| `elevator_model`, `sul` (декодеры), `controller`, `audio_policy`, layout-солвер | `firmware/tft_app/src/domain/*`, `.../ui/layout/*` | чистый C | **да** (golden-векторы) |
-| `sul` транспорт-адаптеры | `firmware/tft_app/src/domain/sul/transport/*` | HW | HIL |
-| `gfx`, `audio_engine`, `assets`, `settings_store`, `fs` | `firmware/tft_app/src/services/*` | HW/адаптеры | частично (парсеры/TLV — да) |
-| `ui`, `menu`, `app` | `firmware/tft_app/src/{ui,menu,app}/*` | app | вид/меню — HIL |
+| Слой                                                                            | Где живёт                                          | Тип         | Host-тест                   |
+| ------------------------------------------------------------------------------- | -------------------------------------------------- | ----------- | --------------------------- |
+| `elevator_model`, `sul` (декодеры), `controller`, `audio_policy`, layout-солвер | `firmware/tft_app/src/domain/*`, `.../ui/layout/*` | чистый C    | **да** (golden-векторы)     |
+| `sul` транспорт-адаптеры                                                        | `firmware/tft_app/src/domain/sul/transport/*`      | HW          | HIL                         |
+| `gfx`, `audio_engine`, `assets`, `settings_store`, `fs`                         | `firmware/tft_app/src/services/*`                  | HW/адаптеры | частично (парсеры/TLV — да) |
+| `ui`, `menu`, `app`                                                             | `firmware/tft_app/src/{ui,menu,app}/*`             | app         | вид/меню — HIL              |
 
 Host-тесты — `tests/host/tft_app_*` (Unity + fff, компилируем `.c` домена против моков bsp,
 по образцу `tests/host/mcuboot_port`, `tests/host/protocol`).
@@ -190,10 +191,10 @@ typedef struct {
 — 50pin с U/D·L/R). SDRAM, SEMC, периферия — одинаковы. Панели TFT7/8/10 уже разведены рантаймом
 в `bsp_display` (таблица `panel_config[]`: тайминги, клок, `has_orientation_pins`).
 
-| Профиль сборки | LCDIF | Панель | Клок |
-|---|---|---|---|
-| `app-tft4` | 40pin, без ориентации | TFT4 (фикс) | Video PLL |
-| `app-big`  | 50pin, с U/D·L/R | 7 / 8 / 10 — **рантайм** из provisioning | PLL2 |
+| Профиль сборки | LCDIF                 | Панель                                   | Клок      |
+| -------------- | --------------------- | ---------------------------------------- | --------- |
+| `app-tft4`     | 40pin, без ориентации | TFT4 (фикс)                              | Video PLL |
+| `app-big`      | 50pin, с U/D·L/R      | 7 / 8 / 10 — **рантайм** из provisioning | PLL2      |
 
 Различие изолировано в одном board-файле пин-мукса LCDIF. **Тип панели — provisioning-параметр**
 (пишется service_tui), не пользовательская настройка. Матрица сборки — два buildPreset
@@ -201,14 +202,14 @@ typedef struct {
 
 ### 10. Карта QSPI (W25Q128, 16 МБ)
 
-| Регион | Смещение | Размер | Владелец |
-|---|---|---|---|
-| bootloader | `0x000000` | 256 КБ | bootloader |
-| slot A (tft_app) | `0x040000` | 2 МБ | MCUboot |
-| slot Б (tft_app) | `0x240000` | 2 МБ | MCUboot |
-| **layout-регион** | `0x440000` | 64 КБ | tft_app |
-| **assets-регион** | `0x450000` | ≈ 11 МБ | tft_app |
-| settings | `0xFFE000` | 4 КБ | tft_app |
+| Регион            | Смещение   | Размер  | Владелец   |
+| ----------------- | ---------- | ------- | ---------- |
+| bootloader        | `0x000000` | 256 КБ  | bootloader |
+| slot A (tft_app)  | `0x040000` | 2 МБ    | MCUboot    |
+| slot Б (tft_app)  | `0x240000` | 2 МБ    | MCUboot    |
+| **layout-регион** | `0x440000` | 64 КБ   | tft_app    |
+| **assets-регион** | `0x450000` | ≈ 11 МБ | tft_app    |
+| settings          | `0xFFE000` | 4 КБ    | tft_app    |
 
 layout- и assets-регионы — **вне** flash-area загрузчика (bootutil про них не знает). Разметка
 фиксируется в **едином partition-заголовке**, из которого читают app и генератор для service_tui.

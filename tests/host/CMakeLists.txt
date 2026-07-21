@@ -314,3 +314,12 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang")
     ${PROJECT_SOURCE_DIR}/firmware/bootloader/src/slot_version.c
     PROPERTIES COMPILE_OPTIONS "-fno-sanitize=address,undefined")
 endif()
+
+# -----------------------------------------------------------------------------
+# tft_app — smoke (Фаза 0: проверка харнесса; доменные тесты — Фаза 1)
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_tft_app_smoke
+  SOURCES
+  tft_app_smoke/test_tft_app_smoke.c)

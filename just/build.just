@@ -66,6 +66,39 @@ build-app-debug: _configure-debug
 build-app-release: _configure-release
     cmake --build --preset app-release
 
+# ── подпись app (imgtool EC256, как stub; БЕЗ --confirm — self-confirm в рантайме) ──
+# Загрузчик валидирует подпись слота (MCUBOOT_VALIDATE_PRIMARY_SLOT +
+# MCUBOOT_SIGN_EC256), поэтому образ ОБЯЗАН быть подписан тестовым ключом
+# root-ec-p256.pem. Прошивка результата — через SWD в слот A (0x60040000).
+# HAB-контейнер (hab-app-*/SDP-путь) на Фазе 0 не используется, см. PLAN.md.
+#
+# БЕЗ --confirm: image_ok в трейлере НЕ выставлен на этапе подписи — образ
+# подтверждает себя рантаймом (boot_set_next в confirm_self, src/app/main.c).
+# Так сохраняется anti-brick revert: образ, который загрузился, но не смог
+# подтвердиться (завис до confirm), MCUboot откатит на следующей загрузке.
+
+[doc('Собрать и подписать tft_app для Slot A (Debug)')]
+[group('build')]
+sign-app-debug: build-app-debug
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{ BUILD_DIR }}/Debug/signed"
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 0.1.0 --align 1 --pad-header --pad \
+        "{{ BUILD_DIR }}/Debug/app.bin" "{{ BUILD_DIR }}/Debug/signed/app_slot_a.bin"
+    echo "  ✅  build/Debug/signed/app_slot_a.bin (Slot A 0x60040000) — прошивка через just host::flash-swd-app-slot-debug"
+
+[doc('Собрать и подписать tft_app для Slot A (Release)')]
+[group('build')]
+sign-app-release: build-app-release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{ BUILD_DIR }}/Release/signed"
+    {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 0.1.0 --align 1 --pad-header --pad \
+        "{{ BUILD_DIR }}/Release/app.bin" "{{ BUILD_DIR }}/Release/signed/app_slot_a.bin"
+    echo "  ✅  build/Release/signed/app_slot_a.bin (Slot A 0x60040000)"
+
 # ── все проекты сразу ─────────────────────────────────────────────────────────
 
 [doc('Собрать все проекты (Debug)')]

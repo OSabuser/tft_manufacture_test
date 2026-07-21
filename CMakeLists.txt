@@ -47,8 +47,11 @@ add_subdirectory(lib)
 if(NOT BUILD_TESTS_HOST)
   add_subdirectory(firmware/test)
   add_subdirectory(firmware/bootloader)
-  # Заглушка tft_app для аппаратной верификации bootutil (Фаза 2) — удалить,
-  # когда появится реальный firmware/tft_app. См. firmware/bootloader/PLAN.md.
+  add_subdirectory(firmware/tft_app)
+  # Заглушка tft_app для аппаратной верификации bootutil (Фаза 2). Пока
+  # оставляем рядом с реальным firmware/tft_app как независимую A/B-регрессию
+  # загрузчика — удалить, когда app сам сможет служить стендом. См.
+  # firmware/bootloader/PLAN.md и firmware/tft_app/PLAN.md.
   add_subdirectory(firmware/bootloader/test_stub)
 endif()
 

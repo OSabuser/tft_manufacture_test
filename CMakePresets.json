@@ -167,7 +167,8 @@
                 "test_mcuboot_boot_select",
                 "test_slot_version",
                 "test_update_policy",
-                "test_recovery"
+                "test_recovery",
+                "test_tft_app_smoke"
             ]
         },
         {
@@ -190,7 +191,8 @@
                 "test_mcuboot_boot_select",
                 "test_slot_version",
                 "test_update_policy",
-                "test_recovery"
+                "test_recovery",
+                "test_tft_app_smoke"
             ]
         },
         {

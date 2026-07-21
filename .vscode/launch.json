@@ -57,7 +57,7 @@
             "loadFiles": [],
             "runToEntryPoint": "main",
             "rtos": "FreeRTOS",
-            "preLaunchTask": "build:firmware-test-debug",
+            "preLaunchTask": "build:app-debug",
         }
     ]
 }

@@ -302,6 +302,30 @@ flash-swd-app-release:
     uv run --directory "{{ HIL_DIR }}" python "{{ _flash_swd }}" \
         --firmware app --build-type Release
 
+# ── слот-образ (подписанный imgtool, без HAB) — пишем сырой .bin по адресу ──
+# слота A напрямую через pyOCD (не через flash_swd.py: тот собирает FCB+IVT+HAB
+# под 0x60000000; слот — это данные, которые читает boot_go(), не boot-образ
+# BootROM). Тот же приём, что для stub'ов загрузчика. Требует собранного и
+# подписанного образа: just build::sign-app-<debug|release>.
+
+[doc('Прошить подписанный tft_app в Slot A (0x60040000) через SWD (Debug). Power cycle после')]
+[group('flash-swd')]
+flash-swd-app-slot-debug:
+    uv run --directory "{{ HIL_DIR }}" pyocd flash \
+        --target {{ env('PYOCD_TARGET', 'mimxrt1050_quadspi') }} \
+        --frequency {{ env('PYOCD_FREQUENCY', '4000000') }} \
+        --base-address 0x60040000 --erase sector \
+        "{{ BUILD_DIR }}/Debug/signed/app_slot_a.bin"
+
+[doc('Прошить подписанный tft_app в Slot A (0x60040000) через SWD (Release). Power cycle после')]
+[group('flash-swd')]
+flash-swd-app-slot-release:
+    uv run --directory "{{ HIL_DIR }}" pyocd flash \
+        --target {{ env('PYOCD_TARGET', 'mimxrt1050_quadspi') }} \
+        --frequency {{ env('PYOCD_FREQUENCY', '4000000') }} \
+        --base-address 0x60040000 --erase sector \
+        "{{ BUILD_DIR }}/Release/signed/app_slot_a.bin"
+
 [confirm("Стереть всю Flash (W25Q128)? Все прошивки будут удалены.")]
 [doc('Стереть всю Flash (W25Q128) через SWD (chip erase). Нужен power cycle после')]
 [group('flash-swd')]
