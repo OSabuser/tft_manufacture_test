@@ -325,7 +325,7 @@ add_host_test(
   tft_app_smoke/test_tft_app_smoke.c)
 
 # -----------------------------------------------------------------------------
-# tft_app — domain (Фаза 1: чистый декодер НКУ-CAN + контроллер)
+# tft_app — domain (Фаза 1/2: чистый декодер НКУ-CAN + контроллер + приоритеты)
 # -----------------------------------------------------------------------------
 set(TFT_APP_DOMAIN_DIR ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/domain)
 
@@ -348,6 +348,7 @@ add_host_test(
   tft_app_controller/test_controller.c
   ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
   ${TFT_APP_DOMAIN_DIR}/controller/src/controller.c
+  ${TFT_APP_DOMAIN_DIR}/controller/src/mode_priority.c
   INCLUDES
   ${TFT_APP_DOMAIN_DIR}/elevator_model/include
   ${TFT_APP_DOMAIN_DIR}/controller/include)

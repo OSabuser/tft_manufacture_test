@@ -30,12 +30,24 @@ typedef struct
 
 /**
  * @brief Что изменилось с прошлого вызова — presentation перерисовывает
- *        только помеченные поля.
+ *        только помеченные поля, audio_policy (Фаза 6) озвучивает изменившиеся
+ *        события поверх этого diff.
+ *
+ * mode_pending — сменился РАЗРЕШЁННЫЙ экранный режим (свёртка сигналов по
+ * таблице приоритетов, §7), а не отдельный сырой сигнал. arrival/movement —
+ * уровни из декодера; их edge (false→true) — сигнал к озвучке (гонг, старт).
  */
 typedef struct
 {
     bool pos_pending;
+    bool next_pending;
     bool direction_pending;
+    bool mode_pending;
+    bool arrival_pending;
+    bool movement_pending;
+
+    sul_mode_t mode; /**< разрешённый режим нового результата — presentation
+                          читает его при mode_pending (не нужен отдельный getter) */
 } indication_task_t;
 
 /**

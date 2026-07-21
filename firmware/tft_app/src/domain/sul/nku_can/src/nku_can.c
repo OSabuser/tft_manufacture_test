@@ -3,18 +3,45 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-/* Фаза 1: адрес станции захардкожен в 0 — базовые ID без сдвига группы
- * (легаси: 0x506|group4, group4 = nku_address<<4; для address=0 group4=0).
- * Фаза 3 параметризует через настройки. */
-#define PACKET1_ID 0x506U
-#define PACKET3_ID 0x508U
+/* Адрес станции захардкожен в 0 (Фаза 1/2) — базовые ID без сдвига группы
+ * (легаси: 0x506|group4, group4 = nku_address<<4; для address=0 group4=0;
+ * PACKET5 — group6 = nku_address<<6). Фаза 3 параметризует через настройки. */
+#define PACKET1_ID 0x506U /* направление, режимы, начало движения, двери */
+#define PACKET2_ID 0x408U /* перегруз (вариант 1)                        */
+#define PACKET3_ID 0x508U /* позиция кабины, гонг, временная погрузка    */
+#define PACKET4_ID 0x50BU /* перегруз (вариант 2), сейсмоопасность       */
+#define PACKET5_ID 0x606U /* следующий этаж                             */
 #define PROTO_DLC  8U
 
-#define ARROW_MASK 0x03U
-#define FLOOR_MASK 0x3FU
+#define ARROW_MASK     0x03U /* PACKET1 data[6][1:0] — стрелка                */
+#define MOVEMENT_MASK  0x0CU /* PACKET1 data[6][3:2] — начало движения        */
+#define ICON_MASK      0xF0U /* PACKET1 data[6][7:4] — код режима             */
+#define FLOOR_MASK 0x3FU /* символ этажа / числовой уровень                   */
+/* Двери (PACKET1 data[4]: откр. 0x10 / закр. 0x20) — только озвучка, не поле
+ * §6; декодируются в Фазе 6 (audio_policy). Здесь намеренно не разбираются. */
 
-#define SYMBOL_SPACE 16U
-#define SYMBOL_TOTAL 38U
+/* Коды режима в нибле data[6] & ICON_MASK (PACKET1). Точные значения нибла. */
+#define ICON_LADING   0x10U /* инструментальная погрузка */
+#define ICON_MP1      0x30U /* сервис / МП1              */
+#define ICON_REVISION 0x40U /* ревизия                  */
+#define ICON_MP2      0x50U /* сервис / МП2              */
+#define ICON_FIRE     0x70U /* пожарная тревога         */
+#define ICON_FIREMAN  0xF0U /* режим пожарного          */
+
+#define WEIGHT_MASK     0x40U /* PACKET2 data[7] / PACKET4 data[5] — перегруз   */
+#define GONG_MASK       0x40U /* PACKET3 data[3] — гонг активен при БИТЕ == 0   */
+#define LADING_SEC_MASK 0x3FU /* PACKET3 data[2] — секунды погрузки           */
+#define LADING_MIN_MASK 0x0FU /* PACKET3 data[3] — минуты погрузки            */
+#define SEISMIC_MASK    0x80U /* PACKET4 data[0] — сейсмоопасность              */
+
+#define SYMBOL_SPACE  16U
+#define SYMBOL_A      10U
+#define SYMBOL_P      17U /* "П" */
+#define SYMBOL_p      19U /* "п" */
+#define SYMBOL_HYPHEN 22U /* "-" */
+#define SYMBOL_TOTAL  38U
+
+#define FLOOR_NUM_UNKNOWN 60U /* «н/д» для озвучки — как в legacy floor_number_parser */
 
 /* Таблица символов НКУ-CAN — порт из OLD_PROJECT floor_string_composer()
  * (source/main_programm.c). Индекс — код символа с шины (байт & FLOOR_MASK). */
@@ -25,60 +52,174 @@ static const char *const S_SYMBOL_TABLE[SYMBOL_TOTAL] = {
 
 void nku_can_init(nku_can_ctx_t *p_ctx)
 {
-    p_ctx->state = sul_default_state();
+    p_ctx->state         = sul_default_state();
+    p_ctx->overload_p2   = false;
+    p_ctx->overload_p4   = false;
+    p_ctx->lading_instr  = false;
+    p_ctx->current_level = 0U;
+}
+
+/* Пересчёт выходных полей, кормящихся несколькими пакетами (см. nku_can.h). */
+static void recompute_multi_source(nku_can_ctx_t *p_ctx)
+{
+    p_ctx->state.overload = p_ctx->overload_p2 || p_ctx->overload_p4;
+    p_ctx->state.lading   = p_ctx->lading_instr || (p_ctx->state.lading_secs > 0U);
 }
 
 /**
- * @brief PACKET1 (0x506) — направление движения.
+ * @brief Составить UTF-8 строку этажа из кодов левого/правого символа.
  *
- * ARROW_MASK=0x03 на data[6] (DATA7): 0=нет/1=вверх/2=вниз/3=двойная стрелка.
- * Легаси (msg_receiver_task, PACKET1) обрабатывал только 0/1/2 — case 3
- * отсутствовал (направление молча не менялось). 3 = «двойная стрелка»
- * (спецрежим индикации, словарь special/DisplayArrowIcon) — уточнено отдельно.
+ * Порт floor_string_composer(): left==SPACE или left==0 → однозначный этаж
+ * (только правый символ; станция шлёт 0x00 как «нет левого символа», трактуем
+ * как пробел). Возврат false — код вне таблицы (малформированный кадр).
+ */
+static bool compose_chars(uint8_t left, uint8_t right, char *p_out)
+{
+    if ((left >= SYMBOL_TOTAL) || (right >= SYMBOL_TOTAL))
+    {
+        return false;
+    }
+
+    if ((left == SYMBOL_SPACE) || (left == 0U))
+    {
+        (void) snprintf(p_out, SUL_POS_BUF_LEN, "%s", S_SYMBOL_TABLE[right]);
+    }
+    else
+    {
+        (void) snprintf(p_out, SUL_POS_BUF_LEN, "%s%s", S_SYMBOL_TABLE[left],
+                        S_SYMBOL_TABLE[right]);
+    }
+
+    return true;
+}
+
+/**
+ * @brief Производный числовой этаж для озвучки — порт floor_number_parser().
  *
- * Маска покрывает ровно 0..3 — весь диапазон sul_direction_t, прямое
- * приведение типа корректно без switch/default.
+ * Стандартные (0..40): left*10+right (или только right при пробеле).
+ * Отрицательные ("-" слева): 40+right. Подвальные ("П"/"п" слева): 50+right.
+ * Всё нераспознанное / вне диапазона → FLOOR_NUM_UNKNOWN (60).
+ */
+static uint8_t floor_number_parser(uint8_t left, uint8_t right)
+{
+    if (((left < SYMBOL_A) || (left == SYMBOL_SPACE)) && (right < SYMBOL_A))
+    {
+        const uint8_t FLOOR = (left == SYMBOL_SPACE) ? right : (uint8_t) (left * 10U + right);
+        return (FLOOR < 41U) ? FLOOR : FLOOR_NUM_UNKNOWN;
+    }
+
+    if ((left == SYMBOL_HYPHEN) && (right < SYMBOL_A))
+    {
+        return (right > 0U) ? (uint8_t) (40U + right) : FLOOR_NUM_UNKNOWN;
+    }
+
+    if (((left == SYMBOL_P) || (left == SYMBOL_p)) && (right < SYMBOL_A))
+    {
+        return (uint8_t) (50U + right);
+    }
+
+    return FLOOR_NUM_UNKNOWN;
+}
+
+/**
+ * @brief PACKET1 (0x506) — направление, режим, начало движения, уровень остановки.
+ *
+ * data[6]: [1:0] стрелка · [3:2] начало движения · [7:4] код режима.
+ * data[3][5:0]: числовой уровень остановки (гейт «следующего этажа», PACKET5).
+ *
+ * Режимные флаги, которыми владеет ТОЛЬКО PACKET1 (fire/maintenance/fireman и
+ * инструментальная погрузка), сбрасываются в начале и выставляются по нибле —
+ * так пакет-без-режима гасит устаревший режим (как в legacy). overload и
+ * seismic PACKET1 НЕ трогает (ими владеют PACKET2/4).
  */
 static void decode_packet1(nku_can_ctx_t *p_ctx, const uint8_t *p_data)
 {
     p_ctx->state.direction = (sul_direction_t) (p_data[6] & ARROW_MASK);
+    p_ctx->state.movement  = ((p_data[6] & MOVEMENT_MASK) != 0U);
+    p_ctx->current_level   = p_data[3] & FLOOR_MASK;
+
+    /* Стрелка «нет движения» → сбрасываем следующий этаж (появляется только
+     * пока кабина едет, гаснет на прибытии — см. PACKET5). */
+    if (p_ctx->state.direction == SUL_DIR_NONE)
+    {
+        p_ctx->state.next[0] = '\0';
+    }
+
+    p_ctx->state.fire_alarm  = false;
+    p_ctx->state.maintenance = false;
+    p_ctx->state.fireman     = false;
+    p_ctx->lading_instr      = false;
+
+    switch (p_data[6] & ICON_MASK)
+    {
+    case ICON_FIRE:
+        p_ctx->state.fire_alarm = true;
+        break;
+    case ICON_MP1:
+    case ICON_MP2:
+    case ICON_REVISION:
+        p_ctx->state.maintenance = true;
+        break;
+    case ICON_LADING:
+        p_ctx->lading_instr = true;
+        break;
+    case ICON_FIREMAN:
+        p_ctx->state.fireman = true;
+        break;
+    default:
+        break;
+    }
 }
 
 /**
- * @brief PACKET3 (0x508) — позиция кабины (left/right символы).
+ * @brief PACKET3 (0x508) — позиция кабины, гонг, временная погрузка.
  *
- * FLOOR_MASK=0x3F на data[5] (left) и data[6] (right) — порт
- * floor_string_composer() из OLD_PROJECT. left==SPACE или left==0 →
- * однозначный этаж, выводится только правый символ (легаси трактует байт
- * 0x00 так же, как пробел — станция может слать нулевой байт вместо явного
- * кода пробела для «нет левого символа»; порт без изменений поведения).
- *
- * В отличие от легаси (молча оставляет буфер как есть при выходе за
- * SYMBOL_TOTAL — маска даёт до 63 сырых значений при 38 валидных символах),
- * здесь это ошибка (false) — не полагаемся на предыдущее содержимое буфера.
- *
- * @return false — left/right вне таблицы символов (малформированный кадр).
+ * @return false — код символа позиции вне таблицы (малформированный кадр).
  */
 static bool decode_packet3(nku_can_ctx_t *p_ctx, const uint8_t *p_data)
 {
     const uint8_t LEFT  = p_data[5] & FLOOR_MASK;
     const uint8_t RIGHT = p_data[6] & FLOOR_MASK;
 
-    if ((LEFT >= SYMBOL_TOTAL) || (RIGHT >= SYMBOL_TOTAL))
+    if (!compose_chars(LEFT, RIGHT, p_ctx->state.pos))
     {
         return false;
     }
+    p_ctx->state.floor_num = floor_number_parser(LEFT, RIGHT);
 
-    if ((LEFT == SYMBOL_SPACE) || (LEFT == 0U))
+    /* Гонг активен, когда БИТ 0x40 в data[3] СБРОШЕН (инверсная кодировка). */
+    p_ctx->state.arrival = ((p_data[3] & GONG_MASK) == 0U);
+
+    /* Временная погрузка: остаток = минуты*60 + секунды. */
+    const uint8_t SECS       = p_data[2] & LADING_SEC_MASK;
+    const uint8_t MINS       = p_data[3] & LADING_MIN_MASK;
+    p_ctx->state.lading_secs = (uint16_t) ((uint16_t) MINS * 60U + SECS);
+
+    return true;
+}
+
+/**
+ * @brief PACKET5 (0x606) — следующий этаж.
+ *
+ * Доверяем «следующему этажу» только пока кабина реально едет (↑/↓) и байт
+ * назначения (data[0]) отличается от текущего уровня остановки — 0x606 и 0x506
+ * приходят асинхронно, устаревший байт назначения на стоянке порождал бы
+ * ложную индикацию (боевая заметка legacy). Иначе — очищаем next.
+ *
+ * @return false — код символа вне таблицы (малформированный кадр); при этом
+ *         поле next не трогаем.
+ */
+static bool decode_packet5(nku_can_ctx_t *p_ctx, const uint8_t *p_data)
+{
+    const bool MOVING =
+        (p_ctx->state.direction == SUL_DIR_UP) || (p_ctx->state.direction == SUL_DIR_DOWN);
+
+    if (MOVING && (p_data[0] != p_ctx->current_level))
     {
-        (void) snprintf(p_ctx->state.pos, SUL_POS_BUF_LEN, "%s", S_SYMBOL_TABLE[RIGHT]);
-    }
-    else
-    {
-        (void) snprintf(p_ctx->state.pos, SUL_POS_BUF_LEN, "%s%s", S_SYMBOL_TABLE[LEFT],
-                        S_SYMBOL_TABLE[RIGHT]);
+        return compose_chars(p_data[3] & FLOOR_MASK, p_data[4] & FLOOR_MASK, p_ctx->state.next);
     }
 
+    p_ctx->state.next[0] = '\0';
     return true;
 }
 
@@ -86,19 +227,25 @@ sul_status_t nku_can_decode(void *p_ctx, const sul_frame_t *p_frame, sul_result_
 {
     nku_can_ctx_t *p_state = (nku_can_ctx_t *) p_ctx;
 
-    if (p_frame->id == PACKET1_ID)
+    switch (p_frame->id)
     {
+    case PACKET1_ID:
         if (p_frame->len != PROTO_DLC)
         {
             return SUL_STATUS_ERR;
         }
         decode_packet1(p_state, p_frame->p_data);
-        *p_out = p_state->state;
-        return SUL_STATUS_OK;
-    }
+        break;
 
-    if (p_frame->id == PACKET3_ID)
-    {
+    case PACKET2_ID:
+        if (p_frame->len != PROTO_DLC)
+        {
+            return SUL_STATUS_ERR;
+        }
+        p_state->overload_p2 = ((p_frame->p_data[7] & WEIGHT_MASK) == WEIGHT_MASK);
+        break;
+
+    case PACKET3_ID:
         if (p_frame->len != PROTO_DLC)
         {
             return SUL_STATUS_ERR;
@@ -107,9 +254,33 @@ sul_status_t nku_can_decode(void *p_ctx, const sul_frame_t *p_frame, sul_result_
         {
             return SUL_STATUS_ERR;
         }
-        *p_out = p_state->state;
-        return SUL_STATUS_OK;
+        break;
+
+    case PACKET4_ID:
+        if (p_frame->len != PROTO_DLC)
+        {
+            return SUL_STATUS_ERR;
+        }
+        p_state->overload_p4   = ((p_frame->p_data[5] & WEIGHT_MASK) == WEIGHT_MASK);
+        p_state->state.seismic = ((p_frame->p_data[0] & SEISMIC_MASK) == SEISMIC_MASK);
+        break;
+
+    case PACKET5_ID:
+        if (p_frame->len != PROTO_DLC)
+        {
+            return SUL_STATUS_ERR;
+        }
+        if (!decode_packet5(p_state, p_frame->p_data))
+        {
+            return SUL_STATUS_ERR;
+        }
+        break;
+
+    default:
+        return SUL_STATUS_IGNORED;
     }
 
-    return SUL_STATUS_IGNORED;
+    recompute_multi_source(p_state);
+    *p_out = p_state->state;
+    return SUL_STATUS_OK;
 }

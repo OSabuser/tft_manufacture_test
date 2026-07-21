@@ -50,7 +50,15 @@ typedef struct
 /* Компилируемые в прошивку шрифты (services/gfx/fonts/, сгенерированы
  * lcd-image-converter пользователем). */
 extern const tFont FloorFontFallback; /* 0-9, "-", пробел — fallback (§11 ARCH) */
-extern const tFont SystemFont;        /* ASCII + кириллица — логи/меню        */
+
+/* SystemFont — ASCII + кириллица (логи/меню, метки режимов в fallback).
+ * Сгенерированный SystemFont.c экспортирует tFont под именем из .xml
+ * конвертера — JBMono24 (JetBrains Mono 24pt). Публичное имя API — SystemFont;
+ * связываем алиасом-макросом, не редактируя сгенерированный файл (он
+ * перезапишется при регенерации шрифта). Использовать как объект: &SystemFont —
+ * симметрично FloorFontFallback. */
+extern const tFont JBMono24;
+#define SystemFont JBMono24
 
 /** XRGB8888 (X игнорируется ELCDIF) — X-байт значения не имеет. */
 typedef uint32_t gfx_color_t;

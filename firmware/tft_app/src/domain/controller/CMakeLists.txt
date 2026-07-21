@@ -1,4 +1,4 @@
-add_library(tft_app_controller STATIC src/controller.c)
+add_library(tft_app_controller STATIC src/controller.c src/mode_priority.c)
 
 target_include_directories(tft_app_controller PUBLIC include/)
 
