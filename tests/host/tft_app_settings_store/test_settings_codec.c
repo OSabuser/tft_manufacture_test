@@ -1,9 +1,6 @@
 /**
  * @file  test_settings_codec.c
- * @brief Host-тесты чистой сериализации настроек (settings_codec.c) — без QSPI.
- *
- * Формат страницы (magic/version/CRC32), дефолты, round-trip, отбраковка
- * битых страниц. Flash-адаптер (settings_store.c) тестируется на железе.
+ * @brief Host-тесты settings_codec.c (сериализация ядра настроек). См. README.md.
  */
 
 #include "settings_codec.h"
@@ -12,14 +9,9 @@
 #include <stdio.h>
 #include <string.h>
 
-void setUp(void)
-{
-}
-void tearDown(void)
-{
-}
+void setUp(void) {}
+void tearDown(void) {}
 
-/* Страница обязана быть ровно одним сектором (дублирует _Static_assert в .c). */
 static void test_page_is_one_sector(void)
 {
     TEST_ASSERT_EQUAL_UINT(BSP_QSPI_SECTOR_SIZE, sizeof(settings_page_t));
@@ -28,12 +20,12 @@ static void test_page_is_one_sector(void)
 static void test_defaults_sane(void)
 {
     const settings_t D = settings_defaults();
-    TEST_ASSERT_EQUAL_UINT8(0U, D.device.protocol_id);  /* NKU_CAN */
-    TEST_ASSERT_EQUAL_UINT8(1U, D.device.log_enabled);  /* логи вкл из коробки */
+    TEST_ASSERT_EQUAL_UINT8(0U, D.device.protocol_id);
+    TEST_ASSERT_EQUAL_UINT8(1U, D.device.log_enabled);
     TEST_ASSERT_EQUAL_UINT8(2U, D.user.sound_volume_idx);
     TEST_ASSERT_EQUAL_UINT8(1U, D.user.music_volume_idx);
     TEST_ASSERT_EQUAL_UINT16(0U, D.user.max_load_kg);
-    TEST_ASSERT_EQUAL_UINT8(0U, D.user.proto_slice[0]); /* адрес НКУ = 0 */
+    TEST_ASSERT_EQUAL_UINT8(0U, D.user.proto_slice[0]);
 }
 
 static void test_serialize_sets_magic_version(void)
@@ -47,12 +39,12 @@ static void test_serialize_sets_magic_version(void)
 
 static void test_roundtrip_preserves_fields(void)
 {
-    settings_t in            = settings_defaults();
-    in.user.max_load_kg      = 1000U;
-    in.user.max_cap_persons  = 8U;
+    settings_t in           = settings_defaults();
+    in.user.max_load_kg     = 1000U;
+    in.user.max_cap_persons = 8U;
     in.user.year_production  = 25U;
-    in.user.proto_slice[0]   = 7U; /* адрес станции 7 */
-    in.device.log_enabled    = 0U;
+    in.user.proto_slice[0]  = 7U;
+    in.device.log_enabled   = 0U;
     (void) snprintf(in.user.serial, SETTINGS_SERIAL_LEN, "AB1234");
 
     settings_page_t page;
@@ -90,7 +82,6 @@ static void test_bad_version_rejected(void)
     TEST_ASSERT_FALSE(settings_deserialize(&page, &out));
 }
 
-/* Магик/версия валидны, но байт данных испорчен → расходится только CRC. */
 static void test_bad_crc_rejected(void)
 {
     settings_t      in = settings_defaults();
@@ -102,7 +93,6 @@ static void test_bad_crc_rejected(void)
     TEST_ASSERT_FALSE(settings_deserialize(&page, &out));
 }
 
-/* Свежестёртый флеш (весь 0xFF) — невалиден (магик != 'STFT') → дефолты. */
 static void test_erased_page_is_invalid(void)
 {
     settings_page_t page;

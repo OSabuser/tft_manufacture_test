@@ -49,6 +49,7 @@ target_compile_options(freertos_kernel PRIVATE -w)
 add_subdirectory(src/domain)
 add_subdirectory(src/services)
 add_subdirectory(src/ui)
+add_subdirectory(src/menu)
 
 # -----------------------------------------------------------------------------
 # app — исполняемый образ слота
@@ -120,7 +121,9 @@ target_link_libraries(
           tft_app_gfx
           tft_app_ui_fallback
           # Фаза 3.1: персист ядра настроек (QSPI 0x450000)
-          tft_app_settings_store)
+          tft_app_settings_store
+          # Фаза 3.2.1: движок меню (чистая модель; рендер/wiring — 3.2.2/3.2.3)
+          tft_app_menu)
 
 target_link_options(
   app

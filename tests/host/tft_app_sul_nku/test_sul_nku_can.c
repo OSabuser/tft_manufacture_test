@@ -1,9 +1,6 @@
 /**
  * @file  test_sul_nku_can.c
- * @brief Host unit-тесты декодера НКУ-CAN (Фаза 1: PACKET1 + PACKET3).
- *
- * Чистый декодер, без единого HAL-вызова — никаких fff-моков не нужно,
- * golden-векторы CAN-кадров строятся прямо в тесте.
+ * @brief Host unit-тесты декодера НКУ-CAN (PACKET1..5 + адрес). См. README.md.
  */
 
 #include "domain/sul/nku_can.h"
@@ -11,24 +8,23 @@
 
 #include <string.h>
 
-void setUp(void)
-{
-}
-void tearDown(void)
-{
-}
+void setUp(void) {}
+void tearDown(void) {}
 
-/* ── Вспомогательные конструкторы кадров ─────────────────────────────── */
+/* ── Конструкторы кадров ─────────────────────────────────────────────────── */
 
 #define PACKET1_ID 0x506U
+#define PACKET2_ID 0x408U
 #define PACKET3_ID 0x508U
+#define PACKET4_ID 0x50BU
+#define PACKET5_ID 0x606U
 #define UNKNOWN_ID 0x123U
 
 static sul_frame_t make_packet1(uint8_t arrow_bits)
 {
     static uint8_t s_data[8];
     memset(s_data, 0, sizeof(s_data));
-    s_data[6] = arrow_bits; /* ARROW_MASK=0x03 на data[6] (DATA7) */
+    s_data[6] = arrow_bits;
     return (sul_frame_t){ .id = PACKET1_ID, .bus = 0, .p_data = s_data, .len = 8U };
 }
 
@@ -36,17 +32,11 @@ static sul_frame_t make_packet3(uint8_t left, uint8_t right)
 {
     static uint8_t s_data[8];
     memset(s_data, 0, sizeof(s_data));
-    s_data[5] = left;  /* FLOOR_MASK=0x3F на data[5] (left)  */
-    s_data[6] = right; /* FLOOR_MASK=0x3F на data[6] (right) */
+    s_data[5] = left;
+    s_data[6] = right;
     return (sul_frame_t){ .id = PACKET3_ID, .bus = 0, .p_data = s_data, .len = 8U };
 }
 
-#define PACKET2_ID 0x408U
-#define PACKET4_ID 0x50BU
-#define PACKET5_ID 0x606U
-
-/* PACKET1 полный: стрелка [1:0], начало движения [3:2], код режима [7:4] в
- * data[6]; числовой уровень остановки — data[3]&0x3F. */
 static sul_frame_t make_packet1_full(uint8_t arrow, uint8_t movement, uint8_t icon_nibble,
                                      uint8_t level)
 {
@@ -61,12 +51,10 @@ static sul_frame_t make_packet2(bool overload)
 {
     static uint8_t s_data[8];
     memset(s_data, 0, sizeof(s_data));
-    s_data[7] = overload ? 0x40U : 0x00U; /* WEIGHT_MASK */
+    s_data[7] = overload ? 0x40U : 0x00U;
     return (sul_frame_t){ .id = PACKET2_ID, .bus = 0, .p_data = s_data, .len = 8U };
 }
 
-/* PACKET3 полный: символы этажа + гонг (активен при СБРОШЕННОМ бите 0x40 в
- * data[3]) + временная погрузка (data[2] сек, data[3] низкий нибл — мин). */
 static sul_frame_t make_packet3_full(uint8_t left, uint8_t right, bool gong, uint8_t secs,
                                      uint8_t mins)
 {
@@ -83,8 +71,8 @@ static sul_frame_t make_packet4(bool overload, bool seismic)
 {
     static uint8_t s_data[8];
     memset(s_data, 0, sizeof(s_data));
-    s_data[5] = overload ? 0x40U : 0x00U; /* WEIGHT_MASK  */
-    s_data[0] = seismic ? 0x80U : 0x00U;  /* SEISMIC_MASK */
+    s_data[5] = overload ? 0x40U : 0x00U;
+    s_data[0] = seismic ? 0x80U : 0x00U;
     return (sul_frame_t){ .id = PACKET4_ID, .bus = 0, .p_data = s_data, .len = 8U };
 }
 
@@ -98,16 +86,16 @@ static sul_frame_t make_packet5(uint8_t next_left, uint8_t next_right, uint8_t d
     return (sul_frame_t){ .id = PACKET5_ID, .bus = 0, .p_data = s_data, .len = 8U };
 }
 
-/* ── PACKET1 — направление ───────────────────────────────────────────── */
+/* ── PACKET1 — направление ───────────────────────────────────────────────── */
 
 static void test_packet1_none(void)
 {
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t FRAME = make_packet1(0U);
+    const sul_frame_t frame = make_packet1(0U);
 
-    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &FRAME, &out));
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL(SUL_DIR_NONE, out.direction);
 }
 
@@ -116,9 +104,9 @@ static void test_packet1_up(void)
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t FRAME = make_packet1(1U);
+    const sul_frame_t frame = make_packet1(1U);
 
-    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &FRAME, &out));
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL(SUL_DIR_UP, out.direction);
 }
 
@@ -127,9 +115,9 @@ static void test_packet1_down(void)
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t FRAME = make_packet1(2U);
+    const sul_frame_t frame = make_packet1(2U);
 
-    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &FRAME, &out));
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL(SUL_DIR_DOWN, out.direction);
 }
 
@@ -138,34 +126,33 @@ static void test_packet1_double(void)
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t FRAME = make_packet1(3U);
+    const sul_frame_t frame = make_packet1(3U);
 
-    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &FRAME, &out));
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL(SUL_DIR_DOUBLE, out.direction);
 }
 
-/* Верхние биты data[6] (выше ARROW_MASK) не должны влиять на результат. */
 static void test_packet1_ignores_bits_outside_mask(void)
 {
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t FRAME = make_packet1(0xFCU | 1U); /* мусор в старших битах + arrow=1 */
+    const sul_frame_t frame = make_packet1(0xFCU | 1U);
 
-    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &FRAME, &out));
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL(SUL_DIR_UP, out.direction);
 }
 
-/* ── PACKET3 — позиция ───────────────────────────────────────────────── */
+/* ── PACKET3 — позиция ───────────────────────────────────────────────────── */
 
 static void test_packet3_two_digit_floor(void)
 {
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t FRAME = make_packet3(1U, 2U); /* "1","2" -> "12" */
+    const sul_frame_t frame = make_packet3(1U, 2U);
 
-    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &FRAME, &out));
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL_STRING("12", out.pos);
 }
 
@@ -174,13 +161,12 @@ static void test_packet3_single_digit_via_space(void)
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t FRAME = make_packet3(16U, 5U); /* left=SPACE, right="5" -> "5" */
+    const sul_frame_t frame = make_packet3(16U, 5U);
 
-    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &FRAME, &out));
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL_STRING("5", out.pos);
 }
 
-/* Легаси-квирк: left==0 трактуется как «пусто», как и SPACE — не «0» + right. */
 static void test_packet3_single_digit_via_zero_byte(void)
 {
     nku_can_ctx_t ctx;
@@ -197,7 +183,7 @@ static void test_packet3_negative_floor(void)
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t frame = make_packet3(22U, 1U); /* '-','1' -> "-1" */
+    const sul_frame_t frame = make_packet3(22U, 1U);
 
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL_STRING("-1", out.pos);
@@ -208,7 +194,7 @@ static void test_packet3_cyrillic_single_char(void)
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t frame = make_packet3(16U, 17U); /* SPACE, symbol_P -> "П" */
+    const sul_frame_t frame = make_packet3(16U, 17U);
 
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL_STRING("П", out.pos);
@@ -219,27 +205,27 @@ static void test_packet3_out_of_range_symbol_is_error(void)
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    const sul_frame_t frame = make_packet3(1U, 63U); /* 63 > SYMBOL_TOTAL-1(37) */
+    const sul_frame_t frame = make_packet3(1U, 63U);
 
     TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &frame, &out));
 }
 
-/* ── Кадры не по протоколу ────────────────────────────────────────────── */
+/* ── Кадры не по протоколу / малформированные ────────────────────────────── */
 
 static void test_unknown_id_is_ignored_and_out_untouched(void)
 {
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
-    out.direction = SUL_DIR_UP; /* сентинел, decode() не должен его тронуть */
+    out.direction = SUL_DIR_UP;
     (void) memset(out.pos, 'X', sizeof(out.pos));
 
     uint8_t data[8]         = { 0 };
     const sul_frame_t frame = { .id = UNKNOWN_ID, .bus = 0, .p_data = data, .len = 8U };
 
     TEST_ASSERT_EQUAL(SUL_STATUS_IGNORED, nku_can_decode(&ctx, &frame, &out));
-    TEST_ASSERT_EQUAL(SUL_DIR_UP, out.direction); /* не тронут */
-    TEST_ASSERT_EQUAL_CHAR('X', out.pos[0]);      /* не тронут */
+    TEST_ASSERT_EQUAL(SUL_DIR_UP, out.direction);
+    TEST_ASSERT_EQUAL_CHAR('X', out.pos[0]);
 }
 
 static void test_wrong_dlc_on_packet1_id_is_error(void)
@@ -264,25 +250,37 @@ static void test_wrong_dlc_on_packet3_id_is_error(void)
     TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &frame, &out));
 }
 
-/* ── Накопление состояния между разными пакетами ─────────────────────── */
+static void test_wrong_dlc_on_packet2_4_5_is_error(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+    uint8_t data[8] = { 0 };
 
-/* PACKET1 и PACKET3 несут разные поля — второй вызов обязан вернуть ПОЛНОЕ
- * накопленное состояние (и pos, и direction), а не только то, что пришло в
- * последнем кадре. Это ключевое свойство stateful-ctx декодера. */
+    const sul_frame_t f2 = { .id = PACKET2_ID, .bus = 0, .p_data = data, .len = 6U };
+    TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &f2, &out));
+    const sul_frame_t f4 = { .id = PACKET4_ID, .bus = 0, .p_data = data, .len = 7U };
+    TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &f4, &out));
+    const sul_frame_t f5 = { .id = PACKET5_ID, .bus = 0, .p_data = data, .len = 4U };
+    TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &f5, &out));
+}
+
+/* ── Накопление состояния ────────────────────────────────────────────────── */
+
 static void test_state_accumulates_across_packet_types(void)
 {
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
 
-    const sul_frame_t f1 = make_packet1(1U); /* UP */
+    const sul_frame_t f1 = make_packet1(1U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &f1, &out));
 
-    const sul_frame_t f3 = make_packet3(1U, 2U); /* "12" */
+    const sul_frame_t f3 = make_packet3(1U, 2U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &f3, &out));
 
     TEST_ASSERT_EQUAL_STRING("12", out.pos);
-    TEST_ASSERT_EQUAL(SUL_DIR_UP, out.direction); /* пережило кадр PACKET3 */
+    TEST_ASSERT_EQUAL(SUL_DIR_UP, out.direction);
 }
 
 static void test_init_resets_to_default(void)
@@ -294,7 +292,7 @@ static void test_init_resets_to_default(void)
     TEST_ASSERT_EQUAL(SUL_DIR_NONE, ctx.state.direction);
 }
 
-/* ── PACKET1 — режимы (код нибла data[6][7:4]) и начало движения ──────── */
+/* ── PACKET1 — режимы и начало движения ──────────────────────────────────── */
 
 static void test_packet1_mode_fire(void)
 {
@@ -309,7 +307,7 @@ static void test_packet1_mode_fire(void)
 
 static void test_packet1_mode_maintenance_variants(void)
 {
-    const uint8_t icons[] = { 0x30U, 0x50U, 0x40U }; /* МП1 / МП2 / ревизия */
+    const uint8_t icons[] = { 0x30U, 0x50U, 0x40U };
     for (size_t i = 0U; i < sizeof(icons); ++i)
     {
         nku_can_ctx_t ctx;
@@ -343,7 +341,6 @@ static void test_packet1_mode_fireman(void)
     TEST_ASSERT_TRUE(out.fireman);
 }
 
-/* Пакет без кода режима гасит устаревший режим (PACKET1-владелец). */
 static void test_packet1_normal_clears_previous_mode(void)
 {
     nku_can_ctx_t ctx;
@@ -374,7 +371,7 @@ static void test_packet1_movement_bits(void)
     TEST_ASSERT_FALSE(out.movement);
 }
 
-/* ── PACKET2 / PACKET4 — перегруз (мультиисточник) и сейсмо ───────────── */
+/* ── PACKET2 / PACKET4 — перегруз (мультиисточник) и сейсмо ───────────────── */
 
 static void test_packet2_overload_set_and_clear(void)
 {
@@ -391,8 +388,6 @@ static void test_packet2_overload_set_and_clear(void)
     TEST_ASSERT_FALSE(out.overload);
 }
 
-/* Ключевой мультиисточник: перегруз из PACKET4 не должен сбрасываться
- * пакетом PACKET2 без перегруза (и наоборот) — выход = OR под-источников. */
 static void test_overload_multisource_independence(void)
 {
     nku_can_ctx_t ctx;
@@ -405,11 +400,11 @@ static void test_overload_multisource_independence(void)
 
     const sul_frame_t p2_off = make_packet2(false);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &p2_off, &out));
-    TEST_ASSERT_TRUE(out.overload); /* PACKET4-перегруз пережил PACKET2-без-перегруза */
+    TEST_ASSERT_TRUE(out.overload);
 
     const sul_frame_t p4_off = make_packet4(false, false);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &p4_off, &out));
-    TEST_ASSERT_FALSE(out.overload); /* оба источника сняты */
+    TEST_ASSERT_FALSE(out.overload);
 }
 
 static void test_packet4_seismic_set_and_clear(void)
@@ -427,7 +422,7 @@ static void test_packet4_seismic_set_and_clear(void)
     TEST_ASSERT_FALSE(out.seismic);
 }
 
-/* ── PACKET3 — гонг, временная погрузка, floor_num ───────────────────── */
+/* ── PACKET3 — гонг, временная погрузка, floor_num ───────────────────────── */
 
 static void test_packet3_gong_active_when_bit_clear(void)
 {
@@ -450,30 +445,26 @@ static void test_packet3_lading_time_seconds(void)
     nku_can_init(&ctx);
     sul_result_t out;
 
-    const sul_frame_t frame = make_packet3_full(1U, 2U, false, 30U, 1U); /* 1*60+30 */
+    const sul_frame_t frame = make_packet3_full(1U, 2U, false, 30U, 1U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &frame, &out));
     TEST_ASSERT_EQUAL_UINT16(90U, out.lading_secs);
-    TEST_ASSERT_TRUE(out.lading); /* временная погрузка тоже поднимает lading */
+    TEST_ASSERT_TRUE(out.lading);
 }
 
-/* Мультиисточник lading: временная (PACKET3) держит режим, даже когда PACKET1
- * не несёт инструментальной; и наоборот. */
 static void test_lading_multisource_independence(void)
 {
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
     sul_result_t out;
 
-    /* Временная погрузка идёт, PACKET1 без режима — lading остаётся. */
     const sul_frame_t timed = make_packet3_full(1U, 2U, false, 10U, 0U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &timed, &out));
     TEST_ASSERT_TRUE(out.lading);
 
     const sul_frame_t p1_normal = make_packet1_full(0U, 0U, 0x00U, 0U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &p1_normal, &out));
-    TEST_ASSERT_TRUE(out.lading); /* временная погрузка пережила «нормальный» PACKET1 */
+    TEST_ASSERT_TRUE(out.lading);
 
-    /* Отсчёт истёк — lading гаснет. */
     const sul_frame_t timed_zero = make_packet3_full(1U, 2U, false, 0U, 0U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &timed_zero, &out));
     TEST_ASSERT_FALSE(out.lading);
@@ -485,22 +476,22 @@ static void test_packet3_floor_num_derivation(void)
     sul_result_t out;
 
     nku_can_init(&ctx);
-    const sul_frame_t two_digit = make_packet3_full(1U, 2U, false, 0U, 0U); /* "12" */
+    const sul_frame_t two_digit = make_packet3_full(1U, 2U, false, 0U, 0U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &two_digit, &out));
     TEST_ASSERT_EQUAL_UINT8(12U, out.floor_num);
 
     nku_can_init(&ctx);
-    const sul_frame_t negative = make_packet3_full(22U, 1U, false, 0U, 0U); /* "-1" -> 41 */
+    const sul_frame_t negative = make_packet3_full(22U, 1U, false, 0U, 0U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &negative, &out));
     TEST_ASSERT_EQUAL_UINT8(41U, out.floor_num);
 
     nku_can_init(&ctx);
-    const sul_frame_t basement = make_packet3_full(17U, 1U, false, 0U, 0U); /* "П1" -> 51 */
+    const sul_frame_t basement = make_packet3_full(17U, 1U, false, 0U, 0U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &basement, &out));
     TEST_ASSERT_EQUAL_UINT8(51U, out.floor_num);
 }
 
-/* ── PACKET5 — следующий этаж (гейт: только пока едет и назначение ≠ уровень) */
+/* ── PACKET5 — следующий этаж ────────────────────────────────────────────── */
 
 static void test_packet5_next_shown_while_moving(void)
 {
@@ -508,10 +499,10 @@ static void test_packet5_next_shown_while_moving(void)
     nku_can_init(&ctx);
     sul_result_t out;
 
-    const sul_frame_t moving = make_packet1_full(1U, 1U, 0x00U, 5U); /* UP, уровень 5 */
+    const sul_frame_t moving = make_packet1_full(1U, 1U, 0x00U, 5U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &moving, &out));
 
-    const sul_frame_t next = make_packet5(1U, 6U, 16U); /* "16", назначение 16 ≠ 5 */
+    const sul_frame_t next = make_packet5(1U, 6U, 16U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &next, &out));
     TEST_ASSERT_EQUAL_STRING("16", out.next);
 }
@@ -522,7 +513,7 @@ static void test_packet5_next_suppressed_when_not_moving(void)
     nku_can_init(&ctx);
     sul_result_t out;
 
-    const sul_frame_t still = make_packet1_full(0U, 0U, 0x00U, 5U); /* нет движения */
+    const sul_frame_t still = make_packet1_full(0U, 0U, 0x00U, 5U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &still, &out));
 
     const sul_frame_t next = make_packet5(1U, 6U, 16U);
@@ -539,12 +530,11 @@ static void test_packet5_next_suppressed_when_dest_equals_level(void)
     const sul_frame_t moving = make_packet1_full(1U, 1U, 0x00U, 5U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &moving, &out));
 
-    const sul_frame_t next = make_packet5(1U, 6U, 5U); /* назначение == уровень */
+    const sul_frame_t next = make_packet5(1U, 6U, 5U);
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &next, &out));
     TEST_ASSERT_EQUAL_STRING("", out.next);
 }
 
-/* Следующий этаж гаснет на прибытии (PACKET1 сообщает «нет движения»). */
 static void test_packet5_next_cleared_on_arrival(void)
 {
     nku_can_ctx_t ctx;
@@ -562,54 +552,35 @@ static void test_packet5_next_cleared_on_arrival(void)
     TEST_ASSERT_EQUAL_STRING("", out.next);
 }
 
-static void test_wrong_dlc_on_packet2_4_5_is_error(void)
-{
-    nku_can_ctx_t ctx;
-    nku_can_init(&ctx);
-    sul_result_t out;
-    uint8_t data[8] = { 0 };
+/* ── Адрес станции: сдвиг ID пакетов ─────────────────────────────────────── */
 
-    const sul_frame_t f2 = { .id = PACKET2_ID, .bus = 0, .p_data = data, .len = 6U };
-    TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &f2, &out));
-    const sul_frame_t f4 = { .id = PACKET4_ID, .bus = 0, .p_data = data, .len = 7U };
-    TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &f4, &out));
-    const sul_frame_t f5 = { .id = PACKET5_ID, .bus = 0, .p_data = data, .len = 4U };
-    TEST_ASSERT_EQUAL(SUL_STATUS_ERR, nku_can_decode(&ctx, &f5, &out));
-}
-
-/* ── Адрес станции (Фаза 3.1): сдвиг ID пакетов ──────────────────────────── */
-
-/* Адрес N сдвигает ID: PACKET1 = 0x506 | (N<<4). Базовый ID адреса 0 при этом
- * становится чужим (IGNORED). */
 static void test_address_shifts_packet_ids(void)
 {
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
-    nku_can_set_address(&ctx, 1U); /* group4 = 0x10 */
+    nku_can_set_address(&ctx, 1U);
     sul_result_t out;
 
     uint8_t data[8] = { 0 };
-    data[6]         = 1U; /* стрелка вверх */
+    data[6]         = 1U;
 
     const sul_frame_t shifted = { .id = 0x506U | 0x10U, .bus = 0, .p_data = data, .len = 8U };
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &shifted, &out));
     TEST_ASSERT_EQUAL(SUL_DIR_UP, out.direction);
 
-    /* Базовый ID адреса 0 теперь не наш. */
     const sul_frame_t base = { .id = 0x506U, .bus = 0, .p_data = data, .len = 8U };
     TEST_ASSERT_EQUAL(SUL_STATUS_IGNORED, nku_can_decode(&ctx, &base, &out));
 }
 
-/* Адрес > 15 клампится к 15 (не выходит за 4-битный group4). */
 static void test_address_clamped_to_max(void)
 {
     nku_can_ctx_t ctx;
     nku_can_init(&ctx);
-    nku_can_set_address(&ctx, 200U); /* клампится к 15 → group4 = 0xF0 */
+    nku_can_set_address(&ctx, 200U);
     sul_result_t out;
 
     uint8_t data[8] = { 0 };
-    data[6]         = 2U; /* вниз */
+    data[6]         = 2U;
 
     const sul_frame_t f = { .id = 0x506U | 0xF0U, .bus = 0, .p_data = data, .len = 8U };
     TEST_ASSERT_EQUAL(SUL_STATUS_OK, nku_can_decode(&ctx, &f, &out));
@@ -636,6 +607,7 @@ int main(void)
     RUN_TEST(test_unknown_id_is_ignored_and_out_untouched);
     RUN_TEST(test_wrong_dlc_on_packet1_id_is_error);
     RUN_TEST(test_wrong_dlc_on_packet3_id_is_error);
+    RUN_TEST(test_wrong_dlc_on_packet2_4_5_is_error);
 
     RUN_TEST(test_state_accumulates_across_packet_types);
     RUN_TEST(test_init_resets_to_default);
@@ -660,8 +632,6 @@ int main(void)
     RUN_TEST(test_packet5_next_suppressed_when_not_moving);
     RUN_TEST(test_packet5_next_suppressed_when_dest_equals_level);
     RUN_TEST(test_packet5_next_cleared_on_arrival);
-
-    RUN_TEST(test_wrong_dlc_on_packet2_4_5_is_error);
 
     RUN_TEST(test_address_shifts_packet_ids);
     RUN_TEST(test_address_clamped_to_max);

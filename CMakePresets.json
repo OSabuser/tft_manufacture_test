@@ -170,7 +170,9 @@
                 "test_recovery",
                 "test_tft_app_smoke",
                 "test_sul_nku_can",
-                "test_tft_app_controller"
+                "test_tft_app_controller",
+                "test_tft_app_settings_store",
+                "test_tft_app_menu"
             ]
         },
         {
@@ -196,7 +198,9 @@
                 "test_recovery",
                 "test_tft_app_smoke",
                 "test_sul_nku_can",
-                "test_tft_app_controller"
+                "test_tft_app_controller",
+                "test_tft_app_settings_store",
+                "test_tft_app_menu"
             ]
         },
         {

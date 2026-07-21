@@ -1,8 +1,6 @@
 /**
  * @file  test_controller.c
- * @brief Host unit-тесты controller.c — diff между кэшем и новым sul_result_t.
- *
- * Чистый C, без единого HAL-вызова — fff-моков не нужно.
+ * @brief Host unit-тесты controller.c + mode_priority.c. См. README.md.
  */
 
 #include "unity.h"
@@ -23,14 +21,14 @@ static sul_result_t make_result(const char *p_pos, sul_direction_t dir)
     return r;
 }
 
-/* Кэш засеян дефолтом при init — результат, совпадающий с дефолтом, не
- * считается изменением (см. докстрок controller_init()). */
+/* ── Diff контроллера ────────────────────────────────────────────────── */
+
 static void test_first_frame_matching_default_has_no_pending(void)
 {
     controller_ctx_t ctx;
     controller_init(&ctx);
 
-    const sul_result_t r  = sul_default_state();
+    const sul_result_t r         = sul_default_state();
     const indication_task_t task = controller_process(&ctx, &r);
 
     TEST_ASSERT_FALSE(task.pos_pending);
@@ -93,8 +91,6 @@ static void test_only_direction_change_marks_only_direction_pending(void)
     TEST_ASSERT_TRUE(task.direction_pending);
 }
 
-/* Таймаут связи = caller зовёт controller_process(sul_default_state()) тем
- * же путём, что и обычный кадр — отдельного API не существует (см. header). */
 static void test_feeding_default_state_after_real_data_marks_both_pending(void)
 {
     controller_ctx_t ctx;
@@ -122,60 +118,58 @@ static void test_resolve_mode_single_signals(void)
 {
     sul_result_t r;
 
-    r = sul_default_state();
-    r.fireman = true;
+    r          = sul_default_state();
+    r.fireman  = true;
     TEST_ASSERT_EQUAL(SUL_MODE_FIREMAN, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r            = sul_default_state();
     r.fire_alarm = true;
     TEST_ASSERT_EQUAL(SUL_MODE_FIRE_ALARM, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r          = sul_default_state();
     r.overload = true;
     TEST_ASSERT_EQUAL(SUL_MODE_OVERLOAD, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r         = sul_default_state();
     r.seismic = true;
     TEST_ASSERT_EQUAL(SUL_MODE_SEISMIC, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r             = sul_default_state();
     r.maintenance = true;
     TEST_ASSERT_EQUAL(SUL_MODE_MAINTENANCE, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r        = sul_default_state();
     r.lading = true;
     TEST_ASSERT_EQUAL(SUL_MODE_LADING, sul_resolve_mode(&r));
 }
 
-/* Согласованный порядок: fireman > пожар > перегруз > сейсмо > сервис >
- * погрузка. Проверяем каждую соседнюю пару при одновременной активности. */
 static void test_resolve_mode_priority_ordering(void)
 {
     sul_result_t r;
 
-    r = sul_default_state();
+    r            = sul_default_state();
     r.fireman    = true;
-    r.fire_alarm = true; /* fireman выигрывает у пожара */
+    r.fire_alarm = true;
     TEST_ASSERT_EQUAL(SUL_MODE_FIREMAN, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r            = sul_default_state();
     r.fire_alarm = true;
-    r.overload   = true; /* пожар выигрывает у перегруза */
+    r.overload   = true;
     TEST_ASSERT_EQUAL(SUL_MODE_FIRE_ALARM, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r          = sul_default_state();
     r.overload = true;
-    r.seismic  = true; /* перегруз выигрывает у сейсмо */
+    r.seismic  = true;
     TEST_ASSERT_EQUAL(SUL_MODE_OVERLOAD, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r             = sul_default_state();
     r.seismic     = true;
-    r.maintenance = true; /* сейсмо выигрывает у сервиса */
+    r.maintenance = true;
     TEST_ASSERT_EQUAL(SUL_MODE_SEISMIC, sul_resolve_mode(&r));
 
-    r = sul_default_state();
+    r             = sul_default_state();
     r.maintenance = true;
-    r.lading      = true; /* сервис выигрывает у погрузки */
+    r.lading      = true;
     TEST_ASSERT_EQUAL(SUL_MODE_MAINTENANCE, sul_resolve_mode(&r));
 }
 
@@ -190,17 +184,15 @@ static void test_mode_pending_on_mode_change(void)
     (void) snprintf(normal.pos, SUL_POS_BUF_LEN, "5");
     (void) controller_process(&ctx, &normal);
 
-    sul_result_t fire = normal;
-    fire.fire_alarm   = true;
+    sul_result_t fire            = normal;
+    fire.fire_alarm              = true;
     const indication_task_t task = controller_process(&ctx, &fire);
 
     TEST_ASSERT_TRUE(task.mode_pending);
     TEST_ASSERT_EQUAL(SUL_MODE_FIRE_ALARM, task.mode);
-    TEST_ASSERT_FALSE(task.pos_pending); /* позиция не менялась */
+    TEST_ASSERT_FALSE(task.pos_pending);
 }
 
-/* Смена сырого сигнала, не меняющая РАЗРЕШЁННЫЙ режим (перегруз при активном
- * пожаре), не должна поднимать mode_pending. */
 static void test_mode_pending_stable_when_resolved_mode_unchanged(void)
 {
     controller_ctx_t ctx;
@@ -211,8 +203,8 @@ static void test_mode_pending_stable_when_resolved_mode_unchanged(void)
     (void) controller_process(&ctx, &fire);
 
     sul_result_t fire_plus_overload = fire;
-    fire_plus_overload.overload      = true; /* режим остаётся FIRE_ALARM */
-    const indication_task_t task = controller_process(&ctx, &fire_plus_overload);
+    fire_plus_overload.overload     = true;
+    const indication_task_t task    = controller_process(&ctx, &fire_plus_overload);
 
     TEST_ASSERT_FALSE(task.mode_pending);
     TEST_ASSERT_EQUAL(SUL_MODE_FIRE_ALARM, task.mode);
@@ -226,14 +218,13 @@ static void test_arrival_and_movement_pending_on_rising_edge(void)
     sul_result_t quiet = sul_default_state();
     (void) controller_process(&ctx, &quiet);
 
-    sul_result_t event = sul_default_state();
-    event.arrival      = true;
-    event.movement     = true;
+    sul_result_t event     = sul_default_state();
+    event.arrival          = true;
+    event.movement         = true;
     indication_task_t task = controller_process(&ctx, &event);
     TEST_ASSERT_TRUE(task.arrival_pending);
     TEST_ASSERT_TRUE(task.movement_pending);
 
-    /* Уровень держится — фронта нет, pending не выставляется повторно. */
     task = controller_process(&ctx, &event);
     TEST_ASSERT_FALSE(task.arrival_pending);
     TEST_ASSERT_FALSE(task.movement_pending);

@@ -367,3 +367,15 @@ add_host_test(
   ${TFT_APP_SETTINGS_DIR}/src
   ${PROJECT_SOURCE_DIR}/bsp/qspi_flash/include
   ${PROJECT_SOURCE_DIR}/bsp/common/include)
+
+# tft_app — menu (Фаза 3.2.1: чистая модель навигации/редактирования, без QSPI)
+add_host_test(
+  NAME
+  test_tft_app_menu
+  SOURCES
+  tft_app_menu/test_menu.c
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/menu/src/menu.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/menu/include
+  ${TFT_APP_SETTINGS_DIR}/include
+  ${PROJECT_SOURCE_DIR}/bsp/common/include)

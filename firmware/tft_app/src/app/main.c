@@ -54,14 +54,22 @@
  * settings, см. ARCH §9 — TFT7/8/10 рантайм-выбор внутри профиля app-big). */
 #define PANEL_TYPE BSP_DISPLAY_TFT8
 
-#define HEARTBEAT_PERIOD_MS   500U
-#define WDOG_FEED_PERIOD_MS   100U  /* кормим чаще периода мигания — таймаут WDOG >= 1 c */
-#define STATUS_LOG_PERIOD_MS  2000U /* периодический re-log трейлера — виден независимо
+#define HEARTBEAT_PERIOD_MS 500U
+#define WDOG_FEED_PERIOD_MS 100U /* кормим чаще периода мигания — таймаут WDOG >= 1 c */
+#define STATUS_LOG_PERIOD_MS                                                                       \
+    2000U /* периодический re-log трейлера — виден независимо
                                      * от момента подключения терминала */
-#define CAN_RX_TIMEOUT_MS     100U  /* держит цикл отзывчивым к WDOG/heartbeat-каденции */
-#define CONNECTION_TIMEOUT_MS 3000U /* «пропадание трафика» — см. ARCH, поток данных:
+#define CAN_RX_TIMEOUT_MS 100U /* держит цикл отзывчивым к WDOG/heartbeat-каденции */
+#define CONNECTION_TIMEOUT_MS                                                                      \
+    3000U /* «пропадание трафика» — см. ARCH, поток данных:
                                      * poll + timeout→default. Порядок величины — как
                                      * в OLD_PROJECT (там ~3 с на отметку потери связи) */
+
+/* TEMP (Фаза 3.1): двухзагрузочная HW-проверка пути save/персист. УБРАТЬ в 3.2,
+ * когда save начнёт вызываться из меню. Сентинел в ИНЕРТНОМ поле max_load_kg
+ * (рендер грузоподъёмности — Фаза 5), proto_slice/адрес НЕ трогаем — индикатор
+ * продолжает работать с адресом 0. */
+#define SETTINGS_SELFTEST_SENTINEL 4242U
 
 /* Передача render_task самого свежего состояния — не истории. */
 typedef struct
@@ -70,7 +78,7 @@ typedef struct
     sul_result_t result;
 } render_msg_t;
 
-static QueueHandle_t s_render_queue;
+static QueueHandle_t g_s_render_queue;
 
 /* ── Диагностика трейлера слота (read-only, безопасно звать многократно) ── */
 
@@ -84,8 +92,8 @@ static void log_slot_status(const char *p_when)
         return;
     }
 
-    struct boot_swap_state st = {0};
-    const int RC_RD            = boot_read_swap_state(p_fap, &st);
+    struct boot_swap_state st = { 0 };
+    const int RC_RD           = boot_read_swap_state(p_fap, &st);
     LOG_I(LOG_TAG, "%s: slot%d magic=%d copy_done=%d image_ok=%d (rd=%d)", p_when, APP_OWN_SLOT_ID,
           st.magic, st.copy_done, st.image_ok, RC_RD);
 
@@ -158,17 +166,37 @@ static void render_task(void *p_arg)
     (void) p_arg;
 
     /* Безусловная первая отрисовка — не ждём первого diff (см. ui/fallback.h). */
-    const sul_result_t initial = sul_default_state();
-    ui_fallback_render_initial(&initial);
+    const sul_result_t INITIAL = sul_default_state();
+    ui_fallback_render_initial(&INITIAL);
 
     render_msg_t msg;
     for (;;)
     {
-        if (xQueueReceive(s_render_queue, &msg, portMAX_DELAY) == pdTRUE)
+        if (xQueueReceive(g_s_render_queue, &msg, portMAX_DELAY) == pdTRUE)
         {
             ui_fallback_render(&msg.task, &msg.result);
         }
     }
+}
+
+/* TEMP (Фаза 3.1): проверка save/персист через power cycle. Первый запуск —
+ * пишет сентинел и просит перезагрузку; после перезагрузки load() читает его с
+ * флеша → «PERSIST OK». Сентинел остаётся (инертен), затирается первым
+ * сохранением из меню (3.2) или factory-reset. УБРАТЬ вместе с #define в 3.2. */
+static void settings_selftest(void)
+{
+    settings_t *p_s = settings_store_get_mutable();
+    if (p_s->user.max_load_kg == SETTINGS_SELFTEST_SENTINEL)
+    {
+        LOG_I(LOG_TAG, "settings self-test: PERSIST OK (сентинел пережил перезагрузку)");
+        return;
+    }
+
+    p_s->user.max_load_kg = SETTINGS_SELFTEST_SENTINEL;
+    const bsp_status_t RC = settings_store_save();
+    LOG_I(LOG_TAG,
+          "settings self-test: записан сентинел rc=%d — СДЕЛАЙТЕ POWER-CYCLE для проверки персиста",
+          RC);
 }
 
 static void sul_rx_task(void *p_arg)
@@ -190,6 +218,7 @@ static void sul_rx_task(void *p_arg)
         const bsp_status_t S_RC = settings_store_load();
         LOG_I(LOG_TAG, "settings: load rc=%d proto_addr=%u", S_RC,
               settings_store_get()->user.proto_slice[0]);
+        settings_selftest(); /* TEMP (3.1): HW-проверка save/персист, убрать в 3.2 */
     }
     else
     {
@@ -220,11 +249,11 @@ static void sul_rx_task(void *p_arg)
     controller_ctx_t ctrl_ctx;
     controller_init(&ctrl_ctx);
 
-    const TickType_t FEED_PERIOD     = pdMS_TO_TICKS(WDOG_FEED_PERIOD_MS);
-    uint32_t elapsed_ms              = 0U;
-    uint32_t since_status_ms         = 0U;
-    TickType_t last_wake             = xTaskGetTickCount();
-    TickType_t last_frame_tick       = xTaskGetTickCount();
+    const TickType_t FEED_PERIOD = pdMS_TO_TICKS(WDOG_FEED_PERIOD_MS);
+    uint32_t elapsed_ms          = 0U;
+    uint32_t since_status_ms     = 0U;
+    TickType_t last_wake         = xTaskGetTickCount();
+    TickType_t last_frame_tick   = xTaskGetTickCount();
 
     for (;;)
     {
@@ -277,8 +306,8 @@ static void sul_rx_task(void *p_arg)
                 const indication_task_t DIFF = controller_process(&ctrl_ctx, &decoded);
                 if (DIFF.pos_pending || DIFF.direction_pending)
                 {
-                    const render_msg_t MSG = {.task = DIFF, .result = decoded};
-                    (void) xQueueOverwrite(s_render_queue, &MSG);
+                    const render_msg_t MSG = { .task = DIFF, .result = decoded };
+                    (void) xQueueOverwrite(g_s_render_queue, &MSG);
                 }
             }
         }
@@ -292,8 +321,8 @@ int main(void)
     board_hw_init(); /* BOARD_ConfigMPU + BOARD_InitPins + BOARD_BootClockRUN */
     bsp_led_init();
 
-    s_render_queue = xQueueCreate(1, sizeof(render_msg_t));
-    configASSERT(s_render_queue != NULL);
+    g_s_render_queue = xQueueCreate(1, sizeof(render_msg_t));
+    configASSERT(g_s_render_queue != NULL);
 
     /* sul_rx выше приоритетом render — приём CAN/WDOG важнее своевременности
      * перерисовки. Стеки x6 (3 КБ) с запасом (см. PLAN.md, Фаза 0 — тонкий
