@@ -1,5 +1,6 @@
-# menu — движок меню настроек (§8). Фаза 3.2.1: чистая модель (без рендера/QSPI).
-add_library(tft_app_menu STATIC src/menu.c)
+# menu — движок меню настроек (§8). Модель (menu.c, чистая) + боевое дерево
+# (menu_tree.c, данные). Рендер — отдельно в ui/menu.
+add_library(tft_app_menu STATIC src/menu.c src/menu_tree.c)
 
 target_include_directories(tft_app_menu PUBLIC include/)
 

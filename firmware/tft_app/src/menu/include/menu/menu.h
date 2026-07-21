@@ -62,6 +62,9 @@ typedef struct
     uint8_t          parent;      /**< индекс родителя (MENU_ROOT_INDEX — верхний уровень) */
     uint8_t          first_child; /**< для SUBMENU — диапазон детей          */
     uint8_t          last_child;
+    /** Метки значений для SELECT/BOOL (options[value]); NULL → рендер числом.
+     *  Только для презентации — модель (menu.c) это поле не использует. */
+    const char *const *options;
 } menu_item_desc_t;
 
 /** Состояние навигации — чистое. */

@@ -60,6 +60,12 @@ extern const tFont FloorFontFallback; /* 0-9, "-", пробел — fallback (§
 extern const tFont JBMono24;
 #define SystemFont JBMono24
 
+/* SystemFontSmall — мелкий моно (JetBrains Mono 12pt, ASCII+кириллица) для
+ * футера меню/подсказок. Тот же приём алиаса, что SystemFont (сгенерированный
+ * файл экспортирует tFont под именем JBMono12 из .xml конвертера). */
+extern const tFont JBMono12;
+#define SystemFontSmall JBMono12
+
 /** XRGB8888 (X игнорируется ELCDIF) — X-байт значения не имеет. */
 typedef uint32_t gfx_color_t;
 
@@ -81,7 +87,13 @@ bsp_status_t gfx_init(bsp_display_type_t type);
 void gfx_clear(gfx_color_t color);
 
 /**
- * @brief Нарисовать строку.
+ * @brief Нарисовать строку заданным цветом (тинтинг с альфа-сглаживанием).
+ *
+ * Глифы шрифта — белые grayscale-покрытием (α = яркость пикселя); отрисовка
+ * блендит целевой @p color по этой α с фоном framebuffer'а — так один белый
+ * шрифт рисуется любым цветом, а сглаживание корректно ложится и на цветной
+ * фон (напр. полосу-курсор меню). Для белого цвета на чёрном фоне результат
+ * идентичен «прямой» отрисовке.
  *
  * Символ вне таблицы шрифта (отсутствует в font->chars[]) → подстановка '-'
  * ("-" — согласованный fallback-глиф, см. FloorFontFallback) — по-символьный
@@ -94,7 +106,8 @@ void gfx_clear(gfx_color_t color);
  *
  * @return суммарная ширина отрисованной строки, пиксели.
  */
-uint16_t gfx_draw_string(const tFont *p_font, const char *p_str, uint16_t x, uint16_t y);
+uint16_t gfx_draw_string(const tFont *p_font, const char *p_str, uint16_t x, uint16_t y,
+                         gfx_color_t color);
 
 /** Ширина строки без отрисовки (для центрирования и т.п.). */
 uint16_t gfx_string_width(const tFont *p_font, const char *p_str);
@@ -107,6 +120,12 @@ typedef enum
 
 /** Простая треугольная стрелка — примитив, без спрайтов (ARCH §11: fallback asset-free). */
 void gfx_draw_arrow(gfx_arrow_dir_t dir, uint16_t x, uint16_t y, uint16_t size, gfx_color_t color);
+
+/** Залить прямоугольник сплошным цветом (фон, полоса-курсор меню). Обрезается по экрану. */
+void gfx_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, gfx_color_t color);
+
+/** Контур прямоугольника толщиной 1 px (рамки/разделители). Обрезается по экрану. */
+void gfx_draw_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, gfx_color_t color);
 
 #ifdef __cplusplus
 }

@@ -122,8 +122,9 @@ target_link_libraries(
           tft_app_ui_fallback
           # Фаза 3.1: персист ядра настроек (QSPI 0x450000)
           tft_app_settings_store
-          # Фаза 3.2.1: движок меню (чистая модель; рендер/wiring — 3.2.2/3.2.3)
-          tft_app_menu)
+          # Фаза 3.2.1/3.2.2: движок меню (модель) + рендер
+          tft_app_menu
+          tft_app_ui_menu)
 
 target_link_options(
   app

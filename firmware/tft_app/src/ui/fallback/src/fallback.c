@@ -41,7 +41,7 @@ static void draw_centered(const tFont *p_font, const char *p_str, uint16_t y)
 {
     const uint16_t width = gfx_string_width(p_font, p_str);
     const uint16_t x     = (uint16_t) ((PANEL_WIDTH - width) / 2U);
-    (void) gfx_draw_string(p_font, p_str, x, y);
+    (void) gfx_draw_string(p_font, p_str, x, y, GFX_COLOR_WHITE);
 }
 
 static void render_normal(const sul_result_t *p_result)

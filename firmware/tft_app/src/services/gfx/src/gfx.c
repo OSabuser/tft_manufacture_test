@@ -38,6 +38,32 @@ static inline void set_pixel(uint16_t x, uint16_t y, gfx_color_t color)
     s_framebuffer[(uint32_t) y * s_fb_width + x] = color;
 }
 
+/* Альфа-блендинг: наложить @p color с покрытием @p a (0..255) на фон
+ * framebuffer'а. a=0 — фон нетронут (прозрачный край глифа), a=255 — полная
+ * замена. Так сглаживание глифа корректно ложится на любой фон (в т.ч.
+ * полосу-курсор), а не штампует чёрный бокс. */
+static inline void blend_pixel(uint16_t x, uint16_t y, gfx_color_t color, uint8_t a)
+{
+    if ((x >= s_fb_width) || (y >= s_fb_height) || (a == 0U))
+    {
+        return;
+    }
+
+    const uint32_t idx = (uint32_t) y * s_fb_width + x;
+    if (a == 0xFFU)
+    {
+        s_framebuffer[idx] = color;
+        return;
+    }
+
+    const uint32_t bg  = s_framebuffer[idx];
+    const uint32_t inv = 255U - a;
+    const uint32_t r = (((color >> 16) & 0xFFU) * a + ((bg >> 16) & 0xFFU) * inv) / 255U;
+    const uint32_t g = (((color >> 8) & 0xFFU) * a + ((bg >> 8) & 0xFFU) * inv) / 255U;
+    const uint32_t b = (((color) & 0xFFU) * a + ((bg) & 0xFFU) * inv) / 255U;
+    s_framebuffer[idx] = (r << 16) | (g << 8) | b;
+}
+
 /* ── Поиск глифа (бинарный — chars[] отсортирован по code, гарантия формата
  * lcd-image-converter) — порт draw_char()+get_character_width() из
  * OLD_PROJECT source/fonts/fonts.c, унифицировано в одну функцию (там был
@@ -80,7 +106,11 @@ static const tImage *find_glyph(const tFont *p_font, long code)
  * (advance_pixel в оригинале). ──────────────────────────────────────────── */
 #define UNIQUE_BLOCK_MASK 0xFFFFFF00U
 
-static void draw_glyph(const tImage *p_image, uint16_t x_pos, uint16_t y_pos)
+/* Покрытие (α) пикселя глифа — белый глиф запечён grayscale'ом (0xVVVVVVVV),
+ * V одинаков во всех байтах; берём младший. */
+#define GLYPH_COVERAGE(pixel) ((uint8_t) ((pixel) & 0xFFU))
+
+static void draw_glyph(const tImage *p_image, uint16_t x_pos, uint16_t y_pos, gfx_color_t color)
 {
     const uint32_t total = (uint32_t) p_image->width * p_image->height;
 
@@ -98,7 +128,8 @@ static void draw_glyph(const tImage *p_image, uint16_t x_pos, uint16_t y_pos)
             const uint32_t len = 0x100U - (header & 0xFFU);
             for (uint32_t i = 0U; (i < len) && (out_n < total); i++)
             {
-                set_pixel((uint16_t) (x_pos + col), (uint16_t) (y_pos + row), p_image->data[in_idx]);
+                blend_pixel((uint16_t) (x_pos + col), (uint16_t) (y_pos + row), color,
+                            GLYPH_COVERAGE(p_image->data[in_idx]));
                 col++;
                 if (col >= p_image->width)
                 {
@@ -111,11 +142,11 @@ static void draw_glyph(const tImage *p_image, uint16_t x_pos, uint16_t y_pos)
         }
         else
         {
-            const uint32_t len   = header & 0xFFFFU;
-            const uint32_t pixel = p_image->data[in_idx];
+            const uint32_t len = header & 0xFFFFU;
+            const uint8_t  a   = GLYPH_COVERAGE(p_image->data[in_idx]);
             for (uint32_t i = 0U; (i < len) && (out_n < total); i++)
             {
-                set_pixel((uint16_t) (x_pos + col), (uint16_t) (y_pos + row), pixel);
+                blend_pixel((uint16_t) (x_pos + col), (uint16_t) (y_pos + row), color, a);
                 col++;
                 if (col >= p_image->width)
                 {
@@ -160,7 +191,8 @@ static const tImage *find_glyph_with_fallback(const tFont *p_font, long code)
     return p_glyph; /* NULL, если даже '-' нет в этом шрифте */
 }
 
-uint16_t gfx_draw_string(const tFont *p_font, const char *p_str, uint16_t x, uint16_t y)
+uint16_t gfx_draw_string(const tFont *p_font, const char *p_str, uint16_t x, uint16_t y,
+                         gfx_color_t color)
 {
     if ((p_font == NULL) || (p_str == NULL))
     {
@@ -181,7 +213,7 @@ uint16_t gfx_draw_string(const tFont *p_font, const char *p_str, uint16_t x, uin
             continue;
         }
 
-        draw_glyph(p_glyph, (uint16_t) (x + offset), y);
+        draw_glyph(p_glyph, (uint16_t) (x + offset), y, color);
         offset = (uint16_t) (offset + p_glyph->width);
     }
 
@@ -235,6 +267,38 @@ void gfx_draw_arrow(gfx_arrow_dir_t dir, uint16_t x, uint16_t y, uint16_t size, 
             set_pixel((uint16_t) (center - dx), py, color);
             set_pixel((uint16_t) (center + dx), py, color);
         }
+    }
+}
+
+/* ── Прямоугольники — примитивы (фон/полоса-курсор/разделители меню) ─────── */
+
+void gfx_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, gfx_color_t color)
+{
+    for (uint16_t j = 0U; j < h; j++)
+    {
+        for (uint16_t i = 0U; i < w; i++)
+        {
+            set_pixel((uint16_t) (x + i), (uint16_t) (y + j), color);
+        }
+    }
+}
+
+void gfx_draw_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, gfx_color_t color)
+{
+    if ((w == 0U) || (h == 0U))
+    {
+        return;
+    }
+
+    for (uint16_t i = 0U; i < w; i++)
+    {
+        set_pixel((uint16_t) (x + i), y, color);
+        set_pixel((uint16_t) (x + i), (uint16_t) (y + h - 1U), color);
+    }
+    for (uint16_t j = 0U; j < h; j++)
+    {
+        set_pixel(x, (uint16_t) (y + j), color);
+        set_pixel((uint16_t) (x + w - 1U), (uint16_t) (y + j), color);
     }
 }
 

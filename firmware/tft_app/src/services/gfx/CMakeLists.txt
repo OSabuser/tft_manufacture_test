@@ -5,7 +5,8 @@ add_library(
   tft_app_gfx STATIC
   src/gfx.c
   fonts/FloorFontFallback.c
-  fonts/SystemFont.c)
+  fonts/SystemFont.c
+  fonts/JBMono12.c)
 
 target_include_directories(tft_app_gfx PUBLIC include/)
 
@@ -18,7 +19,7 @@ target_include_directories(tft_app_gfx PUBLIC include/)
 # обновлении шрифта, ручная правка потеряется.
 target_include_directories(tft_app_gfx PRIVATE fonts/include)
 set_source_files_properties(
-  fonts/FloorFontFallback.c fonts/SystemFont.c
+  fonts/FloorFontFallback.c fonts/SystemFont.c fonts/JBMono12.c
   PROPERTIES
   COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/fonts/include/fonts.h;-w")
 
