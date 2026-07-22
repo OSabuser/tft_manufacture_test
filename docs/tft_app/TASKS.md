@@ -1,0 +1,137 @@
+# tft-app — задачи FreeRTOS и их взаимодействие
+
+Документ описывает **реализованную** (Фаза 3.2.4) многозадачную структуру `tft_app`: какие
+задачи существуют, кто кого создаёт, как они обмениваются данными и почему приоритеты именно
+такие. Контракт между задачами — [app_tasks.h](../../firmware/tft_app/src/app/app_tasks.h)
+(единственный источник истины по приоритетам/разделяемому состоянию); тела задач —
+`firmware/tft_app/src/app/task_*.c`.
+
+Структура выстрадана на HW-верификации (два боевых регресса — см. PLAN.md, Фаза 3.2.4):
+объединение меню и рендера в одну задачу блокировало ввод, а неверный относительный приоритет
+`sul_rx`/`render` морозил экран при отсутствии CAN-трафика. Эталон разделения —
+`OLD_PROJECT_TFT8_UKL` (`BUTTONS_TASK` отдельно от `REFRESH_TASK`).
+
+---
+
+## 1. Состав
+
+| Задача | Файл | Приоритет (`app_tasks.h`) | Роль | Блокировки |
+| --- | --- | --- | --- | --- |
+| `bringup_task` | task_bringup.c | `+4` (высший, недолгоживущая) | одноразовая инициализация → создаёт три остальные → `vTaskDelete(NULL)` | QSPI/flash-операции |
+| `menu_task` | task_menu.c | `+3` | модель меню: кнопки, вход/навигация/правка/сохранение. **НЕ рисует** | `settings_store_save()` (flash) на выходе из меню |
+| `render_task` | task_render.c | `+2` | **единственный** владелец дисплея и вызывающий `gfx_present*()` | PXP busy-wait + ожидание FRAME_DONE |
+| `sul_rx_task` | task_sul_rx.c | `+1` (низший) | приём CAN → decode → controller; WDOG/heartbeat | busy-spin в `bsp_can_receive()` до 100 мс без трафика |
+| — демон таймеров | (FreeRTOS) | `configTIMER_TASK_PRIORITY` (высший в системе) | `input_poll_cb` каждые 5 мс: `bsp_button_poll()` (debounce); Фаза 3.4 — сюда же opto | нет (колбэк короткий) |
+
+`main()` создаёт только очередь, софт-таймер ввода и `bringup_task` — остальное wiring делает
+сам `bringup_task`.
+
+---
+
+## 2. Старт системы
+
+```mermaid
+sequenceDiagram
+    participant M as main()
+    participant B as bringup_task (+4)
+    participant R as render_task (+2)
+    participant S as sul_rx_task (+1)
+    participant U as menu_task (+3)
+
+    M->>M: board_hw_init, очередь, таймер ввода
+    M->>B: xTaskCreate + vTaskStartScheduler
+    B->>B: log_mutex → UART/лог → QSPI → settings → self-confirm
+    B->>B: SDRAM → gfx (PXP+ELCDIF) → CAN
+    B->>B: g_display_ready = true
+    B->>R: xTaskCreate (хэндл → g_render_task_handle)
+    B->>S: xTaskCreate
+    B->>U: xTaskCreate
+    B->>B: vTaskDelete(NULL)
+    R->>R: первый кадр («--») + gfx_present()
+```
+
+Порядок создания (render первым) документирует зависимость: его хэндл нужен продюсерам для
+`xTaskNotifyGive`. Формально гонки нет — `bringup_task` выше всех по приоритету и монополизирует
+CPU, пока не создаст всех троих.
+
+---
+
+## 3. Взаимодействие (MPSC)
+
+Два продюсера, один консюмер. **Данные** и **сигнал пробуждения** разделены:
+
+```mermaid
+flowchart LR
+    TMR["демон таймеров<br/>input_poll_cb 5 мс<br/>bsp_button_poll (debounce)"]
+    MT["menu_task (+3)<br/>модель меню g_menu"]
+    RX["sul_rx_task (+1)<br/>CAN→decode→controller<br/>WDOG безусловно"]
+    RT["render_task (+2)<br/>gfx_present*()"]
+
+    TMR -."залатанные события кнопок".-> MT
+    MT -->|"xTaskNotifyGive<br/>(любое изменение)"| RT
+    RX -->|"xQueueOverwrite (render_msg_t)<br/>+ xTaskNotifyGive"| RT
+    MT -."g_menu_active (мягкая пауза)".-> RX
+```
+
+- **Очередь `g_render_queue`** (глубина 1, `xQueueOverwrite`) — только плечо
+  `sul_rx→render`, несёт `render_msg_t` (diff + результат). Семантика «важно только
+  последнее состояние»: рендер не обязан успевать за каждым кадром CAN.
+- **`ulTaskNotifyTake(pdTRUE, portMAX_DELAY)`** в `render_task` — event-driven, без
+  поллинга; несколько notify от обоих продюсеров схлопываются в одно пробуждение (та же
+  семантика «важно только последнее»).
+- **Приоритет «меню важнее индикации» не кодируется в уведомлении**: проснувшись,
+  `render_task` первым делом проверяет `menu_is_open(&g_menu)` — если меню открыто,
+  очередь индикации даже не читается.
+- **Модель меню `g_menu`** мутирует только `menu_task`; `render_task` читает её для
+  отрисовки после notify (happens-before через нотификацию — как у очереди).
+
+### Мягкая пауза `sul_rx_task` на время меню
+
+`menu_task` держит `g_menu_active=true`, пока меню открыто; `sul_rx_task` под этим флагом
+пропускает CAN-работу (decode/controller/очередь), но **WDOG/heartbeat кормит безусловно** —
+задача не suspend'ится, поэтому сторожевой таймер в безопасности по конструкции, что бы ни
+происходило с меню. Флаг обновляется **до** `settings_store_save()` (flash-запись небыстрая —
+иначе пауза держалась бы дольше нужного). На закрытие меню `render_task` немедленно
+восстанавливает индикацию из последнего известного состояния, не дожидаясь свежего CAN-кадра.
+
+---
+
+## 4. Почему приоритеты именно такие
+
+`menu (+3) > render (+2) > sul_rx (+1)` — оба соотношения выстраданы на железе:
+
+1. **`render` ВЫШЕ `sul_rx`.** `bsp_can_receive()` — busy-spin без единого блокирующего
+   FreeRTOS-вызова: без CAN-трафика `sul_rx_task` занимает CPU весь таймаут (100 мс) каждую
+   итерацию, и `xTaskDelayUntil()` при просроченном дедлайне не блокирует вовсе — задача
+   непрерывно READY. Более низкоприоритетный `render_task` в этой ситуации голодал:
+   пустой экран при старте без связи, залипание индикации при обрыве. Обратный порядок
+   приоритетов чинит это, не трогая общий bare-metal модуль `bsp_can`.
+2. **`menu` ВЫШЕ `render`.** Блокировки рендера (PXP busy-wait + ожидание кадра) не должны
+   придерживать обработку кнопок — то самое свойство, ради которого меню и рендер разведены
+   по задачам (в объединённой задаче ввод был мёртв).
+3. **`bringup` выше всех** — монополизирует CPU на время одноразовой инициализации.
+4. **Демон таймеров — наивысший в системе** (`configTIMER_TASK_PRIORITY`): debounce-сэмплы
+   не теряются, чем бы ни были заняты остальные.
+
+---
+
+## 5. Разделяемое состояние (`app_tasks.h`)
+
+| Объект | Пишет | Читает | Синхронизация |
+| --- | --- | --- | --- |
+| `g_render_queue` | sul_rx | render | FreeRTOS queue |
+| `g_render_task_handle` | bringup (до создания продюсеров) | sul_rx, menu | создание-до-использования |
+| `g_display_ready` | bringup | render, sul_rx | `volatile bool`, одно-writer |
+| `g_menu_active` | menu | sul_rx | `volatile bool`, одно-writer |
+| `g_menu` | menu | render | notify (happens-before) |
+| лог-буфер `utils/log` | все задачи | — | мьютекс `port/log/src/log_mutex.c` (FreeRTOS strong-override; включён в сборку `app` — до Фазы 3.2.4 был `#if 0`, гонка) |
+
+---
+
+## 6. Кадр на экран (сводка)
+
+Рендер-пайплайн (детали — [FALLBACK.md](FALLBACK.md) §5, [MENU.md](MENU.md) §5): CPU рисует в
+AS (ARGB8888) → `gfx_present*()` в `render_task` = PXP-композит AS над чёрным PS → задний
+framebuffer **RGB565** → tear-free свап по FRAME_DONE. Гибрид bpp держит сканаут ELCDIF на
+половинной полосе SDRAM (63 МБ/с вместо 126). Индикация — всегда полный кадр (~31 мс PXP);
+меню после открытия — только окно 480×272 (~8 мс расчётно).

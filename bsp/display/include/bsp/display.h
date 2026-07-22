@@ -41,6 +41,22 @@ typedef enum bsp_display_rotation_e
     BSP_DISPLAY_FLIP_HORIZONTAL, /**< LR=0 UD=0. Горизонтальный флип (SHLR). */
 } bsp_display_rotation_t;
 
+/* ── Формат пикселя framebuffer'а (что ELCDIF читает из памяти) ───────── */
+
+/**
+ * @brief Формат пикселя в памяти framebuffer'а.
+ *
+ * Определяет ширину слова, которое ELCDIF читает по DMA из SDRAM (=нагрузку
+ * на полосу). Ширина шины пинов панели (24-бит) — отдельный параметр драйвера,
+ * от этого НЕ зависит: RGB565 (16 бит/пиксель в памяти) корректно выводится и
+ * на 24-битную панель (ELCDIF расширяет 565→24 на пинах).
+ */
+typedef enum bsp_display_pixel_format_e
+{
+    BSP_DISPLAY_PIXEL_XRGB8888 = 0U, /**< 32 бита/пиксель (X игнорируется). По умолчанию. */
+    BSP_DISPLAY_PIXEL_RGB565,        /**< 16 бит/пиксель — вдвое меньше полосы сканаута. */
+} bsp_display_pixel_format_t;
+
 /* ── Размер дисплея ──────────────────────────────────────────────────── */
 
 typedef struct bsp_display_size_s
@@ -77,9 +93,25 @@ typedef void (*bsp_display_frame_cb_t)(void);
  *                          Должен быть выровнен по 64 байт, в NonCacheable SDRAM.
  * @param on_frame_done     ISR-safe callback по завершении кадра; NULL — без callback.
  * @return BSP_OK | BSP_ERR_PARAM | BSP_ERR_NOT_SUPPORTED
+ *
+ * @note Формат пикселя — XRGB8888 (обёртка над bsp_display_init_ex()).
  */
 bsp_status_t bsp_display_init(bsp_display_type_t type, uint32_t framebuffer_addr,
                               bsp_display_frame_cb_t p_on_frame_done);
+
+/**
+ * @brief То же, что bsp_display_init(), но с явным форматом пикселя framebuffer'а.
+ *
+ * Позволяет потребителю выбрать RGB565 (вдвое меньше полосы сканаута) вместо
+ * XRGB8888, не меняя остальную настройку. bsp_display_init() — обёртка с
+ * форматом BSP_DISPLAY_PIXEL_XRGB8888 (совместимость со старыми потребителями).
+ *
+ * @param format  Формат пикселя в памяти (см. bsp_display_pixel_format_t).
+ * @return BSP_OK | BSP_ERR_PARAM | BSP_ERR_NOT_SUPPORTED
+ */
+bsp_status_t bsp_display_init_ex(bsp_display_type_t type, uint32_t framebuffer_addr,
+                                 bsp_display_frame_cb_t p_on_frame_done,
+                                 bsp_display_pixel_format_t format);
 
 /**
  * @brief Остановить ELCDIF, выключить подсветку, деинициализировать.

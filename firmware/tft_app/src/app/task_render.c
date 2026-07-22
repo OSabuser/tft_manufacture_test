@@ -1,6 +1,6 @@
 /**
  * @file  task_render.c
- * @brief Презентация: единственный владелец дисплея и вызывающий gfx_present().
+ * @brief Презентация: единственный владелец дисплея и вызывающий gfx_present*().
  *
  * Event-driven (xTaskNotifyGive от sul_rx_task И menu_task — MPSC, будят оба
  * продюсера, ulTaskNotifyTake(pdTRUE,...) схлопывает несколько notify в одно
@@ -8,10 +8,12 @@
  * менялось). НЕ содержит кнопочной логики — разделено от menu_task на Фазе
  * 3.2.4 (см. task_menu.c про причину).
  *
- * На каждое пробуждение: меню открыто → рисует меню; иначе — если меню ТОЛЬКО
- * ЧТО закрылось, сразу восстанавливает последнее известное состояние индикации
- * (не дожидаясь свежего сообщения — sul_rx_task мог простаивать под
- * g_menu_active), и дренирует g_render_queue, если там свежий diff.
+ * Меню — оконный рендер (Фаза 3.2.4, ускорение навигации): на ОТКРЫТИИ — полная
+ * очистка AS (стереть индикацию) + два полных gfx_present() подряд (double
+ * buffering: оба FB обязаны получить корректный кадр вне окна — контракт
+ * gfx_present_rect); дальше НАВИГАЦИЯ — перерисовка и композит только окна
+ * 480×272 (~27% кадра, пропорционально дешевле). Индикация — полные кадры,
+ * как и была.
  */
 
 #include "app_tasks.h"
@@ -48,15 +50,30 @@ void render_task(void *p_arg)
         (void) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         const bool MENU_OPEN_NOW = menu_is_open(&g_menu);
-        bool present_needed      = false;
 
         if (MENU_OPEN_NOW)
         {
-            menu_view_render(&g_menu);
-            present_needed = true;
+            if (!was_menu_open)
+            {
+                /* Открытие: стереть индикацию из ВСЕГО AS и прогнать полный
+                 * кадр в ОБА FB — после этого вне окна оба буфера корректны
+                 * (чёрные), и навигация может обновлять только окно. */
+                gfx_clear();
+                menu_view_render(&g_menu);
+                gfx_present();
+                gfx_present(); /* тот же AS — во второй FB (double buffering) */
+            }
+            else
+            {
+                /* Навигация/правка: только окно (~27% кадра). */
+                menu_view_render(&g_menu);
+                gfx_present_rect(0U, 0U, MENU_VIEW_WIN_W, MENU_VIEW_WIN_H);
+            }
         }
         else
         {
+            bool present_needed = false;
+
             if (was_menu_open)
             {
                 /* Меню только что закрылось — восстановить индикацию
@@ -74,11 +91,11 @@ void render_task(void *p_arg)
                 ui_fallback_render(&msg.task, &msg.result);
                 present_needed = true;
             }
-        }
 
-        if (present_needed)
-        {
-            gfx_present(); /* PXP-композит AS+PS → задний FB + свап (tear-free) */
+            if (present_needed)
+            {
+                gfx_present(); /* индикация — всегда полный кадр */
+            }
         }
 
         was_menu_open = MENU_OPEN_NOW;

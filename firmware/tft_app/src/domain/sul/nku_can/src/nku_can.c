@@ -17,10 +17,10 @@
 
 #define NKU_ADDRESS_MAX 15U /* адрес 0..15; group4 = addr<<4 */
 
-#define ARROW_MASK     0x03U /* PACKET1 data[6][1:0] — стрелка                */
-#define MOVEMENT_MASK  0x0CU /* PACKET1 data[6][3:2] — начало движения        */
-#define ICON_MASK      0xF0U /* PACKET1 data[6][7:4] — код режима             */
-#define FLOOR_MASK 0x3FU /* символ этажа / числовой уровень                   */
+#define ARROW_MASK    0x03U /* PACKET1 data[6][1:0] — стрелка                */
+#define MOVEMENT_MASK 0x0CU /* PACKET1 data[6][3:2] — начало движения        */
+#define ICON_MASK     0xF0U /* PACKET1 data[6][7:4] — код режима             */
+#define FLOOR_MASK    0x3FU /* символ этажа / числовой уровень                   */
 /* Двери (PACKET1 data[4]: откр. 0x10 / закр. 0x20) — только озвучка, не поле
  * §6; декодируются в Фазе 6 (audio_policy). Здесь намеренно не разбираются. */
 
@@ -61,7 +61,7 @@ void nku_can_init(nku_can_ctx_t *p_ctx)
     p_ctx->overload_p4   = false;
     p_ctx->lading_instr  = false;
     p_ctx->current_level = 0U;
-    p_ctx->nku_address   = 0U; /* Фаза 3.1: caller задаёт из настроек через set_address() */
+    p_ctx->nku_address = 0U; /* Фаза 3.1: caller задаёт из настроек через set_address() */
 }
 
 void nku_can_set_address(nku_can_ctx_t *p_ctx, uint8_t nku_address)
@@ -243,9 +243,8 @@ sul_status_t nku_can_decode(void *p_ctx, const sul_frame_t *p_frame, sul_result_
     const uint32_t ID = p_frame->id;
 
     /* ID известного пакета совпал, но DLC не тот — малформированный кадр. */
-    if ((ID == (PACKET1_BASE | G4)) || (ID == (PACKET2_BASE | G4)) ||
-        (ID == (PACKET3_BASE | G4)) || (ID == (PACKET4_BASE | G4)) ||
-        (ID == (PACKET5_BASE | G6)))
+    if ((ID == (PACKET1_BASE | G4)) || (ID == (PACKET2_BASE | G4)) || (ID == (PACKET3_BASE | G4)) ||
+        (ID == (PACKET4_BASE | G4)) || (ID == (PACKET5_BASE | G6)))
     {
         if (p_frame->len != PROTO_DLC)
         {

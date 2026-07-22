@@ -24,8 +24,6 @@ set_source_files_properties(
   COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/fonts/include/fonts.h;-w")
 
 # sdk_common — fsl_common.h (AT_NONCACHEABLE_SECTION_ALIGN); sdk_pxp — PXP-компоновщик;
-# freertos_kernel — семафор FRAME_DONE в gfx_present/ISR-колбэке (Фаза 3.2.4);
-# port_log_uart — ВРЕМЕННО, тайминг-диагностика в gfx_present() (см. её тело) —
-# убрать вместе с диагностикой, когда причина лага индикации найдена.
+# freertos_kernel — семафор FRAME_DONE в gfx_present/ISR-колбэке (Фаза 3.2.4).
 target_link_libraries(tft_app_gfx PUBLIC bsp_display bsp_sdram sdk_common PRIVATE sdk_pxp
-                                          freertos_kernel port_log_uart)
+                                          freertos_kernel)

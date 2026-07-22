@@ -4,17 +4,18 @@
 
 #include <stdio.h>
 
-/* Окно 480×272 @ (0,0). Метрики под реальные шрифты: JBMono24 h=31 (заголовок/
- * строки), JBMono12 h=16 (футер). 36 + 6×36 + 20 = 272. */
-#define WIN_W        480U
-#define WIN_H        272U
+/* Окно @ (0,0) — габариты публичны (menu_view.h: MENU_VIEW_WIN_W/H, нужны
+ * task_render для оконного present'а). Метрики под реальные шрифты: JBMono24
+ * h=31 (заголовок/строки), JBMono12 h=16 (футер). 36 + 6×36 + 20 = 272. */
+#define WIN_W        MENU_VIEW_WIN_W
+#define WIN_H        MENU_VIEW_WIN_H
 #define TITLE_H      36U
 #define ROW_H        36U
 #define FOOTER_H     20U
 #define ROWS_Y0      TITLE_H
 #define FOOTER_Y     (WIN_H - FOOTER_H) /* 252 */
-#define TEXT_DY24    2U                 /* центрирование JBMono24 (h31) в полосе 36 */
-#define TEXT_DY12    2U                 /* JBMono12 (h16) в футере 20               */
+#define TEXT_DY24    2U /* центрирование JBMono24 (h31) в полосе 36 */
+#define TEXT_DY12    2U /* JBMono12 (h16) в футере 20               */
 #define LEFT_MARGIN  16U
 #define RIGHT_MARGIN 16U
 #define EDGE_MARGIN  8U
@@ -71,8 +72,11 @@ static bool format_value(const menu_ctx_t *p_ctx, uint8_t idx, char *p_buf, size
  * Заливает CONTENT_X..CONTENT_W — рамку (x=0, x=WIN_W-1) не трогает. */
 static void draw_row(const menu_ctx_t *p_ctx, uint8_t idx, uint16_t row_y, bool selected)
 {
-    const gfx_color_t BG_COL   = selected ? COL_SEL_BG : COL_BG;
-    const gfx_color_t TEXT_COL = selected ? COL_SEL_TEXT : COL_LABEL;
+    const gfx_color_t BG_COL = selected ? COL_SEL_BG : COL_BG;
+    const gfx_color_t TEXT_COL =
+        selected
+            ? COL_SEL_TEXT
+            : COL_LABEL; // FIXME: Conditional operator with identical true and false expressions
     gfx_fill_rect(CONTENT_X, row_y, CONTENT_W, ROW_H, BG_COL);
 
     (void) gfx_draw_string(&SystemFont, p_ctx->items[idx].label, LEFT_MARGIN,
@@ -81,8 +85,8 @@ static void draw_row(const menu_ctx_t *p_ctx, uint8_t idx, uint16_t row_y, bool 
     char value[24];
     if (format_value(p_ctx, idx, value, sizeof(value)))
     {
-        const uint16_t VW = gfx_string_width(&SystemFont, value);
-        const uint16_t VX = (uint16_t) (WIN_W - RIGHT_MARGIN - VW);
+        const uint16_t VW    = gfx_string_width(&SystemFont, value);
+        const uint16_t VX    = (uint16_t) (WIN_W - RIGHT_MARGIN - VW);
         const gfx_color_t VC = selected ? COL_SEL_TEXT : COL_VALUE;
         (void) gfx_draw_string(&SystemFont, value, VX, (uint16_t) (row_y + TEXT_DY24), VC);
     }
@@ -92,7 +96,7 @@ static void draw_footer(const menu_ctx_t *p_ctx, uint8_t level_first, uint8_t le
 {
     gfx_fill_rect(CONTENT_X, (uint16_t) (FOOTER_Y - 1U), CONTENT_W, 1U, COL_SEP);
 
-    (void) gfx_draw_string(&SystemFontSmall, "Кн.1 - далее   Кн.2 - выбор", LEFT_MARGIN,
+    (void) gfx_draw_string(&SystemFontSmall, "IN - далее, SEL - выбор", LEFT_MARGIN,
                            (uint16_t) (FOOTER_Y + TEXT_DY12), COL_FOOTER);
 
     const uint8_t TOTAL = (uint8_t) (level_last - level_first + 1U);
@@ -106,9 +110,11 @@ static void draw_footer(const menu_ctx_t *p_ctx, uint8_t level_first, uint8_t le
 
 void menu_view_render(const menu_ctx_t *p_ctx)
 {
-    /* Полный кадр off-screen: обнулить AS (вне окна 480×272 → чёрный фон PS),
-     * затем нарисовать окно. Свап — gfx_present() у владельца дисплея. */
-    gfx_clear();
+    /* Обнулить и нарисовать ТОЛЬКО окно (дёшево — оконная перерисовка на
+     * навигации). Полную очистку AS от индикации вне окна делает владелец
+     * дисплея (task_render) один раз на ОТКРЫТИИ меню — вместе с двумя
+     * полными present'ами (контракт gfx_present_rect). */
+    gfx_clear_rect(0U, 0U, WIN_W, WIN_H);
 
     if (!p_ctx->open)
     {
@@ -118,7 +124,8 @@ void menu_view_render(const menu_ctx_t *p_ctx)
     /* Заголовок = подпись текущего уровня (родитель выделенного пункта). */
     const char *p_title = p_ctx->items[p_ctx->items[p_ctx->cur].parent].label;
     const uint16_t TW   = gfx_string_width(&SystemFont, p_title);
-    (void) gfx_draw_string(&SystemFont, p_title, (uint16_t) ((WIN_W - TW) / 2U), TEXT_DY24, COL_TITLE);
+    (void) gfx_draw_string(&SystemFont, p_title, (uint16_t) ((WIN_W - TW) / 2U), TEXT_DY24,
+                           COL_TITLE);
     gfx_fill_rect(CONTENT_X, (uint16_t) (TITLE_H - 1U), CONTENT_W, 1U, COL_SEP);
 
     uint8_t first;
@@ -138,6 +145,5 @@ void menu_view_render(const menu_ctx_t *p_ctx)
 
     draw_footer(p_ctx, first, last);
 
-    /* Рамка — последней, поверх содержимого. */
     gfx_draw_rect(0U, 0U, WIN_W, WIN_H, COL_SEP);
 }

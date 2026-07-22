@@ -142,11 +142,18 @@ sequenceDiagram
 любым цветом со сглаживанием, и оно корректно ложится на полосу-курсор. Значения SELECT/BOOL — из
 `options[]` дескриптора, BYTE — числом.
 
-**Полнокадровый рендер** (double-buffer + PXP, Фаза 3.2.4): любое изменение — `menu_view_render()`
-рисует **весь кадр** off-screen в альфа-поверхность AS (обнуление + окно), затем владелец дисплея
-зовёт `gfx_present()` (PXP-композит AS над чёрным PS → задний framebuffer + атомарный свап). Рисуем
-вне экрана, показываем атомарно → tear-free. Компоновщик — `services/gfx` (эталон
-`OLD_PROJECT_TFT8_UKL/source/display/`).
+**Оконный рендер** (double-buffer + PXP + гибрид bpp, Фаза 3.2.4): `menu_view_render()` рисует
+off-screen в альфа-поверхность AS (ARGB8888) **только окно** `MENU_VIEW_WIN_W×H` (windowed clear +
+отрисовка); показ — у владельца дисплея ([task_render.c](../../firmware/tft_app/src/app/task_render.c)):
+
+- **открытие меню** — полная очистка AS (стереть индикацию вне окна) + **два** полных
+  `gfx_present()` подряд: из-за double buffering ОБА framebuffer'а обязаны получить корректный
+  кадр вне окна (контракт `gfx_present_rect`, см. gfx.h);
+- **навигация/правка** — `gfx_present_rect(0,0,окно)`: PXP перекомпоновывает только 480×272
+  (~27% кадра) — пропорционально дешевле полного кадра.
+
+Рисуем вне экрана, показываем атомарным свапом → tear-free. Компоновщик — `services/gfx`
+(эталон `OLD_PROJECT_TFT8_UKL/source/display/`).
 
 **Меню и рендер — РАЗНЫЕ задачи** ([task_menu.c](../../firmware/tft_app/src/app/task_menu.c) /
 [task_render.c](../../firmware/tft_app/src/app/task_render.c)). Найдено на HW-верификации Фазы
@@ -154,7 +161,8 @@ sequenceDiagram
 разделение было безвредным упущением — но `gfx_present()` (double-buffer + PXP) внёс блокирующее
 ожидание кадра, и в объединённой задаче это ожидание попутно блокировало вход в меню (ноль реакции
 на кнопки). Эталон разделения — `OLD_PROJECT_TFT8_UKL`: `BUTTONS_TASK`/`menu_task` отдельно от
-`REFRESH_TASK`/`tft_refresh_task`.
+`REFRESH_TASK`/`tft_refresh_task`. Полная картина задач/приоритетов/взаимодействия —
+[TASKS.md](TASKS.md).
 
 ```mermaid
 flowchart LR

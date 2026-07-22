@@ -52,6 +52,13 @@ bsp_status_t bsp_display_init(bsp_display_type_t type,
                               uint32_t framebuffer_addr,
                               bsp_display_frame_cb_t p_on_frame_done);
 
+/* То же + явный формат пикселя framebuffer'а (bsp_display_init — обёртка
+ * с BSP_DISPLAY_PIXEL_XRGB8888, совместимость со старыми потребителями). */
+bsp_status_t bsp_display_init_ex(bsp_display_type_t type,
+                                 uint32_t framebuffer_addr,
+                                 bsp_display_frame_cb_t p_on_frame_done,
+                                 bsp_display_pixel_format_t format);
+
 bsp_status_t bsp_display_deinit(void);
 bsp_status_t bsp_display_set_rotation(bsp_display_rotation_t rotation);
 void         bsp_display_set_next_buffer(uint32_t framebuffer_addr);
@@ -59,6 +66,27 @@ void         bsp_display_set_next_buffer(uint32_t framebuffer_addr);
 const bsp_display_size_t *bsp_display_get_size(void);
 bsp_display_type_t        bsp_display_get_type(void);
 ```
+
+**Формат пикселя framebuffer'а** (что ELCDIF читает из памяти):
+
+```c
+typedef enum {
+    BSP_DISPLAY_PIXEL_XRGB8888 = 0U, /* 32 бита/пиксель — по умолчанию      */
+    BSP_DISPLAY_PIXEL_RGB565,        /* 16 бит/пиксель — ½ полосы сканаута */
+} bsp_display_pixel_format_t;
+```
+
+Формат задаёт ТОЛЬКО ширину слова в памяти (`LCDIF CTRL.WORD_LENGTH`) — то
+есть нагрузку непрерывного DMA-сканаута на SDRAM. Ширина шины пинов панели —
+всегда 24 бита и от формата не зависит: для RGB565 ELCDIF расширяет 565→24
+на пинах (проверено на TFT8: белый — чистый белый, чистые R/G/B корректны).
+Оба режима сосуществуют: старый потребитель (`firmware_test/test_display.c`)
+работает через `bsp_display_init()` (XRGB8888), `tft_app` (`services/gfx`,
+гибрид bpp) — через `bsp_display_init_ex(..., BSP_DISPLAY_PIXEL_RGB565)`.
+
+Практика по полосе (TFT8 800×600 @ ~65 Гц, SDRAM 16 бит @ ~136 МГц ≈ 272 МБ/с):
+сканаут XRGB8888 ≈ 126 МБ/с (46% всей полосы), RGB565 ≈ 63 МБ/с — вдвое
+меньше давления на SDRAM для всех остальных мастеров (CPU/PXP).
 
 **Типы дисплея:**
 
@@ -83,7 +111,7 @@ typedef enum {
 } bsp_display_rotation_t;
 ```
 
-**Коды возврата `bsp_display_init()`:**
+**Коды возврата `bsp_display_init()` / `bsp_display_init_ex()`:**
 
 | Код                     | Условие                        |
 | ----------------------- | ------------------------------ |
@@ -91,7 +119,7 @@ typedef enum {
 | `BSP_ERR_PARAM`         | `type >= BSP_DISPLAY_COUNT`    |
 | `BSP_ERR_NOT_SUPPORTED` | TFT4 — Video PLL не реализован |
 
-`bsp_display_init()` идемпотентен: повторный вызов без `deinit` возвращает
+Обе init-функции идемпотентны: повторный вызов без `deinit` возвращает
 `BSP_OK` без побочных эффектов. Callback `p_on_frame_done` должен быть
 ISR-safe (`NULL` допускается).
 

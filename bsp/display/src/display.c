@@ -270,9 +270,19 @@ static void enable_lcd_interrupt(void)
     ELCDIF_EnableInterrupts(LCDIF, kELCDIF_CurFrameDoneInterruptEnable);
 }
 
-/** @brief Заполнить конфигурацию ELCDIF из таблицы + адрес буфера. */
+/** @brief Смаппить BSP-формат пикселя на формат памяти ELCDIF. */
+static elcdif_pixel_format_t map_pixel_format(bsp_display_pixel_format_t format)
+{
+    /* dataBus остаётся 24-бит независимо: pixelFormat задаёт лишь ширину слова в
+     * памяти (WORD_LENGTH), ELCDIF расширяет 565→24 на пинах (см. fsl_elcdif.c
+     * s_pixelFormatReg). */
+    return (format == BSP_DISPLAY_PIXEL_RGB565) ? kELCDIF_PixelFormatRGB565
+                                                : kELCDIF_PixelFormatXRGB8888;
+}
+
+/** @brief Заполнить конфигурацию ELCDIF из таблицы + адрес буфера + формат. */
 static void build_elcdif_cfg(const display_hw_cfg_t *p_cfg, uint32_t framebuffer_addr,
-                             elcdif_rgb_mode_config_t *p_out)
+                             bsp_display_pixel_format_t format, elcdif_rgb_mode_config_t *p_out)
 {
     p_out->panelWidth    = p_cfg->width;
     p_out->panelHeight   = p_cfg->height;
@@ -284,7 +294,7 @@ static void build_elcdif_cfg(const display_hw_cfg_t *p_cfg, uint32_t framebuffer
     p_out->vbp           = p_cfg->vbp;
     p_out->polarityFlags = p_cfg->pol_flags;
     p_out->bufferAddr    = framebuffer_addr;
-    p_out->pixelFormat   = kELCDIF_PixelFormatXRGB8888;
+    p_out->pixelFormat   = map_pixel_format(format);
     p_out->dataBus       = kELCDIF_DataBus24Bit;
 }
 
@@ -292,6 +302,15 @@ static void build_elcdif_cfg(const display_hw_cfg_t *p_cfg, uint32_t framebuffer
 
 bsp_status_t bsp_display_init(bsp_display_type_t type, uint32_t framebuffer_addr,
                               bsp_display_frame_cb_t p_on_frame_done)
+{
+    /* Обёртка совместимости — формат по умолчанию XRGB8888 (старые потребители). */
+    return bsp_display_init_ex(type, framebuffer_addr, p_on_frame_done,
+                               BSP_DISPLAY_PIXEL_XRGB8888);
+}
+
+bsp_status_t bsp_display_init_ex(bsp_display_type_t type, uint32_t framebuffer_addr,
+                                 bsp_display_frame_cb_t p_on_frame_done,
+                                 bsp_display_pixel_format_t format)
 {
     if ((uint32_t) type >= (uint32_t) BSP_DISPLAY_COUNT)
     {
@@ -324,7 +343,7 @@ bsp_status_t bsp_display_init(bsp_display_type_t type, uint32_t framebuffer_addr
     g_s_display.frame_cb = p_on_frame_done;
 
     elcdif_rgb_mode_config_t elcdif_cfg;
-    build_elcdif_cfg(p_cfg, framebuffer_addr, &elcdif_cfg);
+    build_elcdif_cfg(p_cfg, framebuffer_addr, format, &elcdif_cfg);
     ELCDIF_RgbModeInit(LCDIF, &elcdif_cfg);
     enable_lcd_interrupt();
     ELCDIF_RgbModeStart(LCDIF);

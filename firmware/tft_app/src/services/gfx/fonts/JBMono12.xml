@@ -11,7 +11,7 @@
     <background>00ffffff</background>
     <multiplicityWidth>1</multiplicityWidth>
     <multiplicityHeight>1</multiplicityHeight>
-    <string>!"#$%&amp;'()*+,-./0123456789:;&lt;=>?\x0040ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ЁАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюяё</string>
+    <string>!"#$%&amp;'()*+,-./0123456789:;&lt;=>?\x0040ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ЁАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ абвгдежзийклмнопрстуфхцчшщъыьэюяё</string>
     <converted>/Users/von_akimow/Desktop/TFT_ENV/tft_manufacture_test/firmware/tft_app/src/services/gfx/fonts/JBMono12.c</converted>
     <chars>
         <char code="0021" character="!">
@@ -394,6 +394,9 @@
         </char>
         <char code="042f" character="Я">
             <picture format="png">iVBORw0KGgoAAAANSUhEUgAAAAcAAAAQCAYAAADagWXwAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAuklEQVQYlb2OIQrDMBhGP5ILlEJqCoWa2qqKuqhAXI9Q3QPlCNE9QlRsq3OJmIoQAv/MBuumt2c/Hu8DfofWWp/neZZSCj3puq5jVVVV+77vzjk3DMMwjuMIAJxzDimlJCKq67oGgKZpGiKivu97dhzHUUop67qunHP+1dy2bUsppeu6rhhjfJkAAMYYCyEEY4xRSqnbuCzLknPObdu2700AgPfeW2vt5yHM8zwTEU3TNAGAEELczD/zABNrZ21n8NN3AAAAAElFTkSuQmCC</picture>
+        </char>
+        <char code="0020" character=" ">
+            <picture format="png">iVBORw0KGgoAAAANSUhEUgAAAAcAAAAQCAYAAADagWXwAAAACXBIWXMAAAsTAAALEwEAmpwYAAAADklEQVQYlWNgGAXDCQAAAdAAAYH02hIAAAAASUVORK5CYII=</picture>
         </char>
         <char code="0430" character="а">
             <picture format="png">iVBORw0KGgoAAAANSUhEUgAAAAcAAAAQCAYAAADagWXwAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAu0lEQVQYlc2QIQrEMBBFJ8NSqKgKFCLqajKmIvcoOU18XA4RV5UL5AC1tT1AbhBTURGYFcsu7AEW9tn/xOMD/CPGGJNzztd1Xfu+7+u6rp/xOI4jxhiJiEIIoZRSEBHFW5imaVJKKSmlzDlnrbV+AACklJK11p7neQohBAAAIiIQETEzL8uyAACM4zgyMxMRYa21ttbaPM/zMAyDc8591Xrvfa213vd9b9u2MTNrrfVH6Lqu6/u+/+lnL55FK0k0AK3doAAAAABJRU5ErkJggg==</picture>
