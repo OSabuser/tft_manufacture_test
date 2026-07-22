@@ -46,21 +46,24 @@ MEMORY
   m_qacode     (RX) : ORIGIN = 0x00000000, LENGTH = 0x00020000 /* SRAM_ITC 128 КБ — ramfunc */
   m_data       (RW) : ORIGIN = 0x20000000, LENGTH = 0x00020000 /* SRAM_DTC 128 КБ — .data/.bss/heap/stack */
   m_data2        (RW) : ORIGIN = 0x20200000, LENGTH = 0x00040000 /* SRAM_OC 256 КБ */
-  /* SDRAM 32 МБ, разбита на 2: некэшируемый framebuffer (ELCDIF DMA читает
-   * его напрямую — MPU Region 9 в board_mpu_init() параметризован ЭТИМИ
-   * __NCACHE_REGION_* символами, C-код не трогаем) + остаток под кэшируемые
-   * буферы будущих фаз (ассеты, аудио). Framebuffer TFT8 800×600×4 ≈ 1.83 МБ
-   * — 2 МБ (степень двойки, MPU-регион обязан быть степенью двойки и
-   * выровнен по своему размеру) с запасом. См. bsp/sdram/README.md про NXP-
-   * рекомендацию некэшируемых DMA-буферов в SDRAM. */
-  m_sdram_ncache (RW) : ORIGIN = 0x80000000, LENGTH = 0x00200000 /* 2 МБ — framebuffer (non-cacheable) */
-  m_sdram        (RW) : ORIGIN = 0x80200000, LENGTH = 0x01E00000 /* ~30 МБ — кэшируемый остаток, Фаза 1 не использует */
+  /* SDRAM 32 МБ, разбита на 2: некэшируемые DMA-буферы компоновщика (ELCDIF
+   * читает framebuffer, PXP — AS/PS напрямую; MPU Region 9 в board_mpu_init()
+   * параметризован ЭТИМИ __NCACHE_REGION_* символами, C-код не трогаем) +
+   * остаток под кэшируемые буферы будущих фаз (ассеты, аудио).
+   *
+   * Фаза 3.2.4 (double-buffer + PXP): 4 буфера TFT8 800×600×4 ≈ 1.92 МБ каждый
+   *   — AS (alpha_buffer) + PS (processing_buffer) + framebuffer[2] = 7.68 МБ
+   *   → 8 МБ (степень двойки; MPU-регион обязан быть степенью двойки и выровнен
+   *   по своему размеру — 8 МБ @ 0x80000000 удовлетворяет). См. bsp/sdram/
+   *   README.md про NXP-рекомендацию некэшируемых DMA-буферов в SDRAM. */
+  m_sdram_ncache (RW) : ORIGIN = 0x80000000, LENGTH = 0x00800000 /* 8 МБ — AS+PS+2×FB (non-cacheable) */
+  m_sdram        (RW) : ORIGIN = 0x80800000, LENGTH = 0x01800000 /* 24 МБ — кэшируемый остаток, пока не используется */
 }
 
 SECTIONS
 {
   __NCACHE_REGION_START = ORIGIN(m_sdram_ncache);
-  __NCACHE_REGION_SIZE  = LENGTH(m_sdram_ncache); /* 2 МБ non-cacheable — framebuffer */
+  __NCACHE_REGION_SIZE  = LENGTH(m_sdram_ncache); /* 8 МБ non-cacheable — AS+PS+2×FB */
 
   /* Vector table (imgtool header зарезервирован до неё в MEMORY). */
   .interrupts :
@@ -208,7 +211,7 @@ SECTIONS
   ASSERT(__DATA_END <= text_end, "region m_text overflowed with text and data")
   ASSERT(text_end <= SLOT_BASE + SLOT_SIZE, "app вышел за пределы слота (2 МБ)")
   ASSERT((__noncachedata_end__ - ORIGIN(m_sdram_ncache)) <= LENGTH(m_sdram_ncache),
-         "m_sdram_ncache overflow — framebuffer(ы) не влезли в 2 МБ")
+         "m_sdram_ncache overflow — AS+PS+2×FB не влезли в 8 МБ")
 
   .bss :
   {

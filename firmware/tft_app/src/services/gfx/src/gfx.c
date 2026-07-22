@@ -1,33 +1,53 @@
 #include "services/gfx.h"
 
+#include "FreeRTOS.h"
 #include "fsl_common.h" /* AT_NONCACHEABLE_SECTION_ALIGN */
+#include "fsl_pxp.h"
+#include "log/log.h" /* ВРЕМЕННО (Фаза 3.2.4 HW-расследование лага) — см. gfx_present() */
+#include "semphr.h"
+#include "task.h" /* xTaskGetTickCount — тайминг-инструментация ниже */
 
 #include <stddef.h>
+#include <string.h>
 
-/* ── Framebuffer (SDRAM, non-cacheable) ────────────────────────────────────
+#define LOG_TAG "gfx"
+
+/* ── Поверхности компоновщика (SDRAM, non-cacheable) ────────────────────────
  *
  * AT_NONCACHEABLE_SECTION_ALIGN размещает переменную в линкер-секции
  * NonCacheable/.ncache → cmake/linker/..._app_slot.ld отображает её на
- * m_sdram_ncache (2 МБ в начале SDRAM), а board_mpu_init() (bsp/generated/
+ * m_sdram_ncache (8 МБ в начале SDRAM), а board_mpu_init() (bsp/generated/
  * board.c, Region 9) конфигурирует ЭТОТ ЖЕ диапазон как non-cacheable через
  * линкер-символы __NCACHE_REGION_START/SIZE — рекомендация NXP для буферов,
- * которые ELCDIF читает по DMA (см. OLD_PROJECT source/display/image_cache.c,
+ * которые ELCDIF/PXP читают по DMA (см. OLD_PROJECT source/display/image_cache.c,
  * тот же макрос, framebuffer/alpha_buffer/processing_buffer). Без этого CPU
- * писал бы через Write-Back D-Cache (Region 8: SDRAM WB Cacheable), и ELCDIF
+ * писал бы через Write-Back D-Cache (Region 8: SDRAM WB Cacheable), и DMA
  * читал бы устаревшие данные, пока кэш-линия не вытеснится сама.
  *
- * Размер — под ТЕКУЩУЮ панель стенда (TFT8, 800×600, известна на Фазе 1), не
- * под BSP_DISPLAY_MAX_*: когда app-big (ARCH §9) станет рантайм-выбирать
- * между TFT7/8/10 в одном бинарнике, размер и m_sdram_ncache (сейчас 2 МБ)
- * придётся поднять до максимума (1024×600×4 ≈ 2.34 МБ → 4 МБ регион). */
-#define FRAMEBUFFER_ALIGN 64U /* см. OLD_PROJECT FRAME_BUFFER_ALIGN — типичное ELCDIF/AXI выравнивание */
-#define FRAMEBUFFER_PIXELS (800U * 600U)
+ * Четыре поверхности (эталон TFT8_UKL): AS (рисует CPU), PS (фон, чёрный),
+ * FB[2] (выход PXP = вход ELCDIF, double buffer). Размер — под ТЕКУЩУЮ панель
+ * стенда (TFT8, 800×600), не под BSP_DISPLAY_MAX_*: когда app-big (ARCH §9)
+ * станет рантайм-выбирать между TFT7/8/10 в одном бинарнике, размер поверхностей
+ * и m_sdram_ncache придётся поднять до максимума панели. */
+#define FRAMEBUFFER_ALIGN 64U /* см. OLD_PROJECT FRAME_BUFFER_ALIGN — типичное ELCDIF/PXP/AXI выравнивание */
+#define SURFACE_PIXELS (800U * 600U)
+#define BYTES_PER_PIXEL 4U
+#define ALPHA_OPAQUE 0xFF000000U /* AS: alpha=0xFF → пиксель непрозрачен для PXP-блендинга */
 #define FALLBACK_CHAR '-'
 
-AT_NONCACHEABLE_SECTION_ALIGN(static uint32_t s_framebuffer[FRAMEBUFFER_PIXELS], FRAMEBUFFER_ALIGN);
+/* AS — CPU рисует сюда (ARGB8888, alpha значим). */
+AT_NONCACHEABLE_SECTION_ALIGN(static uint32_t s_alpha_buffer[SURFACE_PIXELS], FRAMEBUFFER_ALIGN);
+/* PS — фон под AS (сейчас сплошной чёрный, заливается однократно в gfx_init). */
+AT_NONCACHEABLE_SECTION_ALIGN(static uint32_t s_processing_buffer[SURFACE_PIXELS], FRAMEBUFFER_ALIGN);
+/* Выходные буферы PXP = сканируемые ELCDIF (double buffer, свап в gfx_present). */
+AT_NONCACHEABLE_SECTION_ALIGN(static uint32_t s_framebuffer[2][SURFACE_PIXELS], FRAMEBUFFER_ALIGN);
 
 static uint16_t s_fb_width;
 static uint16_t s_fb_height;
+
+static uint8_t s_back_index;            /* индекс FB, в который PXP компонует следующий кадр */
+static SemaphoreHandle_t s_frame_done;  /* даётся из ELCDIF ISR по завершении кадра          */
+static pxp_output_buffer_config_t s_output_cfg; /* хранится: gfx_present меняет buffer0Addr   */
 
 static inline void set_pixel(uint16_t x, uint16_t y, gfx_color_t color)
 {
@@ -35,13 +55,15 @@ static inline void set_pixel(uint16_t x, uint16_t y, gfx_color_t color)
     {
         return; /* примитивы могут частично выходить за экран — не UB, просто обрезка */
     }
-    s_framebuffer[(uint32_t) y * s_fb_width + x] = color;
+    /* AS: пишем непрозрачно (alpha 0xFF), RGB из color (X-байт игнорируем). */
+    s_alpha_buffer[(uint32_t) y * s_fb_width + x] = (color & 0x00FFFFFFU) | ALPHA_OPAQUE;
 }
 
-/* Альфа-блендинг: наложить @p color с покрытием @p a (0..255) на фон
- * framebuffer'а. a=0 — фон нетронут (прозрачный край глифа), a=255 — полная
- * замена. Так сглаживание глифа корректно ложится на любой фон (в т.ч.
- * полосу-курсор), а не штампует чёрный бокс. */
+/* Альфа-блендинг: наложить @p color с покрытием @p a (0..255) на текущее
+ * содержимое AS. a=0 — пиксель нетронут (прозрачный край глифа), a=255 —
+ * полная замена. Так сглаживание глифа корректно ложится на уже нарисованный
+ * фон (в т.ч. полосу-курсор), а не штампует чёрный бокс. Результат всегда
+ * непрозрачен (alpha 0xFF): PXP покажет его поверх PS. */
 static inline void blend_pixel(uint16_t x, uint16_t y, gfx_color_t color, uint8_t a)
 {
     if ((x >= s_fb_width) || (y >= s_fb_height) || (a == 0U))
@@ -52,16 +74,16 @@ static inline void blend_pixel(uint16_t x, uint16_t y, gfx_color_t color, uint8_
     const uint32_t idx = (uint32_t) y * s_fb_width + x;
     if (a == 0xFFU)
     {
-        s_framebuffer[idx] = color;
+        s_alpha_buffer[idx] = (color & 0x00FFFFFFU) | ALPHA_OPAQUE;
         return;
     }
 
-    const uint32_t bg  = s_framebuffer[idx];
+    const uint32_t bg  = s_alpha_buffer[idx];
     const uint32_t inv = 255U - a;
     const uint32_t r = (((color >> 16) & 0xFFU) * a + ((bg >> 16) & 0xFFU) * inv) / 255U;
     const uint32_t g = (((color >> 8) & 0xFFU) * a + ((bg >> 8) & 0xFFU) * inv) / 255U;
     const uint32_t b = (((color) & 0xFFU) * a + ((bg) & 0xFFU) * inv) / 255U;
-    s_framebuffer[idx] = (r << 16) | (g << 8) | b;
+    s_alpha_buffer[idx] = (r << 16) | (g << 8) | b | ALPHA_OPAQUE;
 }
 
 /* ── Поиск глифа (бинарный — chars[] отсортирован по code, гарантия формата
@@ -302,13 +324,101 @@ void gfx_draw_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, gfx_color_t c
     }
 }
 
-/* ── Framebuffer / init ──────────────────────────────────────────────────── */
+/* ── PXP-компоновщик (порт OLD_PROJECT_TFT8_UKL/source/display/pxp_config.c) ── */
+
+/* PS-формат: для RT1052 (расширенная таблица форматов, FSL_FEATURE_PXP_HAS_NO_
+ * EXTEND_PIXEL_FORMAT не определён) 32-битный формат без реального альфа-канала
+ * называется kPXP_PsPixelFormatARGB8888 (0x4) — фон, альфа PS в блендинге не
+ * участвует (значима альфа AS, kPXP_AlphaEmbedded). */
+static void gfx_pxp_init(void)
+{
+    PXP_Init(PXP);
+
+    const uint16_t PITCH = (uint16_t) (s_fb_width * BYTES_PER_PIXEL);
+
+    const pxp_ps_buffer_config_t ps_cfg = {
+        .pixelFormat = kPXP_PsPixelFormatARGB8888,
+        .swapByte    = false,
+        .bufferAddr  = (uint32_t) s_processing_buffer,
+        .bufferAddrU = 0U,
+        .bufferAddrV = 0U,
+        .pitchBytes  = PITCH,
+    };
+    PXP_SetProcessSurfaceBufferConfig(PXP, &ps_cfg);
+
+    const pxp_as_buffer_config_t as_cfg = {
+        .pixelFormat = kPXP_AsPixelFormatARGB8888,
+        .bufferAddr  = (uint32_t) s_alpha_buffer,
+        .pitchBytes  = PITCH,
+    };
+    PXP_SetAlphaSurfaceBufferConfig(PXP, &as_cfg);
+
+    /* Embedded alpha: доля AS-пикселя над PS берётся из его альфа-байта. */
+    const pxp_as_blend_config_t blend_cfg = {
+        .alpha       = 0xFFU,
+        .invertAlpha = false,
+        .alphaMode   = kPXP_AlphaEmbedded,
+        .ropMode     = kPXP_RopMaskAs,
+    };
+    PXP_SetAlphaSurfaceBlendConfig(PXP, &blend_cfg);
+
+    s_output_cfg.pixelFormat    = kPXP_OutputPixelFormatARGB8888;
+    s_output_cfg.interlacedMode = kPXP_OutputProgressive;
+    s_output_cfg.buffer0Addr    = (uint32_t) s_framebuffer[0];
+    s_output_cfg.buffer1Addr    = 0U;
+    s_output_cfg.pitchBytes     = PITCH;
+    s_output_cfg.width          = s_fb_width;
+    s_output_cfg.height         = s_fb_height;
+    PXP_SetOutputBufferConfig(PXP, &s_output_cfg);
+
+    PXP_EnableCsc1(PXP, false); /* включён по умолчанию — фон RGB, конверсия не нужна */
+
+    PXP_SetProcessSurfacePosition(PXP, 0U, 0U, s_fb_width, s_fb_height);
+    PXP_SetAlphaSurfacePosition(PXP, 0U, 0U, s_fb_width, s_fb_height);
+}
+
+/* Запустить PXP и дождаться завершения композиции (busy-wait, как в эталоне). */
+static void gfx_pxp_run(void)
+{
+    PXP_ClearStatusFlags(PXP, kPXP_CommandLoadFlag);
+    PXP_ClearStatusFlags(PXP, kPXP_Axi0ReadErrorFlag);
+    PXP_ClearStatusFlags(PXP, kPXP_Axi0WriteErrorFlag);
+    PXP_ClearStatusFlags(PXP, kPXP_CompleteFlag);
+
+    PXP_Start(PXP);
+    while ((kPXP_CompleteFlag & PXP_GetStatusFlags(PXP)) == 0U)
+    {
+    }
+}
+
+/* ISR-safe: конец кадра ELCDIF → отпустить семафор (синхронизация свапа). */
+static void on_frame_done(void)
+{
+    BaseType_t hp_task_woken = pdFALSE;
+    (void) xSemaphoreGiveFromISR(s_frame_done, &hp_task_woken);
+    portYIELD_FROM_ISR(hp_task_woken);
+}
+
+/* ── Компоновщик / init ──────────────────────────────────────────────────── */
 
 bsp_status_t gfx_init(bsp_display_type_t type)
 {
     /* SDRAM (SEMC) — забота вызывающего (bsp_sdram_configure()+init()), gfx
-     * владеет только framebuffer'ом внутри уже готовой SDRAM. */
-    const bsp_status_t st = bsp_display_init(type, (uint32_t) s_framebuffer, NULL);
+     * владеет только поверхностями внутри уже готовой SDRAM. */
+    s_frame_done = xSemaphoreCreateBinary();
+    if (s_frame_done == NULL)
+    {
+        return BSP_ERR_INIT;
+    }
+
+    /* PS — чёрный фон; AS — прозрачно; оба выходных FB — чёрные (ELCDIF стартует
+     * на FB[0] ещё до первого gfx_present, иначе на экране был бы мусор). */
+    (void) memset(s_processing_buffer, 0, sizeof(s_processing_buffer));
+    (void) memset(s_alpha_buffer, 0, sizeof(s_alpha_buffer));
+    (void) memset(s_framebuffer, 0, sizeof(s_framebuffer));
+
+    /* Семафор создан и колбэк готов ДО включения IRQ внутри bsp_display_init. */
+    const bsp_status_t st = bsp_display_init(type, (uint32_t) s_framebuffer[0], on_frame_done);
     if (st != BSP_OK)
     {
         return st;
@@ -317,16 +427,47 @@ bsp_status_t gfx_init(bsp_display_type_t type)
     const bsp_display_size_t *p_size = bsp_display_get_size();
     s_fb_width                       = p_size->width;
     s_fb_height                      = p_size->height;
+    s_back_index                     = 0U; /* FB[0] показывается; первый present уйдёт в FB[1] */
+
+    gfx_pxp_init();
 
     return BSP_OK;
 }
 
-void gfx_clear(gfx_color_t color)
+void gfx_clear(void)
 {
-    const uint32_t count = (uint32_t) s_fb_width * s_fb_height;
+    /* Прозрачно (alpha 0) → непрорисованные области покажут фон PS (чёрный). */
+    (void) memset(s_alpha_buffer, 0, (size_t) s_fb_width * s_fb_height * BYTES_PER_PIXEL);
+}
 
-    for (uint32_t i = 0U; i < count; i++)
-    {
-        s_framebuffer[i] = color;
-    }
+void gfx_present(void)
+{
+    /* Компонуем в НЕ показываемый сейчас буфер, показываем атомарным свапом. */
+    s_back_index ^= 1U;
+
+    s_output_cfg.buffer0Addr = (uint32_t) s_framebuffer[s_back_index];
+    PXP_SetOutputBufferConfig(PXP, &s_output_cfg);
+
+    /* ВРЕМЕННО (Фаза 3.2.4, HW-расследование лага индикации ~1-2 c —
+     * PLAN.md): раздельный замер PXP busy-wait и ожидания FRAME_DONE. ELCDIF
+     * по clock_config.c должен давать ~65 Гц (528 МГц PLL2 / 12 / кадр) →
+     * ожидаем pxp единицы мс, vsync до ~15 мс. Если на железе один из них
+     * систематически большой — вот прямой ответ, что именно тормозит. Убрать
+     * после диагностики (см. include log/log.h и task.h выше — тоже под снос
+     * вместе с этим). */
+    const TickType_t T0 = xTaskGetTickCount();
+
+    gfx_pxp_run(); /* AS над PS → s_framebuffer[s_back_index] */
+
+    const TickType_t T1 = xTaskGetTickCount();
+
+    /* Синхронизация с развёрткой: дождаться конца кадра, затем отдать ELCDIF
+     * новый буфер — он переключится аппаратно на границе кадра (tear-free). */
+    (void) xSemaphoreTake(s_frame_done, portMAX_DELAY);
+
+    const TickType_t T2 = xTaskGetTickCount();
+
+    bsp_display_set_next_buffer((uint32_t) s_framebuffer[s_back_index]);
+
+    LOG_I(LOG_TAG, "present: pxp=%u ms vsync=%u ms", (unsigned) (T1 - T0), (unsigned) (T2 - T1));
 }

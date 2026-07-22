@@ -1,9 +1,15 @@
 /**
  * @file  gfx.h
- * @brief Фаза 1 — минимальный gfx: framebuffer (SDRAM, non-cacheable) +
- *        RLE-шрифты (lcd-image-converter) + примитив стрелки. Без PXP/
- *        компоновщика/альфа-слоёв — прямая запись в единственный framebuffer,
- *        который ELCDIF сканирует по DMA (см. gfx.c про non-cacheable SDRAM).
+ * @brief Фаза 3.2.4 — gfx как компоновщик: double-buffer + PXP.
+ *
+ * Модель (эталон OLD_PROJECT_TFT8_UKL/source/display/): CPU рисует ВЕСЬ кадр в
+ * альфа-поверхность **AS** (`alpha_buffer`, ARGB8888; примитивы пишут alpha
+ * 0xFF, `gfx_clear` обнуляет → прозрачно). PXP блендит AS над фоновой
+ * поверхностью **PS** (`processing_buffer`, сейчас сплошной чёрный) в один из
+ * двух задних framebuffer'ов, затем свап синхронно с ELCDIF (семафор FRAME_DONE).
+ * Рисуем off-screen, показываем атомарным свапом → tear-free. Стиль-картинка в
+ * PS и спрайты в AS — Фаза 4/5; сейчас PS чёрный, композиция = чёрный фон +
+ * нарисованное в AS.
  *
  * Формат tImage/tChar/tFont и RLE-декодирование — порт проверенного в проде
  * алгоритма из OLD_PROJECT (source/fonts/fonts.c), тот же формат данных, что
@@ -73,18 +79,32 @@ typedef uint32_t gfx_color_t;
 #define GFX_COLOR_WHITE 0x00FFFFFFU
 
 /**
- * @brief framebuffer (SDRAM non-cacheable) + bsp_display.
+ * @brief Поднять компоновщик: AS/PS/2×FB (SDRAM non-cacheable) + PXP + ELCDIF.
+ *
+ * Создаёт семафор FRAME_DONE и регистрирует ISR-колбэк ELCDIF (даёт семафор),
+ * заливает PS сплошным чёрным, инициализирует PXP (AS над PS → выходной FB) и
+ * стартует ELCDIF на FB[0]. До первого gfx_present() экран чёрный.
  *
  * SDRAM (SEMC) должна быть уже поднята вызывающим (bsp_sdram_configure() +
- * bsp_sdram_init()) — gfx не владеет SEMC-инициализацией, только framebuffer
+ * bsp_sdram_init()) — gfx не владеет SEMC-инициализацией, только буферами
  * внутри уже готовой SDRAM.
  *
  * @param type  тип панели (Фаза 1 — хардкод из app; Фаза 9 — provisioning)
  */
 bsp_status_t gfx_init(bsp_display_type_t type);
 
-/** Залить весь кадр цветом (обычно GFX_COLOR_BLACK перед перерисовкой). */
-void gfx_clear(gfx_color_t color);
+/** Обнулить AS (весь кадр становится прозрачным). Вызывать перед отрисовкой
+ *  нового полного кадра; непрорисованные области покажут фон PS (чёрный). */
+void gfx_clear(void);
+
+/**
+ * @brief Показать нарисованный в AS кадр: PXP-композит AS над PS → задний FB,
+ *        затем свап синхронно с ELCDIF (tear-free).
+ *
+ * Блокирующий (busy-wait завершения PXP + ожидание FRAME_DONE) — звать из
+ * задачи-владельца дисплея после того, как полный кадр нарисован в AS.
+ */
+void gfx_present(void);
 
 /**
  * @brief Нарисовать строку заданным цветом (тинтинг с альфа-сглаживанием).

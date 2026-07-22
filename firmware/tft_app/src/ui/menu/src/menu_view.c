@@ -7,16 +7,22 @@
 /* Окно 480×272 @ (0,0). Метрики под реальные шрифты: JBMono24 h=31 (заголовок/
  * строки), JBMono12 h=16 (футер). 36 + 6×36 + 20 = 272. */
 #define WIN_W        480U
+#define WIN_H        272U
 #define TITLE_H      36U
 #define ROW_H        36U
 #define FOOTER_H     20U
 #define ROWS_Y0      TITLE_H
-#define FOOTER_Y     (272U - FOOTER_H) /* 252 */
-#define TEXT_DY24    2U                 /* (36-31)/2 — центрирование JBMono24 в полосе 36 */
-#define TEXT_DY12    2U                 /* (20-16)/2 — JBMono12 в футере 20               */
+#define FOOTER_Y     (WIN_H - FOOTER_H) /* 252 */
+#define TEXT_DY24    2U                 /* центрирование JBMono24 (h31) в полосе 36 */
+#define TEXT_DY12    2U                 /* JBMono12 (h16) в футере 20               */
 #define LEFT_MARGIN  16U
 #define RIGHT_MARGIN 16U
 #define EDGE_MARGIN  8U
+
+/* Рамка 1 px по периметру — строки/футер вписаны внутрь неё (не затирают). */
+#define BORDER    1U
+#define CONTENT_X BORDER
+#define CONTENT_W (WIN_W - 2U * BORDER)
 
 /* Палитра (XRGB). Собирается тинтингом из белых шрифтов. */
 #define COL_BG       0x000000U
@@ -26,7 +32,7 @@
 #define COL_SEL_BG   0x0017406BU
 #define COL_SEL_TEXT 0x00FFFFFFU
 #define COL_FOOTER   0x006F6F6FU
-#define COL_SEP      0x00333333U
+#define COL_SEP      0x00333333U /* разделители + рамка */
 
 /* Строка значения пункта. @return false — у пункта нет значения (BACK). */
 static bool format_value(const menu_ctx_t *p_ctx, uint8_t idx, char *p_buf, size_t buf_len)
@@ -39,7 +45,7 @@ static bool format_value(const menu_ctx_t *p_ctx, uint8_t idx, char *p_buf, size
         (void) snprintf(p_buf, buf_len, ">");
         return true;
     case MENU_BYTE:
-        (void) snprintf(p_buf, buf_len, "%u", menu_read_value(p_ctx, idx));
+        (void) snprintf(p_buf, buf_len, "%u", (unsigned) menu_read_value(p_ctx, idx));
         return true;
     case MENU_SELECT:
     case MENU_BOOL:
@@ -51,7 +57,7 @@ static bool format_value(const menu_ctx_t *p_ctx, uint8_t idx, char *p_buf, size
         }
         else
         {
-            (void) snprintf(p_buf, buf_len, "%u", V);
+            (void) snprintf(p_buf, buf_len, "%u", (unsigned) V);
         }
         return true;
     }
@@ -61,14 +67,14 @@ static bool format_value(const menu_ctx_t *p_ctx, uint8_t idx, char *p_buf, size
     }
 }
 
+/* Отрисовать одну строку по её экранному y (fill фона + подпись + значение).
+ * Заливает CONTENT_X..CONTENT_W — рамку (x=0, x=WIN_W-1) не трогает. */
 static void draw_row(const menu_ctx_t *p_ctx, uint8_t idx, uint16_t row_y, bool selected)
 {
-    if (selected)
-    {
-        gfx_fill_rect(0U, row_y, WIN_W, ROW_H, COL_SEL_BG);
-    }
-
+    const gfx_color_t BG_COL   = selected ? COL_SEL_BG : COL_BG;
     const gfx_color_t TEXT_COL = selected ? COL_SEL_TEXT : COL_LABEL;
+    gfx_fill_rect(CONTENT_X, row_y, CONTENT_W, ROW_H, BG_COL);
+
     (void) gfx_draw_string(&SystemFont, p_ctx->items[idx].label, LEFT_MARGIN,
                            (uint16_t) (row_y + TEXT_DY24), TEXT_COL);
 
@@ -84,9 +90,9 @@ static void draw_row(const menu_ctx_t *p_ctx, uint8_t idx, uint16_t row_y, bool 
 
 static void draw_footer(const menu_ctx_t *p_ctx, uint8_t level_first, uint8_t level_last)
 {
-    gfx_fill_rect(0U, (uint16_t) (FOOTER_Y - 1U), WIN_W, 1U, COL_SEP);
+    gfx_fill_rect(CONTENT_X, (uint16_t) (FOOTER_Y - 1U), CONTENT_W, 1U, COL_SEP);
 
-    (void) gfx_draw_string(&SystemFontSmall, "Кн.1 - далее   Кн.2 - выбор", EDGE_MARGIN,
+    (void) gfx_draw_string(&SystemFontSmall, "Кн.1 - далее   Кн.2 - выбор", LEFT_MARGIN,
                            (uint16_t) (FOOTER_Y + TEXT_DY12), COL_FOOTER);
 
     const uint8_t TOTAL = (uint8_t) (level_last - level_first + 1U);
@@ -100,8 +106,10 @@ static void draw_footer(const menu_ctx_t *p_ctx, uint8_t level_first, uint8_t le
 
 void menu_view_render(const menu_ctx_t *p_ctx)
 {
-    /* Меню модально и переносимо: чёрный весь экран, окно — верхний-левый 480×272. */
-    gfx_clear(COL_BG);
+    /* Полный кадр off-screen: обнулить AS (вне окна 480×272 → чёрный фон PS),
+     * затем нарисовать окно. Свап — gfx_present() у владельца дисплея. */
+    gfx_clear();
+
     if (!p_ctx->open)
     {
         return;
@@ -111,9 +119,8 @@ void menu_view_render(const menu_ctx_t *p_ctx)
     const char *p_title = p_ctx->items[p_ctx->items[p_ctx->cur].parent].label;
     const uint16_t TW   = gfx_string_width(&SystemFont, p_title);
     (void) gfx_draw_string(&SystemFont, p_title, (uint16_t) ((WIN_W - TW) / 2U), TEXT_DY24, COL_TITLE);
-    gfx_fill_rect(0U, (uint16_t) (TITLE_H - 1U), WIN_W, 1U, COL_SEP);
+    gfx_fill_rect(CONTENT_X, (uint16_t) (TITLE_H - 1U), CONTENT_W, 1U, COL_SEP);
 
-    /* Список пунктов текущего уровня, окно страницы. */
     uint8_t first;
     uint8_t last;
     menu_level_range(p_ctx, &first, &last);
@@ -126,9 +133,11 @@ void menu_view_render(const menu_ctx_t *p_ctx)
         {
             break;
         }
-        const uint16_t ROW_Y = (uint16_t) (ROWS_Y0 + slot * ROW_H);
-        draw_row(p_ctx, IDX, ROW_Y, (IDX == p_ctx->cur));
+        draw_row(p_ctx, IDX, (uint16_t) (ROWS_Y0 + slot * ROW_H), (IDX == p_ctx->cur));
     }
 
     draw_footer(p_ctx, first, last);
+
+    /* Рамка — последней, поверх содержимого. */
+    gfx_draw_rect(0U, 0U, WIN_W, WIN_H, COL_SEP);
 }

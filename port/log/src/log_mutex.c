@@ -15,26 +15,24 @@
  * @note Вызов LOG_* из ISR запрещён: xSemaphoreTake с portMAX_DELAY
  *       недопустим в ISR-контексте.
  */
-#if 0
 #include "FreeRTOS.h"
 #include "log/log.h"
 #include "semphr.h"
- 
+
 static SemaphoreHandle_t s_log_mutex;
- 
+
 void log_mutex_init(void)
 {
     s_log_mutex = xSemaphoreCreateMutex();
     configASSERT(s_log_mutex != NULL);
 }
- 
+
 void log_mutex_lock(void)
 {
     xSemaphoreTake(s_log_mutex, portMAX_DELAY);
 }
- 
+
 void log_mutex_unlock(void)
 {
     xSemaphoreGive(s_log_mutex);
 }
-#endif

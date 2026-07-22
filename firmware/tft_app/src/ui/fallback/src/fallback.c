@@ -60,7 +60,7 @@ static void render_normal(const sul_result_t *p_result)
 
 static void render(sul_mode_t mode, const sul_result_t *p_result)
 {
-    gfx_clear(GFX_COLOR_BLACK);
+    gfx_clear();
 
     const char *label = mode_label(mode);
     if (label == NULL)

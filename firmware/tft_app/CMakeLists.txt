@@ -58,7 +58,11 @@ include(${CMAKE_SOURCE_DIR}/firmware/bootloader/mcuboot_port/bootutil_sources.cm
 
 add_executable(
   app
-  src/app/main.c
+  src/app/main.c          # main() + wiring + FreeRTOS-хуки
+  src/app/task_bringup.c  # одноразовый bring-up (QSPI/settings/self-confirm/SDRAM+gfx+CAN) → создаёт остальные задачи
+  src/app/task_sul_rx.c   # приём CAN → decode → controller (WDOG/heartbeat безусловно, CAN-работа под !g_menu_active)
+  src/app/task_menu.c     # модель меню: кнопки/hold-to-enter/nav/edit/save — НЕ рисует
+  src/app/task_render.c   # презентация: единственный вызывающий gfx_present(), event-driven
   ${BSP_GENERATED}/clock_config.c # BOARD_BootClockRUN (зовётся board_hw_init)
   ${BSP_STARTUP_FILE}
   ${BSP_SYSCALLS_FILE}
@@ -70,6 +74,12 @@ add_executable(
   # ниже (BSP_TICK_FREERTOS_MODE), чтобы не тянуть SysTick_Handler,
   # конфликтующий с FreeRTOS-портом. Приходит транзитивно через bsp_uart_host.
   ${CMAKE_SOURCE_DIR}/bsp/tick/src/tick.c
+  # log_mutex.c — FreeRTOS strong-override весов log_mutex_{init,lock,unlock}
+  # (weak NOP в utils/log/log.c). Компилируется ПРЯМО в app (не отдельной
+  # либой) — как tick.c: FreeRTOS-специфика только этой цели, нужна во ВСЕХ
+  # сборках tft_app (без неё — гонка на общем static-буфере логгера между
+  # bringup_task/sul_rx_task/menu_task/render_task, см. PLAN.md).
+  ${CMAKE_SOURCE_DIR}/port/log/src/log_mutex.c
   ${CMAKE_SOURCE_DIR}/firmware/bootloader/mcuboot_port/flash_map_backend.c
   ${MCUBOOT_BOOTUTIL_DIR}/src/bootutil_public.c)
 
@@ -106,6 +116,7 @@ target_link_libraries(
   app
   PRIVATE bsp_board
           bsp_led
+          bsp_button
           bsp_wdog
           bsp_boot_state
           bsp_qspi_flash

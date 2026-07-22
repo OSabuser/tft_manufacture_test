@@ -20,13 +20,27 @@ extern "C"
 #endif
 
 /**
- * @brief bsp_can_init() + RX-фильтры под активные ID НКУ-CAN.
+ * @brief bsp_can_init(). RX-фильтры НЕ настраивает.
  *
- * Фаза 1: фильтры на PACKET1(0x506)/PACKET3(0x508), адрес станции 0
- * (хардкод — совпадает с decode-стороной nku_can.c). Фаза 3 параметризует
- * оба конца из настроек одновременно.
+ * Вызывающий обязан сразу после этого позвать sul_transport_can_set_address()
+ * — внутренний сентинел форсирует первое применение фильтров независимо от
+ * переданного адреса (как в OLD_PROJECT msg_receiver_task).
  */
 bsp_status_t sul_transport_can_init(void);
+
+/**
+ * @brief (Пере)настроить RX-фильтры (PACKET1..5) под адрес станции.
+ *
+ * НКУ-CAN кодирует адрес станции в ID: PACKET1..4 — биты [7:4] (group4 =
+ * addr<<4), PACKET5 — биты [8:6] (group6 = addr<<6, протокол отводит под
+ * него только 3 бита). Дёшево звать на каждой итерации приёма — реальная
+ * переконфигурация Message Buffer'ов FlexCAN происходит только при
+ * фактическом изменении адреса (внутренний diff, сентинел на первый вызов).
+ * Эталон — OLD_PROJECT msg_receiver_task/apply_nku_can_filters().
+ *
+ * @param nku_address 0..15; вне диапазона — приводится к 15.
+ */
+bsp_status_t sul_transport_can_set_address(uint8_t nku_address);
 
 /**
  * @brief Принять один кадр и перевести в sul_frame_t.

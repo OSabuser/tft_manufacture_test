@@ -14,15 +14,17 @@ void settings_store_init_defaults(void)
 
 bsp_status_t settings_store_load(void)
 {
-    settings_page_t page;
+    /* static: страница = сектор (4 КБ) — на стеке задачи (~3 КБ) переполнит его.
+     * Однократный вызов при старте, не реентерабельно (как s_page в save()). */
+    static settings_page_t s_page;
 
-    if (bsp_qspi_read(TFT_APP_QSPI_SETTINGS_OFFSET, (uint8_t *) &page, sizeof(page)) != BSP_OK)
+    if (bsp_qspi_read(TFT_APP_QSPI_SETTINGS_OFFSET, (uint8_t *) &s_page, sizeof(s_page)) != BSP_OK)
     {
         g_settings = settings_defaults();
         return BSP_ERR_HW;
     }
 
-    if (!settings_deserialize(&page, &g_settings))
+    if (!settings_deserialize(&s_page, &g_settings))
     {
         g_settings = settings_defaults();
         return BSP_ERR_INVALID;
