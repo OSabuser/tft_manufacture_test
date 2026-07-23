@@ -13,8 +13,12 @@
 #include <stddef.h>
 #include <string.h>
 
-void setUp(void) {}
-void tearDown(void) {}
+void setUp(void)
+{
+}
+void tearDown(void)
+{
+}
 
 /* T_PROTO — первый ребёнок корня (гарантия menu.h: items[MENU_ROOT_INDEX] —
  * корневой SUBMENU). T_PROTO_PARAM — следующий по порядку в дереве
@@ -46,7 +50,7 @@ static void test_protocol_section_built_from_nku_can_descriptor(void)
     TEST_ASSERT_EQUAL_UINT8(0U, p_items[T_PROTO_PARAM].min);
     TEST_ASSERT_EQUAL_UINT8(15U, p_items[T_PROTO_PARAM].max);
     TEST_ASSERT_EQUAL_UINT16((uint16_t) offsetof(settings_t, user.proto_slice[0]),
-                              p_items[T_PROTO_PARAM].value_offset);
+                             p_items[T_PROTO_PARAM].value_offset);
 }
 
 static void test_protocol_section_switches_to_demo_descriptor(void)
@@ -111,6 +115,33 @@ static void test_protocol_param_edits_correct_settings_field(void)
     TEST_ASSERT_EQUAL_UINT8(1U, s.user.proto_slice[0]);
 }
 
+/* Конец-в-конец: правка пункта, построенного из дескриптора, действительно
+ * попадает в то самое поле settings_t, которое назвал дескриптор протокола —
+ * не только структура данных совпадает, но и реальный edit через menu.c. */
+static void test_dummy_param_edits_correct_settings_field(void)
+{
+    settings_t s;
+    memset(&s, 0, sizeof(s));
+
+    sul_registry_set_active(SUL_PROTOCOL_NKU_CAN);
+    menu_tree_refresh_protocol_section(&s);
+
+    menu_ctx_t ctx;
+    menu_init(&ctx, menu_tree_items(), menu_tree_count(), &s);
+    menu_open(&ctx);
+    menu_next(&ctx); /* T_PROTO -> T_PROTO_PARAM */
+    menu_next(&ctx); /* T_PROTO_PARAM -> T_LOG */
+    menu_next(&ctx); /* T_LOG -> T_DUMMY */
+
+    menu_action(&ctx); /* инкремент значения 0 -> 1 */
+
+    TEST_ASSERT_EQUAL_UINT8(1U, s.user.dummy_option);
+
+    menu_action(&ctx); /* инкремент значения 1 -> 0 */
+
+    TEST_ASSERT_EQUAL_UINT8(0U, s.user.dummy_option);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -119,6 +150,7 @@ int main(void)
     RUN_TEST(test_protocol_section_switches_to_demo_descriptor);
     RUN_TEST(test_stale_value_clamped_on_protocol_switch);
     RUN_TEST(test_protocol_param_edits_correct_settings_field);
+    RUN_TEST(test_dummy_param_edits_correct_settings_field);
 
     return UNITY_END();
 }

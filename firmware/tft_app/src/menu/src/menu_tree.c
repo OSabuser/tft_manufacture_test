@@ -8,11 +8,14 @@
 /* Метки значений (ярус B/устройство). */
 static const char *const K_BOOL_LABELS[] = { "Выкл", "Вкл" };
 
+static const char *const K_DUMMY_LABELS[] = { "Гойда!", "Зрада!" };
 /* Верхняя граница на число протоколов в реестре — только размер буфера меток
  * (menu_tree_refresh_protocol_section), не ограничение самого реестра.
  * Сейчас 2 (НКУ-CAN, демо), с запасом под Фазу 8 (+ УИМ/SD7/УЭЛ/УКЛ — 6). */
 #define MENU_TREE_MAX_PROTOCOLS 8U
-static const char *s_proto_labels[MENU_TREE_MAX_PROTOCOLS] = { "НКУ-CAN" }; /* фолбэк до refresh() */
+static const char *g_s_proto_labels[MENU_TREE_MAX_PROTOCOLS] = {
+    "НКУ-CAN"
+}; /* фолбэк до refresh() */
 
 /* Индексы пунктов дерева. */
 enum
@@ -22,7 +25,9 @@ enum
     T_PROTO_PARAM, /* единственный параметр АКТИВНОГО протокола (§8) — популируется
                     * из sul_settings_desc_t, см. menu_tree_refresh_protocol_section() */
     T_LOG,
+    T_DUMMY,
     T_EXIT,
+
     T_COUNT,
 };
 
@@ -35,32 +40,39 @@ enum
  * протокола, не только к его параметрам. Значения ниже — safe-фолбэк на
  * случай, если refresh() почему-то не вызван (совпадает с тем, что было
  * до Фазы 3.3, когда протокол был всего один). */
-static menu_item_desc_t s_tree[T_COUNT] = {
+static menu_item_desc_t g_s_tree[T_COUNT] = {
     [T_ROOT]        = { .label       = "Настройки",
-                         .type        = MENU_SUBMENU,
-                         .parent      = MENU_ROOT_INDEX,
-                         .first_child = T_PROTO,
-                         .last_child  = T_EXIT },
+                        .type        = MENU_SUBMENU,
+                        .parent      = MENU_ROOT_INDEX,
+                        .first_child = T_PROTO,
+                        .last_child  = T_EXIT },
     [T_PROTO]       = { .label        = "Протокол",
-                         .type         = MENU_SELECT,
-                         .value_offset = offsetof(settings_t, device.protocol_id),
-                         .min          = 0U,
-                         .max          = 0U,
-                         .parent       = MENU_ROOT_INDEX,
-                         .options      = s_proto_labels },
+                        .type         = MENU_SELECT,
+                        .value_offset = offsetof(settings_t, device.protocol_id),
+                        .min          = 0U,
+                        .max          = 0U,
+                        .parent       = MENU_ROOT_INDEX,
+                        .options      = g_s_proto_labels },
     [T_PROTO_PARAM] = { .label        = "Адрес",
-                         .type         = MENU_BYTE,
-                         .value_offset = offsetof(settings_t, user.proto_slice[0]),
-                         .min          = 0U,
-                         .max          = 15U,
-                         .parent       = MENU_ROOT_INDEX },
+                        .type         = MENU_BYTE,
+                        .value_offset = offsetof(settings_t, user.proto_slice[0]),
+                        .min          = 0U,
+                        .max          = 15U,
+                        .parent       = MENU_ROOT_INDEX },
     [T_LOG]         = { .label        = "Логи",
-                         .type         = MENU_BOOL,
-                         .value_offset = offsetof(settings_t, device.log_enabled),
-                         .min          = 0U,
-                         .max          = 1U,
-                         .parent       = MENU_ROOT_INDEX,
-                         .options      = K_BOOL_LABELS },
+                        .type         = MENU_BOOL,
+                        .value_offset = offsetof(settings_t, device.log_enabled),
+                        .min          = 0U,
+                        .max          = 1U,
+                        .parent       = MENU_ROOT_INDEX,
+                        .options      = K_BOOL_LABELS },
+    [T_DUMMY]       = { .label        = "Общий?",
+                        .type         = MENU_BOOL,
+                        .value_offset = offsetof(settings_t, user.dummy_option),
+                        .min          = 0U,
+                        .max          = 1U,
+                        .parent       = MENU_ROOT_INDEX,
+                        .options      = K_DUMMY_LABELS },
     [T_EXIT]        = { .label = "Выход", .type = MENU_BACK, .parent = MENU_ROOT_INDEX },
 };
 
@@ -86,9 +98,9 @@ void menu_tree_refresh_protocol_section(settings_t *p_settings_rw)
     for (uint8_t i = 0U; i < VISIBLE; i++)
     {
         const sul_driver_t *p_drv = sul_registry_find(i);
-        s_proto_labels[i]         = (p_drv != NULL) ? p_drv->p_name : "?";
+        g_s_proto_labels[i]       = (p_drv != NULL) ? p_drv->p_name : "?";
     }
-    s_tree[T_PROTO].max = (uint8_t) (VISIBLE - 1U);
+    g_s_tree[T_PROTO].max = (uint8_t) (VISIBLE - 1U);
 
     /* Единственный параметр активного протокола (§8). Сейчас у каждого
      * зарегистрированного протокола ровно один (НКУ-CAN: адрес; демо:
@@ -101,19 +113,19 @@ void menu_tree_refresh_protocol_section(settings_t *p_settings_rw)
     {
         const sul_settings_entry_t *p_entry = &p_settings->p_entries[0];
 
-        s_tree[T_PROTO_PARAM].label        = p_entry->p_label;
-        s_tree[T_PROTO_PARAM].type         = menu_type_from_sul(p_entry->type);
-        s_tree[T_PROTO_PARAM].value_offset =
+        g_s_tree[T_PROTO_PARAM].label = p_entry->p_label;
+        g_s_tree[T_PROTO_PARAM].type  = menu_type_from_sul(p_entry->type);
+        g_s_tree[T_PROTO_PARAM].value_offset =
             (uint16_t) (offsetof(settings_t, user.proto_slice) + p_entry->slice_offset);
-        s_tree[T_PROTO_PARAM].min     = p_entry->min;
-        s_tree[T_PROTO_PARAM].max     = p_entry->max;
-        s_tree[T_PROTO_PARAM].options = p_entry->p_options;
+        g_s_tree[T_PROTO_PARAM].min     = p_entry->min;
+        g_s_tree[T_PROTO_PARAM].max     = p_entry->max;
+        g_s_tree[T_PROTO_PARAM].options = p_entry->p_options;
 
         /* Клампим ТЕКУЩЕЕ значение под новый диапазон — proto_slice[0] мог
          * остаться от другого протокола с более широким диапазоном (напр.
          * адрес НКУ-CAN 0..15 -> скорость демо 0..2); без этого рендер читал
          * бы options[value] за пределами массива меток нового протокола. */
-        uint8_t *p_val = (uint8_t *) p_settings_rw + s_tree[T_PROTO_PARAM].value_offset;
+        uint8_t *p_val = (uint8_t *) p_settings_rw + g_s_tree[T_PROTO_PARAM].value_offset;
         if (*p_val > p_entry->max)
         {
             *p_val = p_entry->max;
@@ -123,18 +135,18 @@ void menu_tree_refresh_protocol_section(settings_t *p_settings_rw)
     {
         /* Протокол без параметров — инертный дефолт (не встречается пока
          * ни у одного зарегистрированного протокола). */
-        s_tree[T_PROTO_PARAM].label        = "—";
-        s_tree[T_PROTO_PARAM].type         = MENU_BYTE;
-        s_tree[T_PROTO_PARAM].value_offset = offsetof(settings_t, user.proto_slice[0]);
-        s_tree[T_PROTO_PARAM].min          = 0U;
-        s_tree[T_PROTO_PARAM].max          = 0U;
-        s_tree[T_PROTO_PARAM].options      = NULL;
+        g_s_tree[T_PROTO_PARAM].label        = "—";
+        g_s_tree[T_PROTO_PARAM].type         = MENU_BYTE;
+        g_s_tree[T_PROTO_PARAM].value_offset = offsetof(settings_t, user.proto_slice[0]);
+        g_s_tree[T_PROTO_PARAM].min          = 0U;
+        g_s_tree[T_PROTO_PARAM].max          = 0U;
+        g_s_tree[T_PROTO_PARAM].options      = NULL;
     }
 }
 
 const menu_item_desc_t *menu_tree_items(void)
 {
-    return s_tree;
+    return g_s_tree;
 }
 
 uint8_t menu_tree_count(void)

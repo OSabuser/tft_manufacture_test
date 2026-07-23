@@ -27,6 +27,7 @@ static const settings_t K_DEFAULTS = {
             .music_volume_idx = 1U,
             .year_production  = 0U,  /* скрыть */
             .serial           = "",
+            .dummy_option     = 0U, // Моя опция
             .proto_slice      = {0}, /* НКУ: адрес 0 */
         },
 };
@@ -70,7 +71,8 @@ bool settings_deserialize(const settings_page_t *p_page, settings_t *p_out)
         return false;
     }
 
-    const uint32_t CRC = settings_crc32((const uint8_t *) p_page, sizeof(*p_page) - sizeof(uint32_t));
+    const uint32_t CRC =
+        settings_crc32((const uint8_t *) p_page, sizeof(*p_page) - sizeof(uint32_t));
     if (CRC != p_page->crc32)
     {
         return false;
