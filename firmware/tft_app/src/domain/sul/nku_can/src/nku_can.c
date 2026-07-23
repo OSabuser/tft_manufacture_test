@@ -17,6 +17,18 @@
 
 #define NKU_ADDRESS_MAX 15U /* адрес 0..15; group4 = addr<<4 */
 
+/* ── Удалённая установка адреса (REMOTE_ADDRES_SETUP.pdf, §3.5) ──────────────
+ * Маска проверяет биты [10:8] и [3:0] ID, игнорирует адресный нибл X [7:4] —
+ * так распознаём кадр НЕЗАВИСИМО от X (адрес станции управления, не наш). */
+#define REMOTE_ADDR_ID_MASK   0x70FU
+#define REMOTE_ANNOUNCE_ID    0x401U /* 0x4X1 — анонс адреса станции управления       */
+#define REMOTE_CMD_ID         0x50BU /* 0x5XB — несущая команды (тот же ID, что PACKET4_BASE:
+                                       * наш собственный 0x50B|group4 тоже сюда попадает —
+                                       * не конфликт, команда/PACKET4 распознаются независимо */
+#define REMOTE_CMD_WRITE_ADDR 0x2U   /* команда "2" в старшем нибле data[3] — записать адрес */
+#define REMOTE_CMD_DLC_MIN    4U     /* нужен минимум data[3] — короче реального PROTO_DLC,
+                                       * но 0x5XB с чужим X не проходит общий DLC-гейт ниже */
+
 #define ARROW_MASK    0x03U /* PACKET1 data[6][1:0] — стрелка                */
 #define MOVEMENT_MASK 0x0CU /* PACKET1 data[6][3:2] — начало движения        */
 #define ICON_MASK     0xF0U /* PACKET1 data[6][7:4] — код режима             */
@@ -62,6 +74,8 @@ void nku_can_init(nku_can_ctx_t *p_ctx)
     p_ctx->lading_instr  = false;
     p_ctx->current_level = 0U;
     p_ctx->nku_address = 0U; /* Фаза 3.1: caller задаёт из настроек через set_address() */
+    p_ctx->remote_addr_candidate     = NKU_REMOTE_ADDR_NONE;
+    p_ctx->pending_remote_write_addr = NKU_REMOTE_ADDR_NONE;
 }
 
 void nku_can_set_address(nku_can_ctx_t *p_ctx, uint8_t nku_address)
@@ -233,9 +247,47 @@ static bool decode_packet5(nku_can_ctx_t *p_ctx, const uint8_t *p_data)
     return true;
 }
 
+/**
+ * @brief Удалённая установка адреса (REMOTE_ADDRES_SETUP.pdf) — независимая
+ *        от nku_address side-проверка на СЫРОМ ID/data кадра, не влияет на
+ *        классификацию PACKET1..5 ниже (один и тот же 0x5XB может быть и
+ *        нашим PACKET4, и несущей команды одновременно — не конфликт).
+ *
+ * Транзитная (не латч): p_ctx->pending_remote_write_addr сбрасывается перед
+ * каждым вызовом в nku_can_decode() и выставляется заново только если ИМЕННО
+ * этот кадр — валидная команда записи.
+ */
+static void check_remote_address(nku_can_ctx_t *p_ctx, const sul_frame_t *p_frame)
+{
+    const uint32_t ID = p_frame->id;
+
+    if ((ID & REMOTE_ADDR_ID_MASK) == REMOTE_ANNOUNCE_ID)
+    {
+        /* 0x4X1: X (биты [7:4]) — адрес станции управления. В ОЗУ, не во
+         * флеш (PDF п.1) — запись делает app-слой по команде ниже. */
+        p_ctx->remote_addr_candidate = (uint8_t) ((ID >> 4U) & 0x0FU);
+    }
+    else if (((ID & REMOTE_ADDR_ID_MASK) == REMOTE_CMD_ID) && (p_frame->len >= REMOTE_CMD_DLC_MIN))
+    {
+        /* 0x5XB: команда в старшем нибле data[3]. "2" запускает запись, но
+         * только если X ЭТОГО кадра совпадает с последним объявленным адресом
+         * (согласовано с пользователем — строже буквы PDF п.2, которая
+         * номинально допускает любой X у командного кадра). */
+        const uint8_t CMD   = (uint8_t) ((p_frame->p_data[3] >> 4U) & 0x0FU);
+        const uint8_t CMD_X = (uint8_t) ((ID >> 4U) & 0x0FU);
+        if ((CMD == REMOTE_CMD_WRITE_ADDR) && (CMD_X == p_ctx->remote_addr_candidate))
+        {
+            p_ctx->pending_remote_write_addr = p_ctx->remote_addr_candidate;
+        }
+    }
+}
+
 sul_status_t nku_can_decode(void *p_ctx, const sul_frame_t *p_frame, sul_result_t *p_out)
 {
     nku_can_ctx_t *p_state = (nku_can_ctx_t *) p_ctx;
+
+    p_state->pending_remote_write_addr = NKU_REMOTE_ADDR_NONE; /* транзитно, см. докстрок выше */
+    check_remote_address(p_state, p_frame);
 
     /* Сдвиг ID по адресу станции (id пакетов адресно-зависим). */
     const uint32_t G4 = (uint32_t) p_state->nku_address << 4U;
@@ -287,4 +339,18 @@ sul_status_t nku_can_decode(void *p_ctx, const sul_frame_t *p_frame, sul_result_
     recompute_multi_source(p_state);
     *p_out = p_state->state;
     return SUL_STATUS_OK;
+}
+
+bool nku_can_take_pending_write(void *p_ctx, sul_slice_write_t *p_out)
+{
+    const nku_can_ctx_t *p_state = (const nku_can_ctx_t *) p_ctx;
+
+    if (p_state->pending_remote_write_addr == NKU_REMOTE_ADDR_NONE)
+    {
+        return false;
+    }
+
+    p_out->slice_offset = 0U; /* proto_slice[0] = адрес, см. K_NKU_CAN_SETTINGS в sul_registry.c */
+    p_out->value         = p_state->pending_remote_write_addr;
+    return true;
 }

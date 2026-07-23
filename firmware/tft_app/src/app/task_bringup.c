@@ -22,9 +22,11 @@
 #include "bsp/qspi_flash.h"
 #include "bsp/sdram.h"
 #include "bsp/uart_host.h"
+#include "domain/sul.h"
 #include "domain/sul/transport/can.h"
 #include "flash_map.h"
 #include "log/log.h"
+#include "menu/menu_tree.h"
 #include "port/log_uart.h"
 #include "services/gfx.h"
 #include "services/settings_store.h"
@@ -155,6 +157,16 @@ void bringup_task(void *p_arg)
     {
         settings_store_init_defaults();
     }
+
+    /* Активный протокол + меню-секция "Протокол" — из загруженных/дефолтных
+     * настроек (§8), до первого возможного открытия меню в menu_task(). */
+    sul_registry_set_active(settings_store_get()->device.protocol_id);
+    menu_tree_refresh_protocol_section(settings_store_get_mutable());
+
+    /* Рантайм-тумблер логов (§3.6) — из настроек; ДО этой строки действует
+     * дефолт log.c (включено), чтобы сообщения выше (qspi/settings) не
+     * терялись молча, пока реальное значение ещё не загружено. */
+    log_set_enabled(settings_store_get()->device.log_enabled != 0U);
 
     /* «Дошёл до устойчивого состояния» — сбрасывает счётчик попыток загрузки
      * (recovery загрузчика). SRC GPR, без flash. Безусловно, до потенциально

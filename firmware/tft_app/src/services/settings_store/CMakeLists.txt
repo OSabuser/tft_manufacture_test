@@ -14,4 +14,5 @@ target_include_directories(
 target_link_libraries(
   tft_app_settings_store
   PUBLIC bsp_qspi_flash   # bsp/qspi_flash.h (API + геометрия), bsp/status.h транзитивно
-         tft_app_partition) # смещения регионов (§10)
+         tft_app_partition # смещения регионов (§10)
+         freertos_kernel)  # мьютекс save() — sul_rx_task (§3.5) и menu_task пишут конкурентно

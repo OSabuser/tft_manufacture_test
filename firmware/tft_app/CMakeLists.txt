@@ -63,6 +63,7 @@ add_executable(
   src/app/task_sul_rx.c   # приём CAN → decode → controller (WDOG/heartbeat безусловно, CAN-работа под !g_menu_active)
   src/app/task_menu.c     # модель меню: кнопки/hold-to-enter/nav/edit/save — НЕ рисует
   src/app/task_render.c   # презентация: единственный вызывающий gfx_present(), event-driven
+  src/app/dispatcher.c    # диспетчерский вход opto IN1/IN2 (§3.4) — не задача, обвязка bsp_opto
   ${BSP_GENERATED}/clock_config.c # BOARD_BootClockRUN (зовётся board_hw_init)
   ${BSP_STARTUP_FILE}
   ${BSP_SYSCALLS_FILE}
@@ -117,6 +118,7 @@ target_link_libraries(
   PRIVATE bsp_board
           bsp_led
           bsp_button
+          bsp_opto # диспетчерский вход IN1/IN2 (§3.4), app/dispatcher.c
           bsp_wdog
           bsp_boot_state
           bsp_qspi_flash
@@ -128,6 +130,8 @@ target_link_libraries(
           # Фаза 1: walking skeleton (CAN → декодер → контроллер → fallback-рендер)
           tft_app_sul
           tft_app_sul_transport_can
+          # Фаза 3.3: демо-протокол (транспорт — синтетический, без bsp)
+          tft_app_sul_transport_demo
           tft_app_controller
           tft_app_gfx
           tft_app_ui_fallback

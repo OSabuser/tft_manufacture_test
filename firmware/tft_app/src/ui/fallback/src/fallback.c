@@ -58,9 +58,36 @@ static void render_normal(const sul_result_t *p_result)
     }
 }
 
-static void render(sul_mode_t mode, const sul_result_t *p_result)
+/**
+ * @brief Метка диспетчерского входа (§3.4) — короткая asset-free, тем же
+ *        путём, что и метки режимов СУЛ (mode_label() выше). Слова временные
+ *        (пользователь позже поправит формулировки для всех режимов разом).
+ */
+static const char *dispatcher_label(dispatcher_indication_t dispatcher)
+{
+    switch (dispatcher)
+    {
+        case DISPATCHER_INDICATION_ANSWER: return "ОТВЕТ";
+        case DISPATCHER_INDICATION_CALL:   return "ВЫЗОВ";
+        case DISPATCHER_INDICATION_NONE:
+        default:                            return NULL;
+    }
+}
+
+static void render(sul_mode_t mode, const sul_result_t *p_result, dispatcher_indication_t dispatcher)
 {
     gfx_clear();
+
+    /* Диспетчерский вход — локальный (ARCH §8 п.3, не данные СУЛ), приоритет
+     * ВЫШЕ любого mode: проверяем ПЕРВЫМ, безусловный return — так же
+     * работает без связи со станцией (mode/p_result мог быть sul_default_
+     * state() после таймаута, сюда это не попадёт вообще). */
+    const char *dispatcher_text = dispatcher_label(dispatcher);
+    if (dispatcher_text != NULL)
+    {
+        draw_centered(&SystemFont, dispatcher_text, MODE_Y);
+        return;
+    }
 
     const char *label = mode_label(mode);
     if (label == NULL)
@@ -82,20 +109,24 @@ static void render(sul_mode_t mode, const sul_result_t *p_result)
     }
 }
 
-void ui_fallback_render_initial(const sul_result_t *p_result)
+void ui_fallback_render_initial(const sul_result_t *p_result, dispatcher_indication_t dispatcher)
 {
-    render(sul_resolve_mode(p_result), p_result);
+    render(sul_resolve_mode(p_result), p_result, dispatcher);
 }
 
-void ui_fallback_render(const indication_task_t *p_task, const sul_result_t *p_result)
+void ui_fallback_render(const indication_task_t *p_task, const sul_result_t *p_result,
+                        dispatcher_indication_t dispatcher)
 {
     /* Перерисовываем на изменение того, что fallback реально показывает:
      * позиция, стрелка, режим (+ отсчёт погрузки идёт вместе с mode/pos).
      * next-этаж в safe-mode не рисуется (богатый layout — Фаза 5), поэтому
-     * на next_pending не будим. */
+     * на next_pending не будим. Смена dispatcher сюда не входит — она не
+     * приходит с этим diff'ом вообще (свой путь пробуждения render_task,
+     * см. task_render.c) — только пока mode/pos/direction ТОЖЕ изменились
+     * в этом же кадре, dispatcher едет попутно через параметр. */
     if (!p_task->pos_pending && !p_task->direction_pending && !p_task->mode_pending)
     {
         return;
     }
-    render(p_task->mode, p_result);
+    render(p_task->mode, p_result, dispatcher);
 }

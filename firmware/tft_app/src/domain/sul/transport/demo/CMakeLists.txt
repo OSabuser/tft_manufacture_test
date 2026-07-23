@@ -1,0 +1,5 @@
+add_library(tft_app_sul_transport_demo STATIC src/demo_transport.c)
+
+target_include_directories(tft_app_sul_transport_demo PUBLIC include/)
+
+target_link_libraries(tft_app_sul_transport_demo PUBLIC tft_app_sul_headers bsp_status)

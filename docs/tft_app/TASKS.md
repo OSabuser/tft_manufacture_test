@@ -21,7 +21,7 @@
 | `menu_task` | task_menu.c | `+3` | модель меню: кнопки, вход/навигация/правка/сохранение. **НЕ рисует** | `settings_store_save()` (flash) на выходе из меню |
 | `render_task` | task_render.c | `+2` | **единственный** владелец дисплея и вызывающий `gfx_present*()` | PXP busy-wait + ожидание FRAME_DONE |
 | `sul_rx_task` | task_sul_rx.c | `+1` (низший) | приём CAN → decode → controller; WDOG/heartbeat | busy-spin в `bsp_can_receive()` до 100 мс без трафика |
-| — демон таймеров | (FreeRTOS) | `configTIMER_TASK_PRIORITY` (высший в системе) | `input_poll_cb` каждые 5 мс: `bsp_button_poll()` (debounce); Фаза 3.4 — сюда же opto | нет (колбэк короткий) |
+| — демон таймеров | (FreeRTOS) | `configTIMER_TASK_PRIORITY` (высший в системе) | `input_poll_cb` каждые 5 мс: `bsp_button_poll()` (debounce) → `bsp_opto_process()` (debounce IN1/IN2) → `dispatcher_poll()` (§3.4, `app/dispatcher.c` — безусловный опрос `bsp_opto_read()`, НЕ колбэк, см. PLAN.md про баг реактивной версии; пишет `g_dispatcher_indication` и будит `render_task` прямо отсюда при изменении) | нет (все три коротких) |
 
 `main()` создаёт только очередь, софт-таймер ввода и `bringup_task` — остальное wiring делает
 сам `bringup_task`.
@@ -58,32 +58,65 @@ CPU, пока не создаст всех троих.
 
 ## 3. Взаимодействие (MPSC)
 
-Два продюсера, один консюмер. **Данные** и **сигнал пробуждения** разделены:
+Три продюсера, один консюмер (третий — dispatcher opto, §3.4). **Данные** и **сигнал
+пробуждения** разделены:
 
 ```mermaid
 flowchart LR
-    TMR["демон таймеров<br/>input_poll_cb 5 мс<br/>bsp_button_poll (debounce)"]
+    TMR["демон таймеров<br/>input_poll_cb 5 мс<br/>bsp_button_poll + bsp_opto_process"]
     MT["menu_task (+3)<br/>модель меню g_menu"]
     RX["sul_rx_task (+1)<br/>CAN→decode→controller<br/>WDOG безусловно"]
     RT["render_task (+2)<br/>gfx_present*()"]
+    DSP["dispatcher_poll()<br/>(app/dispatcher.c)<br/>g_dispatcher_indication"]
 
     TMR -."залатанные события кнопок".-> MT
+    TMR -."безусловный опрос, каждый тик".-> DSP
     MT -->|"xTaskNotifyGive<br/>(любое изменение)"| RT
     RX -->|"xQueueOverwrite (render_msg_t)<br/>+ xTaskNotifyGive"| RT
+    DSP -->|"xTaskNotifyGive<br/>(изменение вызов/ответ)"| RT
     MT -."g_menu_active (мягкая пауза)".-> RX
 ```
 
 - **Очередь `g_render_queue`** (глубина 1, `xQueueOverwrite`) — только плечо
   `sul_rx→render`, несёт `render_msg_t` (diff + результат). Семантика «важно только
-  последнее состояние»: рендер не обязан успевать за каждым кадром CAN.
+  последнее состояние»: рендер не обязан успевать за каждым кадром CAN. У dispatcher СВОЕЙ
+  очереди нет — состояние (`g_dispatcher_indication`) не история, читается напрямую (как
+  `g_menu`), очередь тут не нужна (сравнение с прошлым значением — внутри `render_task`).
 - **`ulTaskNotifyTake(pdTRUE, portMAX_DELAY)`** в `render_task` — event-driven, без
-  поллинга; несколько notify от обоих продюсеров схлопываются в одно пробуждение (та же
-  семантика «важно только последнее»).
+  поллинга; несколько notify от ЛЮБОГО из трёх продюсеров схлопываются в одно пробуждение
+  (та же семантика «важно только последнее»). `render_task` не различает, КТО его разбудил —
+  каждую итерацию просто проверяет все три источника состояния заново.
 - **Приоритет «меню важнее индикации» не кодируется в уведомлении**: проснувшись,
   `render_task` первым делом проверяет `menu_is_open(&g_menu)` — если меню открыто,
-  очередь индикации даже не читается.
+  очередь индикации и dispatcher даже не читаются (см. §3.1 ниже — dispatcher копится, не
+  теряется).
 - **Модель меню `g_menu`** мутирует только `menu_task`; `render_task` читает её для
   отрисовки после notify (happens-before через нотификацию — как у очереди).
+- **`g_dispatcher_indication`** мутирует только `dispatcher_poll()` (`app/dispatcher.c`),
+  вызываемый БЕЗУСЛОВНО каждый тик из контекста демона таймеров — приоритет ВЫШЕ
+  `menu_task` (не реактивно на колбэк bsp_opto — см. PLAN.md §3.4 про баг первой,
+  реактивной версии). `render_task` снимает копию в
+  локальную переменную ОДИН раз за итерацию, а не перечитывает несколько раз (иначе
+  возможна гонка того же класса, что чинили для курсора меню при быстрой навигации, см.
+  PLAN.md, Фаза 3.2.4).
+
+### 3.1 Диспетчерский вход и пауза меню (§3.4)
+
+Приоритет диспетчерского сигнала («вызов»/«ответ») — **высший из всех режимов индикации**,
+безусловно перекрывает и обычную позицию, и любой режим СУЛ; работает независимо от связи со
+станцией (ARCH §8 п.3 — это «локальный вход», не данные СУЛ). Тем не менее, пока меню открыто,
+`render_task` НЕ применяет его к экрану — как в `OLD_PROJECT_TFT8_UKL` (`tft_refresh_task`
+целиком пропускает кадр, пока `in_menu_screen`), тот же принцип, что уже даёт мягкая пауза
+`sul_rx_task`:
+
+- **Debounce и опрос не паузятся** — `bsp_opto_process()` и `dispatcher_poll()` в
+  `input_poll_cb` работают независимо от `g_menu_active`, дёшево (как и button).
+- **Применение к экрану — только на закрытии меню.** Пока меню открыто, оконный композит
+  перерисовывает ТОЛЬКО окно 480×272 (Фаза 3.2.4) — полный кадр индикации вне окна заморожен;
+  применить смену диспетчера немедленно значило бы либо сломать оконную оптимизацию (полный
+  редрав ради маленькой иконки), либо рисовать поверх окна меню. `g_dispatcher_indication`
+  тем временем просто держит ПОСЛЕДНЕЕ значение — ничего не теряется, отражается сразу по
+  закрытии меню тем же путём, что уже восстанавливает индикацию (`ui_fallback_render_initial()`).
 
 ### Мягкая пауза `sul_rx_task` на время меню
 
@@ -124,6 +157,7 @@ flowchart LR
 | `g_display_ready` | bringup | render, sul_rx | `volatile bool`, одно-writer |
 | `g_menu_active` | menu | sul_rx | `volatile bool`, одно-writer |
 | `g_menu` | menu | render | notify (happens-before) |
+| `g_dispatcher_indication` | dispatcher_poll() (демон таймеров, каждый тик) | render | `volatile enum`, один writer; render снимает копию один раз за итерацию (см. §3) |
 | лог-буфер `utils/log` | все задачи | — | мьютекс `port/log/src/log_mutex.c` (FreeRTOS strong-override; включён в сборку `app` — до Фазы 3.2.4 был `#if 0`, гонка) |
 
 ---

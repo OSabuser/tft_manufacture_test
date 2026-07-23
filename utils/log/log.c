@@ -14,6 +14,7 @@
 #include "log.h"
 
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -37,6 +38,10 @@
 
 static log_write_cb_t g_s_write_cb = NULL;
 static void *g_s_p_ctx             = NULL;
+
+/* true по умолчанию — до первого log_set_enabled() (обычно из настроек,
+ * §3.6) ранние сообщения bringup не должны теряться молча. */
+static bool g_s_log_enabled = true;
 
 /* -------------------------------------------------------------------------- */
 /* Weak-хуки мьютекса — NOP для bare-metal                                    */
@@ -89,10 +94,20 @@ void log_init(log_write_cb_t p_write_cb, void *p_ctx)
     g_s_p_ctx    = p_ctx;
 }
 
+void log_set_enabled(bool enabled)
+{
+    g_s_log_enabled = enabled;
+}
+
+bool log_is_enabled(void)
+{
+    return g_s_log_enabled;
+}
+
 void log_write(int level, const char *p_tag, const char *p_fmt, // NOLINT(readability-function-size)
                ...)
 {
-    if (g_s_write_cb == NULL)
+    if (!g_s_log_enabled || (g_s_write_cb == NULL))
     {
         return;
     }

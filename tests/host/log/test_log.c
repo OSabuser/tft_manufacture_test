@@ -97,6 +97,7 @@ void setUp(void)
 
     /* Каждый тест начинает с чистого состояния логгера */
     log_init(capture_cb, NULL);
+    log_set_enabled(true); /* тумблер §3.6 — не сбрасывается log_init(), сбросить явно */
 }
 
 void tearDown(void)
@@ -351,6 +352,52 @@ void test_ctx_pointer_passed_to_callback(void)
     TEST_ASSERT_EQUAL_PTR(&dummy, g_s_capture.p_ctx);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 7. Runtime toggle — рантайм-тумблер поверх компайл-тайм LOG_LEVEL (§3.6)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void test_enabled_by_default(void)
+{
+    LOG_I("TAG", "message");
+    TEST_ASSERT_EQUAL_INT(1, g_s_capture.call_count);
+}
+
+void test_is_enabled_reflects_state(void)
+{
+    TEST_ASSERT_TRUE(log_is_enabled());
+    log_set_enabled(false);
+    TEST_ASSERT_FALSE(log_is_enabled());
+    log_set_enabled(true);
+    TEST_ASSERT_TRUE(log_is_enabled());
+}
+
+void test_disabled_suppresses_output(void)
+{
+    log_set_enabled(false);
+    LOG_I("TAG", "message");
+    TEST_ASSERT_EQUAL_INT(0, g_s_capture.call_count);
+}
+
+void test_reenabled_resumes_output(void)
+{
+    log_set_enabled(false);
+    LOG_I("TAG", "swallowed");
+    log_set_enabled(true);
+    LOG_I("TAG", "visible");
+
+    TEST_ASSERT_EQUAL_INT(1, g_s_capture.call_count);
+}
+
+void test_disabled_does_not_take_mutex(void)
+{
+    log_set_enabled(false);
+    LOG_I("TAG", "message");
+
+    /* Гейт — раньше форматирования/мьютекса (дёшево при выключенном тумблере). */
+    TEST_ASSERT_EQUAL_INT(0, log_mutex_lock_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, log_mutex_unlock_fake.call_count);
+}
+
 /* ── Runner ──────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -391,6 +438,13 @@ int main(void)
     /* Context */
     RUN_TEST(test_ctx_null_passed_to_callback);
     RUN_TEST(test_ctx_pointer_passed_to_callback);
+
+    /* Runtime toggle */
+    RUN_TEST(test_enabled_by_default);
+    RUN_TEST(test_is_enabled_reflects_state);
+    RUN_TEST(test_disabled_suppresses_output);
+    RUN_TEST(test_reenabled_resumes_output);
+    RUN_TEST(test_disabled_does_not_take_mutex);
 
     return UNITY_END();
 }

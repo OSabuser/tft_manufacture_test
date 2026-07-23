@@ -22,6 +22,8 @@
 
 #include "FreeRTOS.h"
 #include "bsp/button.h"
+#include "bsp/opto.h"
+#include "domain/sul.h"
 #include "log/log.h"
 #include "menu/menu.h"
 #include "menu/menu_tree.h"
@@ -44,7 +46,8 @@ void input_poll_cb(TimerHandle_t x_timer)
 {
     (void) x_timer;
     bsp_button_poll();
-    /* Фаза 3.4: bsp_opto_process(); (диспетчерские вход/ответ) */
+    bsp_opto_process();  /* debounce IN1/IN2 (§3.4) — короткая, как button */
+    dispatcher_poll();   /* непрерывный опрос bsp_opto_read(), не колбэк — см. dispatcher.c */
 }
 
 void menu_task(void *p_arg)
@@ -69,6 +72,18 @@ void menu_task(void *p_arg)
             if (menu_is_open(&g_menu))
             {
                 menu_action(&g_menu);
+
+                /* Протокол мог смениться этим действием (T_PROTO) — дёшево
+                 * переприменить оба (§8), тот же паттерн, что адрес/CAN-
+                 * фильтры в sul_rx_task. Секция T_PROTO_PARAM должна отражать
+                 * НОВЫЙ активный протокол уже в этом сеансе меню, не только
+                 * после save(). */
+                sul_registry_set_active(g_menu.settings->device.protocol_id);
+                menu_tree_refresh_protocol_section(g_menu.settings);
+
+                /* Тумблер логов (§3.6) — тот же паттерн: эффект сразу в этом
+                 * сеансе меню, не только после save(). */
+                log_set_enabled(g_menu.settings->device.log_enabled != 0U);
 
                 /* Обновить ДО settings_store_save() (флеш-запись, не
                  * мгновенная) — иначе sul_rx_task ещё несколько мс видел бы

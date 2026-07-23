@@ -379,3 +379,57 @@ add_host_test(
   ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/menu/include
   ${TFT_APP_SETTINGS_DIR}/include
   ${PROJECT_SOURCE_DIR}/bsp/common/include)
+
+# tft_app — sul_registry (Фаза 3.3: активный протокол из настроек, §8)
+add_host_test(
+  NAME
+  test_sul_registry
+  SOURCES
+  tft_app_sul_registry/test_sul_registry.c
+  ${TFT_APP_DOMAIN_DIR}/sul/src/sul_registry.c
+  ${TFT_APP_DOMAIN_DIR}/sul/nku_can/src/nku_can.c
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo.c
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo_route.c
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
+  INCLUDES
+  ${TFT_APP_DOMAIN_DIR}/sul/include
+  ${TFT_APP_DOMAIN_DIR}/sul/nku_can/include
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/include
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/include)
+
+# tft_app — menu_tree (Фаза 3.3: секция "Протокол" строится из
+# sul_settings_desc_t активного драйвера, не хардкодом, §8)
+add_host_test(
+  NAME
+  test_tft_app_menu_tree
+  SOURCES
+  tft_app_menu/test_menu_tree.c
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/menu/src/menu_tree.c
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/menu/src/menu.c
+  ${TFT_APP_DOMAIN_DIR}/sul/src/sul_registry.c
+  ${TFT_APP_DOMAIN_DIR}/sul/nku_can/src/nku_can.c
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo.c
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo_route.c
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/menu/include
+  ${TFT_APP_SETTINGS_DIR}/include
+  ${PROJECT_SOURCE_DIR}/bsp/common/include
+  ${TFT_APP_DOMAIN_DIR}/sul/include
+  ${TFT_APP_DOMAIN_DIR}/sul/nku_can/include
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/include
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/include)
+
+# tft_app — sul_demo (Фаза 3.3: чистый декодер демо-протокола, §8)
+add_host_test(
+  NAME
+  test_sul_demo
+  SOURCES
+  tft_app_sul_demo/test_sul_demo.c
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo.c
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo_route.c
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
+  INCLUDES
+  ${TFT_APP_DOMAIN_DIR}/sul/demo/include
+  ${TFT_APP_DOMAIN_DIR}/sul/include
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/include)

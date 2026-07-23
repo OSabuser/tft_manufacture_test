@@ -86,6 +86,29 @@ static sul_frame_t make_packet5(uint8_t next_left, uint8_t next_right, uint8_t d
     return (sul_frame_t){ .id = PACKET5_ID, .bus = 0, .p_data = s_data, .len = 8U };
 }
 
+/* 0x4X1 — анонс адреса станции управления (X = addr_x, биты [7:4] ID). */
+static sul_frame_t make_remote_announce(uint8_t addr_x)
+{
+    static uint8_t s_data[8];
+    memset(s_data, 0, sizeof(s_data));
+    return (sul_frame_t){ .id = 0x401U | ((uint32_t) addr_x << 4U),
+                          .bus  = 0,
+                          .p_data = s_data,
+                          .len  = 8U };
+}
+
+/* 0x5XB — несущая команды; cmd в старшем нибле data[3], X = addr_x. */
+static sul_frame_t make_remote_cmd(uint8_t addr_x, uint8_t cmd, uint8_t len)
+{
+    static uint8_t s_data[8];
+    memset(s_data, 0, sizeof(s_data));
+    s_data[3] = (uint8_t) (cmd << 4U);
+    return (sul_frame_t){ .id = 0x50BU | ((uint32_t) addr_x << 4U),
+                          .bus  = 0,
+                          .p_data = s_data,
+                          .len  = len };
+}
+
 /* ── PACKET1 — направление ───────────────────────────────────────────────── */
 
 static void test_packet1_none(void)
@@ -587,6 +610,157 @@ static void test_address_clamped_to_max(void)
     TEST_ASSERT_EQUAL(SUL_DIR_DOWN, out.direction);
 }
 
+/* ── Удалённая установка адреса (REMOTE_ADDRES_SETUP.pdf, §3.5) ─────────────
+ * Кадры принадлежат чужому/произвольному X — вне классификации PACKET1..5
+ * этой станции, поэтому decode() почти всегда возвращает SUL_STATUS_IGNORED
+ * (кроме теста на пересечение с PACKET4 ниже) — проверяем ТОЛЬКО побочный
+ * эффект на ctx, а не *p_out. */
+
+static void test_remote_announce_updates_candidate_and_is_ignored(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+    const sul_frame_t frame = make_remote_announce(5U);
+
+    TEST_ASSERT_EQUAL(SUL_STATUS_IGNORED, nku_can_decode(&ctx, &frame, &out));
+    TEST_ASSERT_EQUAL_UINT8(5U, ctx.remote_addr_candidate);
+    TEST_ASSERT_EQUAL_UINT8(NKU_REMOTE_ADDR_NONE, ctx.pending_remote_write_addr);
+}
+
+static void test_remote_cmd_write_triggers_pending_when_x_matches(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+
+    const sul_frame_t announce = make_remote_announce(5U);
+    (void) nku_can_decode(&ctx, &announce, &out);
+
+    const sul_frame_t cmd = make_remote_cmd(5U, 0x2U, 8U);
+    (void) nku_can_decode(&ctx, &cmd, &out);
+
+    TEST_ASSERT_EQUAL_UINT8(5U, ctx.pending_remote_write_addr);
+}
+
+static void test_remote_cmd_ignored_when_x_mismatches_announce(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+
+    const sul_frame_t announce = make_remote_announce(5U);
+    (void) nku_can_decode(&ctx, &announce, &out);
+
+    /* Согласовано с пользователем: строже буквы PDF (которая номинально
+     * допускает любой X у командного кадра) — X должен совпасть. */
+    const sul_frame_t cmd = make_remote_cmd(7U, 0x2U, 8U);
+    (void) nku_can_decode(&ctx, &cmd, &out);
+
+    TEST_ASSERT_EQUAL_UINT8(NKU_REMOTE_ADDR_NONE, ctx.pending_remote_write_addr);
+}
+
+static void test_remote_cmd_ignored_when_command_is_not_write(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+
+    const sul_frame_t announce = make_remote_announce(5U);
+    (void) nku_can_decode(&ctx, &announce, &out);
+
+    const sul_frame_t cmd = make_remote_cmd(5U, 0x0U, 8U); /* "0" = нет команды (PDF п.5) */
+    (void) nku_can_decode(&ctx, &cmd, &out);
+
+    TEST_ASSERT_EQUAL_UINT8(NKU_REMOTE_ADDR_NONE, ctx.pending_remote_write_addr);
+}
+
+static void test_remote_pending_is_transient_not_latched(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+
+    const sul_frame_t announce = make_remote_announce(5U);
+    (void) nku_can_decode(&ctx, &announce, &out);
+    const sul_frame_t cmd = make_remote_cmd(5U, 0x2U, 8U);
+    (void) nku_can_decode(&ctx, &cmd, &out);
+    TEST_ASSERT_EQUAL_UINT8(5U, ctx.pending_remote_write_addr); /* сработало */
+
+    /* Следующий кадр — обычный PACKET1, к удалённой адресации не относится:
+     * pending не должен остаться залипшим с прошлого вызова (app-слой читает
+     * его СРАЗУ после decode(), значение имеет смысл только для ЭТОГО кадра). */
+    const sul_frame_t normal = make_packet1(0U);
+    (void) nku_can_decode(&ctx, &normal, &out);
+    TEST_ASSERT_EQUAL_UINT8(NKU_REMOTE_ADDR_NONE, ctx.pending_remote_write_addr);
+}
+
+static void test_remote_short_cmd_frame_does_not_crash_or_trigger(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+
+    const sul_frame_t announce = make_remote_announce(5U);
+    (void) nku_can_decode(&ctx, &announce, &out);
+
+    /* len < REMOTE_CMD_DLC_MIN (4) — data[3] недоступен, не должно ни упасть,
+     * ни ложно сработать (это НЕ проверка общего PROTO_DLC-гейта, тот на
+     * произвольный X 0x5XB не распространяется — своя защита). */
+    const sul_frame_t short_cmd = make_remote_cmd(5U, 0x2U, 2U);
+    (void) nku_can_decode(&ctx, &short_cmd, &out);
+
+    TEST_ASSERT_EQUAL_UINT8(NKU_REMOTE_ADDR_NONE, ctx.pending_remote_write_addr);
+}
+
+/* Кадр 0x50B|G4 при адресе станции 0 — ОДНОВРЕМЕННО наш PACKET4 (X=0) И
+ * кандидат на "несущую команды" (X тоже 0). Обе классификации должны
+ * отработать независимо, без взаимной порчи. */
+static void test_remote_check_does_not_interfere_with_own_packet4(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+
+    const sul_frame_t announce = make_remote_announce(0U); /* X=0 — совпадёт с адресом станции ниже */
+    (void) nku_can_decode(&ctx, &announce, &out);
+
+    const sul_frame_t p4 = make_packet4(false, true); /* seismic=true, cmd-нибл data[3] остаётся 0 */
+    const sul_status_t RC = nku_can_decode(&ctx, &p4, &out);
+
+    TEST_ASSERT_EQUAL(SUL_STATUS_OK, RC);
+    TEST_ASSERT_TRUE(out.seismic); /* PACKET4-классификация не задета */
+    TEST_ASSERT_EQUAL_UINT8(NKU_REMOTE_ADDR_NONE, ctx.pending_remote_write_addr); /* cmd=0, не "2" */
+}
+
+/* ── nku_can_take_pending_write() — generic-канал для task_sul_rx.c ────────── */
+
+static void test_take_pending_write_false_when_none(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_slice_write_t write;
+
+    TEST_ASSERT_FALSE(nku_can_take_pending_write(&ctx, &write));
+}
+
+static void test_take_pending_write_true_and_fills_slice_offset_zero(void)
+{
+    nku_can_ctx_t ctx;
+    nku_can_init(&ctx);
+    sul_result_t out;
+
+    const sul_frame_t announce = make_remote_announce(9U);
+    (void) nku_can_decode(&ctx, &announce, &out);
+    const sul_frame_t cmd = make_remote_cmd(9U, 0x2U, 8U);
+    (void) nku_can_decode(&ctx, &cmd, &out);
+
+    sul_slice_write_t write;
+    TEST_ASSERT_TRUE(nku_can_take_pending_write(&ctx, &write));
+    TEST_ASSERT_EQUAL_UINT8(0U, write.slice_offset); /* proto_slice[0] = адрес */
+    TEST_ASSERT_EQUAL_UINT8(9U, write.value);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -635,6 +809,17 @@ int main(void)
 
     RUN_TEST(test_address_shifts_packet_ids);
     RUN_TEST(test_address_clamped_to_max);
+
+    RUN_TEST(test_remote_announce_updates_candidate_and_is_ignored);
+    RUN_TEST(test_remote_cmd_write_triggers_pending_when_x_matches);
+    RUN_TEST(test_remote_cmd_ignored_when_x_mismatches_announce);
+    RUN_TEST(test_remote_cmd_ignored_when_command_is_not_write);
+    RUN_TEST(test_remote_pending_is_transient_not_latched);
+    RUN_TEST(test_remote_short_cmd_frame_does_not_crash_or_trigger);
+    RUN_TEST(test_remote_check_does_not_interfere_with_own_packet4);
+
+    RUN_TEST(test_take_pending_write_false_when_none);
+    RUN_TEST(test_take_pending_write_true_and_fills_slice_offset_zero);
 
     return UNITY_END();
 }

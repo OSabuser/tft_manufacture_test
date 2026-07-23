@@ -31,12 +31,14 @@ volatile bool g_display_ready     = false;
 volatile bool g_menu_active       = false;
 QueueHandle_t g_render_queue      = NULL;
 TaskHandle_t g_render_task_handle = NULL;
+volatile dispatcher_indication_t g_dispatcher_indication = DISPATCHER_INDICATION_NONE;
 
 int main(void)
 {
     board_hw_init(); /* BOARD_ConfigMPU + BOARD_InitPins + BOARD_BootClockRUN */
     bsp_led_init();
     (void) bsp_button_init(); /* GPIO настроен в BOARD_InitPins; сброс debounce */
+    dispatcher_init();        /* opto IN1/IN2 (§3.4) — пины тоже уже в BOARD_InitPins */
 
     g_render_queue = xQueueCreate(1, sizeof(render_msg_t));
     configASSERT(g_render_queue != NULL);

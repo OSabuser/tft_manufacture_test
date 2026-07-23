@@ -172,7 +172,10 @@
                 "test_sul_nku_can",
                 "test_tft_app_controller",
                 "test_tft_app_settings_store",
-                "test_tft_app_menu"
+                "test_tft_app_menu",
+                "test_sul_registry",
+                "test_tft_app_menu_tree",
+                "test_sul_demo"
             ]
         },
         {
@@ -200,7 +203,10 @@
                 "test_sul_nku_can",
                 "test_tft_app_controller",
                 "test_tft_app_settings_store",
-                "test_tft_app_menu"
+                "test_tft_app_menu",
+                "test_sul_registry",
+                "test_tft_app_menu_tree",
+                "test_sul_demo"
             ]
         },
         {

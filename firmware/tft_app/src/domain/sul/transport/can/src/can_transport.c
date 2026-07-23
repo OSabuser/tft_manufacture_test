@@ -18,7 +18,23 @@
 
 #define NKU_ADDRESS_MAX 15U /* 4-битный адрес, group4 = addr<<4 */
 
-/* MB index 0..4 — PACKET1..5 соответственно (см. sul_transport_can_set_address). */
+/* Удалённая установка адреса (§3.5, REMOTE_ADDRES_SETUP): кадры 0x4X1
+ * (анонс адреса станции) и 0x5XB (несущая команды) должны приниматься с
+ * ЛЮБЫМ X — по определению фичи наш сохранённый адрес мог не совпадать с
+ * адресом станции. Точные фильтры PACKET1..5 (маска 0x7FF) такие кадры
+ * аппаратно отбрасывают: 0x4X1 не совпадает ни с одним из них вообще, а
+ * 0x5XB — только при X == наш адрес (это PACKET4). Поэтому два
+ * ДОПОЛНИТЕЛЬНЫХ wildcard-фильтра с маской, игнорирующей адресный нибл
+ * [7:4]: проверяются биты [10:8] и [3:0] ID. Порт apply_remote_addr_filters()
+ * из OLD_PROJECT (main_programm.c) — БЕЗ них удалённая адресация не работает
+ * вовсе (decode до кадров не доходит; найдено на стенде, host-тесты этого не
+ * ловят — они кормят decode() напрямую, мимо HW-фильтров). */
+#define REMOTE_ADDR_ID_MASK 0x70FU
+#define REMOTE_ANNOUNCE_ID  0x401U /* 0x4X1 — анонс адреса станции         */
+#define REMOTE_CMD_ID       0x50BU /* 0x5XB — несущая команды (X — любой)  */
+
+/* MB index 0..4 — PACKET1..5 (точные, зависят от адреса);
+ * MB index 5..6 — wildcard удалённой адресации (от адреса НЕ зависят). */
 
 /* Хранилище последнего принятого кадра — см. предупреждение в can.h про
  * время жизни p_out->p_data, возвращаемого sul_transport_can_receive(). */
@@ -71,6 +87,23 @@ bsp_status_t sul_transport_can_set_address(uint8_t nku_address)
         return st;
     }
     st = bsp_can_set_filter(4U, PACKET5_BASE | GROUP6, STD_ID_MASK, false);
+    if (st != BSP_OK)
+    {
+        return st;
+    }
+
+    /* Wildcard-фильтры удалённой адресации (см. блок констант выше). От
+     * адреса не зависят — но живут здесь же, а не в init(): применение
+     * идемпотентно и дёшево (адрес меняется редко), зато ВСЕ фильтры
+     * настраиваются одной функцией в одном месте — нет второй точки входа,
+     * которую можно забыть позвать (init() фильтры не трогает намеренно,
+     * см. комментарий там). */
+    st = bsp_can_set_filter(5U, REMOTE_ANNOUNCE_ID, REMOTE_ADDR_ID_MASK, false);
+    if (st != BSP_OK)
+    {
+        return st;
+    }
+    st = bsp_can_set_filter(6U, REMOTE_CMD_ID, REMOTE_ADDR_ID_MASK, false);
     if (st != BSP_OK)
     {
         return st;

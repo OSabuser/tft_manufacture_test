@@ -5,8 +5,11 @@
  * Фаза 2 — полный разбор индикации: PACKET1 (направление, режимы, начало
  * движения), PACKET2 (перегруз), PACKET3 (позиция, гонг, временная погрузка),
  * PACKET4 (перегруз-вариант, сейсмо), PACKET5 (следующий этаж). Удалённая
- * установка адреса (0x4X1/0x5XB) — Фаза 3 (нужен settings_store для записи);
- * здесь эти кадры игнорируются как чужие ID.
+ * установка адреса (0x4X1/0x5XB, Фаза 3.5, REMOTE_ADDRES_SETUP.pdf) —
+ * decode() только распознаёт и выставляет запрос в ctx; саму запись в
+ * settings_store делает app-слой через generic-канал sul_take_pending_
+ * write_fn_t (domain/sul.h) — nku_can_take_pending_write() ниже, decode()
+ * остаётся чистой функцией и не пишет настройки сам.
  *
  * Адрес станции (nku_address) захардкожен в 0 — фильтры/ID без сдвига группы.
  * Фаза 3 параметризует через настройки; сигнатура decode() не изменится.
@@ -25,6 +28,10 @@
 extern "C"
 {
 #endif
+
+/** Сентинел «анонса/запроса ещё не было» для полей удалённой адресации ниже —
+ *  вне диапазона валидных X (4-битный нибл ID, 0..15). */
+#define NKU_REMOTE_ADDR_NONE 0xFFU
 
 /**
  * @brief Состояние декодера — накопленный текущий sul_result_t + внутренние
@@ -52,9 +59,28 @@ typedef struct
     uint8_t current_level; /**< PACKET1: data[3] & 0x3F — числовой уровень остановки,
                                 для гейта «следующего этажа» в PACKET5           */
     uint8_t nku_address;   /**< адрес станции 0..15 — сдвиг ID пакетов (из настроек) */
+
+    /**
+     * @brief Удалённая установка адреса (REMOTE_ADDRES_SETUP.pdf, §3.5).
+     *
+     * 1. Кадр 0x4X1 — X (биты [7:4] ID) объявляет адрес станции управления,
+     *    копируется сюда безусловно (не во флеш — это делает app-слой).
+     * 2. Кадр 0x5XB — команда в старшем нибле data[3]; "2" запускает запись,
+     *    но только если X ЭТОГО кадра совпадает с последним объявленным
+     *    (согласовано — строже буквы PDF, которая номинально допускает
+     *    любой X у командного кадра).
+     * decode() НЕ пишет settings — только выставляет pending_remote_write_
+     * addr; nku_can_take_pending_write() ниже транслирует его в generic
+     * sul_slice_write_t для app-слоя (идемпотентность — сравнение с текущим
+     * сохранённым значением — общий гейт для ЛЮБОГО протокола, живёт в
+     * task_sul_rx.c, не здесь).
+     */
+    uint8_t remote_addr_candidate;     /**< последний X из 0x4X1; NKU_REMOTE_ADDR_NONE — анонса не было */
+    uint8_t pending_remote_write_addr; /**< валиден ТОЛЬКО сразу после decode() этого вызова; NKU_REMOTE_ADDR_NONE — команды в этом кадре не было */
 } nku_can_ctx_t;
 
-/** Сброс к состоянию по умолчанию (sul_default_state()); адрес станции = 0. */
+/** Сброс к состоянию по умолчанию (sul_default_state()); адрес станции = 0;
+ *  состояние удалённой адресации — «анонса/запроса не было». */
 void nku_can_init(nku_can_ctx_t *p_ctx);
 
 /**
@@ -73,6 +99,20 @@ void nku_can_set_address(nku_can_ctx_t *p_ctx, uint8_t nku_address);
  * @param p_out    заполняется полной накопленной state только при SUL_STATUS_OK
  */
 sul_status_t nku_can_decode(void *p_ctx, const sul_frame_t *p_frame, sul_result_t *p_out);
+
+/**
+ * @brief Реализация sul_take_pending_write_fn_t (domain/sul.h) для НКУ-CAN —
+ *        удалённая установка адреса (§3.5).
+ *
+ * @param p_ctx  nku_can_ctx_t* после последнего decode()
+ * @param p_out  slice_offset=0 (proto_slice[0] = адрес), value = запрошенный
+ *               адрес; заполняется только при возврате true
+ * @return true, если pending_remote_write_addr валиден в этом ctx (декодер
+ *         только что распознал команду записи — см. nku_can_ctx_t выше).
+ *         Идемпотентность НЕ его забота — сравнение с текущим сохранённым
+ *         значением делает вызывающий (общий гейт для любого протокола).
+ */
+bool nku_can_take_pending_write(void *p_ctx, sul_slice_write_t *p_out);
 
 #ifdef __cplusplus
 }

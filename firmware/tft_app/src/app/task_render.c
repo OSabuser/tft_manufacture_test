@@ -2,11 +2,11 @@
  * @file  task_render.c
  * @brief Презентация: единственный владелец дисплея и вызывающий gfx_present*().
  *
- * Event-driven (xTaskNotifyGive от sul_rx_task И menu_task — MPSC, будят оба
- * продюсера, ulTaskNotifyTake(pdTRUE,...) схлопывает несколько notify в одно
- * пробуждение — важно только «есть свежее состояние», не сколько раз оно
- * менялось). НЕ содержит кнопочной логики — разделено от menu_task на Фазе
- * 3.2.4 (см. task_menu.c про причину).
+ * Event-driven (xTaskNotifyGive от sul_rx_task, menu_task И dispatcher-колбэка
+ * opto §3.4 — MPSC, три продюсера, ulTaskNotifyTake(pdTRUE,...) схлопывает
+ * несколько notify в одно пробуждение — важно только «есть свежее состояние»,
+ * не сколько раз оно менялось). НЕ содержит кнопочной логики — разделено от
+ * menu_task на Фазе 3.2.4 (см. task_menu.c про причину).
  *
  * Меню — оконный рендер (Фаза 3.2.4, ускорение навигации): на ОТКРЫТИИ — полная
  * очистка AS (стереть индикацию) + два полных gfx_present() подряд (double
@@ -14,6 +14,13 @@
  * gfx_present_rect); дальше НАВИГАЦИЯ — перерисовка и композит только окна
  * 480×272 (~27% кадра, пропорционально дешевле). Индикация — полные кадры,
  * как и была.
+ *
+ * Диспетчерский вход (§3.4) — как в OLD_PROJECT_TFT8_UKL: пока меню открыто,
+ * индикация вообще не трогается (dispatcher копится в g_dispatcher_indication,
+ * применяется одним махом при закрытии — тем же путём, что уже восстанавливает
+ * индикацию после меню). Вне меню — САМОСТОЯТЕЛЬНАЯ третья причина перерисовки
+ * (не только новое сообщение в очереди/закрытие меню): opto может разбудить
+ * render_task без единого нового кадра СУЛ.
  */
 
 #include "app_tasks.h"
@@ -40,10 +47,11 @@ void render_task(void *p_arg)
     }
 
     sul_result_t last = sul_default_state();
-    ui_fallback_render_initial(&last);
+    ui_fallback_render_initial(&last, g_dispatcher_indication);
     gfx_present();
 
     bool was_menu_open = false;
+    dispatcher_indication_t last_dispatcher = g_dispatcher_indication;
 
     for (;;)
     {
@@ -74,13 +82,22 @@ void render_task(void *p_arg)
         {
             bool present_needed = false;
 
-            if (was_menu_open)
+            /* Снимок один раз за итерацию — g_dispatcher_indication пишет
+             * колбэк opto из СВОЕГО контекста (демон таймеров, выше по
+             * приоритету, чем render_task); без снимка два обращения ниже
+             * могли бы увидеть РАЗНЫЕ значения за одну итерацию (тот же
+             * класс гонки, что чинили для курсора меню, см. PLAN.md). */
+            const dispatcher_indication_t DISPATCHER_NOW = g_dispatcher_indication;
+
+            if (was_menu_open || (DISPATCHER_NOW != last_dispatcher))
             {
-                /* Меню только что закрылось — восстановить индикацию
-                 * последним известным состоянием немедленно, не дожидаясь
-                 * свежего сообщения (sul_rx_task мог простаивать под
-                 * g_menu_active — очередь пока пуста). */
-                ui_fallback_render_initial(&last);
+                /* Меню только что закрылось, ИЛИ диспетчерский вход
+                 * изменился без нового кадра СУЛ в очереди (свой продюсер,
+                 * не sul_rx_task) — восстановить индикацию последним
+                 * известным состоянием СУЛ + ТЕКУЩИМ dispatcher немедленно,
+                 * не дожидаясь свежего кадра (sul_rx_task мог простаивать
+                 * под g_menu_active — очередь пока пуста). */
+                ui_fallback_render_initial(&last, DISPATCHER_NOW);
                 present_needed = true;
             }
 
@@ -88,7 +105,7 @@ void render_task(void *p_arg)
             if (xQueueReceive(g_render_queue, &msg, 0) == pdTRUE)
             {
                 last = msg.result;
-                ui_fallback_render(&msg.task, &msg.result);
+                ui_fallback_render(&msg.task, &msg.result, DISPATCHER_NOW);
                 present_needed = true;
             }
 
@@ -96,6 +113,8 @@ void render_task(void *p_arg)
             {
                 gfx_present(); /* индикация — всегда полный кадр */
             }
+
+            last_dispatcher = DISPATCHER_NOW;
         }
 
         was_menu_open = MENU_OPEN_NOW;

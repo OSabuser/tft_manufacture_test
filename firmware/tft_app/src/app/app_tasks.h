@@ -12,8 +12,17 @@
  *   - menu_task    — модель меню: потребление кнопок, hold-to-enter,
  *     навигация/edit/exit+save. НЕ рисует.
  *   - render_task  — единственный владелец дисплея/вызывающий gfx_present().
- *     Event-driven (будится xTaskNotifyGive от sul_rx_task И menu_task —
- *     MPSC), не поллит, не содержит кнопочной логики.
+ *     Event-driven (будится xTaskNotifyGive от sul_rx_task, menu_task И
+ *     dispatcher-колбэка opto, §3.4 — MPSC, три продюсера), не поллит, не
+ *     содержит кнопочной логики.
+ *
+ * dispatcher (диспетчерские опто-входы, app/dispatcher.c) — НЕ задача (нет
+ * своего while(true)): dispatcher_poll() зовётся из input_poll_cb (тот же
+ * софт-таймер, что button, см. task_menu.c) на КАЖДОМ тике, безусловно —
+ * непрерывный опрос bsp_opto_read(), не реакция на колбэк (см. докстрок
+ * dispatcher.c про баг реактивной версии на стенде). Пишет
+ * g_dispatcher_indication и будит render_task напрямую из контекста демона
+ * программных таймеров, если итог изменился.
  *
  * main.c создаёt только очередь/софт-таймер ввода/bringup_task — сами задачи
  * друг друга создают/не создают по схеме выше, main.c про это не знает.
@@ -29,6 +38,7 @@
 #include "queue.h"
 #include "task.h"
 #include "timers.h"
+#include "ui/fallback.h" /* dispatcher_indication_t */
 
 #include <stdbool.h>
 
@@ -98,10 +108,22 @@ extern volatile bool g_menu_active;
  *  как у g_render_queue). */
 extern menu_ctx_t g_menu;
 
-/** Хэндл render_task — sul_rx_task и menu_task (MPSC-продюсеры) будят его
- *  xTaskNotifyGive() на любое изменение состояния. Устанавливается
- *  bringup_task ДО создания sul_rx_task/menu_task. */
+/** Хэндл render_task — sul_rx_task, menu_task и dispatcher-колбэк opto
+ *  (MPSC-продюсеры, §3.4) будят его xTaskNotifyGive() на любое изменение
+ *  состояния. Устанавливается bringup_task ДО создания sul_rx_task/menu_task. */
 extern TaskHandle_t g_render_task_handle;
+
+/**
+ * @brief Диспетчерский вход (opto IN1/IN2, §3.4) — «локальный вход» (ARCH §8
+ *        п.3, не данные СУЛ), высший приоритет из всех режимов индикации.
+ *
+ * Единственный писатель — dispatcher_poll() (app/dispatcher.c), вызывается
+ * БЕЗУСЛОВНО на каждом тике input_poll_cb — контекст демона программных
+ * таймеров, наивысший приоритет в системе; единственный читатель —
+ * render_task (см. task_render.c — снимок в локальную переменную один раз за
+ * итерацию, тот же приём, что чинили для гонки курсора меню, см. PLAN.md).
+ */
+extern volatile dispatcher_indication_t g_dispatcher_indication;
 
 /** Одноразовая инициализация (UART/QSPI/settings/confirm_self/SDRAM+gfx+CAN),
  *  затем создаёт sul_rx_task/menu_task/render_task и удаляет себя. */
@@ -116,8 +138,32 @@ void menu_task(void *p_arg);
 /** Презентация: владелец дисплея, единственный вызывающий gfx_present(). */
 void render_task(void *p_arg);
 
-/** Колбэк софт-таймера debounce (bsp_button_poll) — main создаёт таймер, каденция в main. */
+/** Колбэк софт-таймера debounce (bsp_button_poll + bsp_opto_process, §3.4) —
+ *  main создаёт таймер, каденция в main. */
 void input_poll_cb(TimerHandle_t x_timer);
+
+/**
+ * @brief Инициализировать диспетчерский вход (opto IN1/IN2, §3.4).
+ *
+ * bsp_opto_init() (без колбэков — см. dispatcher.c) + захват начального
+ * состояния пинов в g_dispatcher_indication (иначе если вызов уже активен на
+ * момент старта устройства — первый dispatcher_poll() ещё не случился, а до
+ * него экран не должен показывать NONE поверх уже висящего сигнала).
+ * Вызывать из main(), сразу после bsp_button_init() (пины уже настроены в
+ * BOARD_InitPins, как и у button) — до старта планировщика.
+ */
+void dispatcher_init(void);
+
+/**
+ * @brief Опросить диспетчерский вход (opto IN1/IN2, §3.4) и обновить
+ *        g_dispatcher_indication.
+ *
+ * Вызывать БЕЗУСЛОВНО на каждом тике input_poll_cb, после bsp_opto_process()
+ * — непрерывный опрос bsp_opto_read(), не реакция на колбэк bsp_opto (см.
+ * докстрок dispatcher.c: реактивная версия залипала на стенде). Будит
+ * render_task, только если итоговая индикация реально изменилась.
+ */
+void dispatcher_poll(void);
 
 /** Диагностика трейлера слота (read-only, безопасно звать многократно) —
  *  общая для bringup_task (before/after-confirm) и sul_rx_task (периодический

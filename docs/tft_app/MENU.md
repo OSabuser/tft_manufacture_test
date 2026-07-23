@@ -100,9 +100,14 @@ flowchart TD
 | device/провиженинг | тумблер логов | `offsetof(settings_t, device.log_enabled)` |
 | **B** протокольные | адрес НКУ | `offsetof(settings_t, user.proto_slice[0])` |
 
-Ярус B (протокольные параметры) в 3.2 привязан прямым offset к `proto_slice`; в 3.3 это обобщается
-на дескриптор протокола `sul_settings_desc_t` (§8) — меню строит раздел «Настройки протокола» из
-дескриптора активного протокола, не хардкодом.
+Ярус B (протокольные параметры) с Фазы 3.3 строится из дескриптора протокола
+`sul_settings_desc_t` (§8), не хардкодом: `menu_tree_refresh_protocol_section()` читает
+`sul_registry_active()->p_settings` и заполняет раздел «Настройки протокола» (label/тип/
+диапазон/offset/options) из него — при смене активного протокола (и при bringup) секция
+перестраивается. Подробности механизма и как добавить протокол — [ADDING_PROTOCOL.md](ADDING_PROTOCOL.md).
+Пошаговое «как добавить настройку» (любую — пользовательскую или протокольную, форматы значений)
+— [ADDING_SETTING.md](ADDING_SETTING.md); состав/ярусы/хранение самого `settings_t` —
+[SETTINGS.md](SETTINGS.md).
 
 **Поток сохранения** (`menu_task` связывает модель и flash — см. §5):
 
