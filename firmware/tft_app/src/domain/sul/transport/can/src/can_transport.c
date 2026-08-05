@@ -1,6 +1,5 @@
-#include "domain/sul/transport/can.h"
-
 #include "bsp/can.h"
+#include "domain/sul/transport/can.h"
 
 /* Базовые ID НКУ-CAN (адрес станции 0) — та же протокольная раскладка, что и
  * decode-сторона (domain/sul/nku_can/src/nku_can.c): PACKET1..4 кодируют
@@ -47,7 +46,7 @@ static uint8_t s_last_applied_address = 0xFFU;
 
 bsp_status_t sul_transport_can_init(void)
 {
-    const bsp_can_config_t cfg = {.bitrate = 125000U}; /* см. OLD_PROJECT msg_receiver_task */
+    const bsp_can_config_t cfg = { .bitrate = 125000U }; /* см. OLD_PROJECT msg_receiver_task */
 
     return bsp_can_init(&cfg);
     /* Фильтры не настраиваем здесь — вызывающий (sul_rx_task) обязан сразу
@@ -56,6 +55,7 @@ bsp_status_t sul_transport_can_init(void)
 
 bsp_status_t sul_transport_can_set_address(uint8_t nku_address)
 {
+    //FIXME: у УИМ адрес устанавливается напрямую из настройки протокола
     const uint8_t ADDR = (nku_address <= NKU_ADDRESS_MAX) ? nku_address : NKU_ADDRESS_MAX;
 
     if (ADDR == s_last_applied_address)

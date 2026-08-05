@@ -31,7 +31,7 @@ extern "C"
 /** UTF-8, худший случай — 4 байта/кодпойнт + '\0'. */
 #define SUL_POS_BUF_LEN (SUL_POS_MAX * 4U + 1U)
 
-/**
+    /**
  * @brief Направление движения кабины.
  *
  * Канонический словарь — НЕ протокол-специфичный набор битов. Декодер
@@ -39,15 +39,15 @@ extern "C"
  * PACKET1 ARROW_MASK совпадает по значению случайно — не полагаться на это
  * в других протоколах).
  */
-typedef enum
-{
-    SUL_DIR_NONE   = 0, /**< нет движения / нет данных */
-    SUL_DIR_UP     = 1,
-    SUL_DIR_DOWN   = 2,
-    SUL_DIR_DOUBLE = 3, /**< двойная стрелка (спецрежим индикации) */
-} sul_direction_t;
+    typedef enum
+    {
+        SUL_DIR_NONE = 0, /**< нет движения / нет данных */
+        SUL_DIR_UP   = 1,
+        SUL_DIR_DOWN = 2,
+        SUL_DIR_DOUBLE = 3, /**< двойная стрелка (спецрежим индикации) */
+    } sul_direction_t;
 
-/**
+    /**
  * @brief Канонический экранный режим — результат свёртки ортогональных булевых
  *        сигналов `sul_result_t` через таблицу приоритетов (ARCH §7).
  *
@@ -56,18 +56,18 @@ typedef enum
  * (domain/controller, `k_mode_priority[]`). Менять приоритет = переставлять
  * строки таблицы, не трогая ни этот enum, ни резолвер.
  */
-typedef enum
-{
-    SUL_MODE_NORMAL = 0, /**< обычная индикация этажа/стрелки */
-    SUL_MODE_LADING,     /**< погрузка (инструментальная или временная)   */
-    SUL_MODE_MAINTENANCE,/**< сервис / ревизия / МП1 / МП2                */
-    SUL_MODE_SEISMIC,    /**< сейсмоопасность                            */
-    SUL_MODE_OVERLOAD,   /**< перегруз                                   */
-    SUL_MODE_FIRE_ALARM, /**< пожарная тревога                           */
-    SUL_MODE_FIREMAN,    /**< режим пожарного                            */
-} sul_mode_t;
+    typedef enum
+    {
+        SUL_MODE_NORMAL = 0, /**< обычная индикация этажа/стрелки */
+        SUL_MODE_LADING, /**< погрузка (инструментальная или временная)   */
+        SUL_MODE_MAINTENANCE, /**< сервис / ревизия / МП1 / МП2                */
+        SUL_MODE_SEISMIC,     /**< сейсмоопасность                            */
+        SUL_MODE_OVERLOAD,    /**< перегруз                                   */
+        SUL_MODE_FIRE_ALARM,  /**< пожарная тревога                           */
+        SUL_MODE_FIREMAN,     /**< режим пожарного                            */
+    } sul_mode_t;
 
-/**
+    /**
  * @brief Канонический результат декодирования кадра/пакета СУЛ (ARCH §6).
  *
  * Позиция — UTF-8 строка (реальные шрифты ASCII + кириллица), не число:
@@ -81,28 +81,28 @@ typedef enum
  * начало движения→звук) делает presentation/audio_policy поверх diff
  * контроллера (ARCH §4, Фаза 6).
  */
-typedef struct
-{
-    char pos[SUL_POS_BUF_LEN];  /**< позиция кабины, напр. "12", "-1", "П" */
-    char next[SUL_POS_BUF_LEN]; /**< следующий этаж (пусто "" = нет данных) */
-    sul_direction_t direction;
+    typedef struct
+    {
+        char pos[SUL_POS_BUF_LEN]; /**< позиция кабины, напр. "12", "-1", "П" */
+        char next[SUL_POS_BUF_LEN]; /**< следующий этаж (пусто "" = нет данных) */
+        sul_direction_t direction;
 
-    /* Ортогональные сигналы (приоритет разрешает controller, §7): */
-    bool arrival;     /**< гонг (прибытие)   */
-    bool movement;    /**< начало движения   */
-    bool overload;    /**< перегруз          */
-    bool fire_alarm;  /**< пожарная тревога  */
-    bool lading;      /**< погрузка          */
-    bool maintenance; /**< сервисный режим   */
-    bool fireman;     /**< режим пожарного   */
-    bool seismic;     /**< сейсмоопасность   */
-    bool error;       /**< авария            */
+        /* Ортогональные сигналы (приоритет разрешает controller, §7): */
+        bool arrival;     /**< гонг (прибытие)   */
+        bool movement;    /**< начало движения   */
+        bool overload;    /**< перегруз          */
+        bool fire_alarm;  /**< пожарная тревога  */
+        bool lading;      /**< погрузка          */
+        bool maintenance; /**< сервисный режим   */
+        bool fireman;     /**< перевозка пожарных подразделений   */
+        bool seismic;     /**< сейсмоопасность   */
+        bool error;       /**< авария            */
 
-    uint16_t lading_secs; /**< обратный отсчёт временной погрузки, сек; 0 = нет */
-    uint8_t  floor_num;   /**< производный числовой этаж для озвучки (0 = н/д)  */
-} sul_result_t;
+        uint16_t lading_secs; /**< обратный отсчёт временной погрузки, сек; 0 = нет */
+        uint8_t floor_num; /**< производный числовой этаж для озвучки (0 = н/д)  */
+    } sul_result_t;
 
-/**
+    /**
  * @brief Состояние по умолчанию / при потере связи.
  *
  * pos="--" (нет данных), next="", direction=SUL_DIR_NONE, все сигналы false,
@@ -110,7 +110,7 @@ typedef struct
  * таймауте, либо init перед первым кадром) использует это как отправную точку —
  * не HAL-зависимо, чистая функция.
  */
-sul_result_t sul_default_state(void);
+    sul_result_t sul_default_state(void);
 
 #ifdef __cplusplus
 }

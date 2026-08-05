@@ -187,6 +187,7 @@ extern "C"
         SUL_PROTOCOL_NKU_CAN = 0U,
         SUL_PROTOCOL_DEMO =
             1U, /**< синтетический источник, ARCH §8 — витрина/тест дескрипторного механизма */
+        SUL_PROTOCOL_UIM = 2U,
     };
 
     /**

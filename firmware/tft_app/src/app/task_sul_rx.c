@@ -111,6 +111,9 @@ void sul_rx_task(void *p_arg)
                 (void) sul_transport_can_set_address(NKU_ADDR); /* no-op, если адрес не менялся */
                 rx_rc = sul_transport_can_receive(CAN_RX_TIMEOUT_MS, &frame);
             }
+            else if (p_driver->id == SUL_PROTOCOL_UIM)
+            {
+            }
             else /* SUL_PROTOCOL_DEMO — без реальной шины, всегда успешно */
             {
                 const uint8_t SPEED_IDX = settings_store_get()->user.proto_slice[0];

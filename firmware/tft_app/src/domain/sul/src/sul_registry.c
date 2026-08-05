@@ -1,6 +1,7 @@
 #include "domain/sul.h"
 #include "domain/sul/demo.h"
 #include "domain/sul/nku_can.h"
+#include "domain/sul/uim.h"
 
 #include <stddef.h>
 
@@ -42,29 +43,58 @@ static const sul_settings_desc_t K_DEMO_SETTINGS = {
     .count     = sizeof(K_DEMO_SETTINGS_ENTRIES) / sizeof(K_DEMO_SETTINGS_ENTRIES[0]),
 };
 
+/* УИМ-6100 — один параметр: адрес станции 1..50. */
+//TODO: адреса имеют специальный диапазон (1..40 & 46..50)
+static const sul_settings_entry_t K_UIM_SETTINGS_ENTRIES[] = {
+    {
+        .p_label      = "Адрес",
+        .type         = SUL_SETTINGS_BYTE,
+        .slice_offset = 0U,
+        .min          = 1U,
+        .max          = 50U,
+        .p_options    = NULL,
+    },
+};
+
+static const sul_settings_desc_t K_UIM_SETTINGS = {
+    .p_entries = K_UIM_SETTINGS_ENTRIES,
+    .count     = sizeof(K_UIM_SETTINGS_ENTRIES) / sizeof(K_UIM_SETTINGS_ENTRIES[0]),
+};
+
 /* Ctx каждого драйвера — статика, живёт постоянно (см. domain/sul.h,
  * .p_ctx). Инициализация — sul_registry_init(). */
-static nku_can_ctx_t s_nku_can_ctx;
-static demo_ctx_t s_demo_ctx;
+static nku_can_ctx_t g_s_nku_can_ctx;
+static demo_ctx_t g_s_demo_ctx;
+static uim_ctx_t g_s_uim_ctx;
 
 static const sul_driver_t s_registry[] = {
     {
-        .id                  = SUL_PROTOCOL_NKU_CAN,
-        .p_name              = "НКУ-CAN",
-        .decode              = nku_can_decode,
-        .p_settings          = &K_NKU_CAN_SETTINGS,
-        .p_ctx               = &s_nku_can_ctx,
-        .take_pending_write  = nku_can_take_pending_write, /* удалённая адресация, §3.5 */
-        .connection_timeout_ms = 3000U, /* как в OLD_PROJECT (~3с на отметку потери связи) */
+        .id         = SUL_PROTOCOL_NKU_CAN,
+        .p_name     = "НКУ-CAN",
+        .decode     = nku_can_decode,
+        .p_settings = &K_NKU_CAN_SETTINGS,
+        .p_ctx      = &g_s_nku_can_ctx,
+        .take_pending_write = nku_can_take_pending_write, /* удалённая адресация, §3.5 */
+        .connection_timeout_ms = 3000U, /* (~3с на отметку потери связи) */
     },
     {
         .id         = SUL_PROTOCOL_DEMO,
         .p_name     = "Демо",
         .decode     = demo_decode,
         .p_settings = &K_DEMO_SETTINGS,
-        .p_ctx      = &s_demo_ctx,
+        .p_ctx      = &g_s_demo_ctx,
         /* .take_pending_write не задан — демо никогда не пишет settings сам */
-        .connection_timeout_ms = SUL_CONNECTION_TIMEOUT_DISABLED, /* синтетический источник, обрыва не бывает */
+        .connection_timeout_ms =
+            SUL_CONNECTION_TIMEOUT_DISABLED, /* синтетический источник, обрыва не бывает */
+    },
+    {
+        .id         = SUL_PROTOCOL_DEMO,
+        .p_name     = "УИМ-6100",
+        .decode     = uim_decode,
+        .p_settings = &K_UIM_SETTINGS,
+        .p_ctx      = &g_s_uim_ctx,
+        /* .take_pending_write не задан — UIM никогда не пишет settings сам */
+        .connection_timeout_ms = 3000U, /* (~3с на отметку потери связи) */
     },
 };
 
@@ -72,8 +102,9 @@ static const sul_driver_t s_registry[] = {
 
 void sul_registry_init(void)
 {
-    nku_can_init(&s_nku_can_ctx);
-    demo_init(&s_demo_ctx);
+    nku_can_init(&g_s_nku_can_ctx);
+    demo_init(&g_s_demo_ctx);
+    uim_init(&g_s_uim_ctx);
 }
 
 /* Активный id (§8) — толкает app-слой из settings_device_t.protocol_id через
