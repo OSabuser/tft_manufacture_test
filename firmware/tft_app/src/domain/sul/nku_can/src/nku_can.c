@@ -20,13 +20,15 @@
 /* ── Удалённая установка адреса (REMOTE_ADDRES_SETUP.pdf, §3.5) ──────────────
  * Маска проверяет биты [10:8] и [3:0] ID, игнорирует адресный нибл X [7:4] —
  * так распознаём кадр НЕЗАВИСИМО от X (адрес станции управления, не наш). */
-#define REMOTE_ADDR_ID_MASK   0x70FU
-#define REMOTE_ANNOUNCE_ID    0x401U /* 0x4X1 — анонс адреса станции управления       */
-#define REMOTE_CMD_ID         0x50BU /* 0x5XB — несущая команды (тот же ID, что PACKET4_BASE:
+#define REMOTE_ADDR_ID_MASK 0x70FU
+#define REMOTE_ANNOUNCE_ID  0x401U /* 0x4X1 — анонс адреса станции управления       */
+#define REMOTE_CMD_ID                                                                              \
+    0x50BU /* 0x5XB — несущая команды (тот же ID, что PACKET4_BASE:
                                        * наш собственный 0x50B|group4 тоже сюда попадает —
                                        * не конфликт, команда/PACKET4 распознаются независимо */
-#define REMOTE_CMD_WRITE_ADDR 0x2U   /* команда "2" в старшем нибле data[3] — записать адрес */
-#define REMOTE_CMD_DLC_MIN    4U     /* нужен минимум data[3] — короче реального PROTO_DLC,
+#define REMOTE_CMD_WRITE_ADDR 0x2U /* команда "2" в старшем нибле data[3] — записать адрес */
+#define REMOTE_CMD_DLC_MIN                                                                         \
+    4U /* нужен минимум data[3] — короче реального PROTO_DLC,
                                        * но 0x5XB с чужим X не проходит общий DLC-гейт ниже */
 
 #define ARROW_MASK    0x03U /* PACKET1 data[6][1:0] — стрелка                */
@@ -155,6 +157,20 @@ static uint8_t floor_number_parser(uint8_t left, uint8_t right)
  * инструментальная погрузка), сбрасываются в начале и выставляются по нибле —
  * так пакет-без-режима гасит устаревший режим (как в legacy). overload и
  * seismic PACKET1 НЕ трогает (ими владеют PACKET2/4).
+ *
+ * ГИСТЕРЕЗИС УДЕРЖАНИЯ РЕЖИМА ЗДЕСЬ НЕ НУЖЕН — в отличие от УИМ-6100 (см.
+ * uim.c): у НКУ-CAN под код режима отведён СВОЙ нибль `data[6][7:4]`, который
+ * приходит в КАЖДОМ PACKET1 вместе со стрелкой. Режим не мультиплексирован с
+ * позицией в одном байте, чередования «кадр-режим / кадр-этаж» нет, поэтому
+ * per-frame защёлка корректна и мигания не даёт.
+ *
+ * НАПРАВЛЕНИЕ НЕ ПОДАВЛЯЕТСЯ РЕЖИМОМ (осознанное расхождение с legacy).
+ * `OLD_PROJECT_TFT8_UKL` при сервисе/погрузке/пожарном форсировал
+ * `current_dir = MOVE_STOPPED_STATE` и обновлял стрелку только под
+ * `if (!SPECIAL_MODE_ENABLED)` — потому что режим и стрелка делили один слот
+ * вывода. Здесь это независимые поля sul_result_t, layout (Фазы 4/5) рисует
+ * спрайт режима ОДНОВРЕМЕННО с этажом и стрелкой, и решение «показывать ли
+ * стрелку в этом режиме» принадлежит презентации, а не декодеру.
  */
 static void decode_packet1(nku_can_ctx_t *p_ctx, const uint8_t *p_data)
 {
@@ -351,6 +367,6 @@ bool nku_can_take_pending_write(void *p_ctx, sul_slice_write_t *p_out)
     }
 
     p_out->slice_offset = 0U; /* proto_slice[0] = адрес, см. K_NKU_CAN_SETTINGS в sul_registry.c */
-    p_out->value         = p_state->pending_remote_write_addr;
+    p_out->value = p_state->pending_remote_write_addr;
     return true;
 }

@@ -126,6 +126,14 @@ static void test_resolve_mode_single_signals(void)
     r.fire_alarm = true;
     TEST_ASSERT_EQUAL(SUL_MODE_FIRE_ALARM, sul_resolve_mode(&r));
 
+    r            = sul_default_state();
+    r.evacuation = true;
+    TEST_ASSERT_EQUAL(SUL_MODE_EVACUATION, sul_resolve_mode(&r));
+
+    r       = sul_default_state();
+    r.error = true;
+    TEST_ASSERT_EQUAL(SUL_MODE_ERROR, sul_resolve_mode(&r));
+
     r          = sul_default_state();
     r.overload = true;
     TEST_ASSERT_EQUAL(SUL_MODE_OVERLOAD, sul_resolve_mode(&r));
@@ -154,8 +162,20 @@ static void test_resolve_mode_priority_ordering(void)
 
     r            = sul_default_state();
     r.fire_alarm = true;
-    r.overload   = true;
+    r.evacuation = true;
     TEST_ASSERT_EQUAL(SUL_MODE_FIRE_ALARM, sul_resolve_mode(&r));
+
+    /* Эвакуация — life-safety, ВЫШЕ аварии (см. k_mode_priority). */
+    r            = sul_default_state();
+    r.evacuation = true;
+    r.error      = true;
+    TEST_ASSERT_EQUAL(SUL_MODE_EVACUATION, sul_resolve_mode(&r));
+
+    /* Авария («лифт не работает») ВЫШЕ перегруза: перегруз временный. */
+    r          = sul_default_state();
+    r.error    = true;
+    r.overload = true;
+    TEST_ASSERT_EQUAL(SUL_MODE_ERROR, sul_resolve_mode(&r));
 
     r          = sul_default_state();
     r.overload = true;

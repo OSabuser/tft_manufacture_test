@@ -76,6 +76,40 @@ static menu_item_desc_t g_s_tree[T_COUNT] = {
     [T_EXIT]        = { .label = "Выход", .type = MENU_BACK, .parent = MENU_ROOT_INDEX },
 };
 
+/**
+ * @brief Привести значение параметра в допустимое множество пункта.
+ *
+ * `proto_slice[0]` — ОБЩИЙ байт для любого активного протокола, поэтому при
+ * переключении в меню значение может оказаться невалидным для нового
+ * протокола сразу по трём причинам:
+ *   - выше max (адрес НКУ-CAN 15 → скорость демо 0..2): рендер прочитал бы
+ *     `options[value]` за границей массива меток — мусорное чтение;
+ *   - ниже min (дефолт `proto_slice = {0}` → адрес УИМ 1..50): адрес 0 не
+ *     существует, HW-фильтр встал бы на ID 0;
+ *   - внутри «разрыва» (41..45 у УИМ) — зарезервированные значения.
+ *
+ * Чиним в КОРНЕ — в момент создания рассинхрона, а не защитой на каждом
+ * сайте чтения.
+ */
+static void normalize_param_value(const menu_item_desc_t *p_item, uint8_t *p_value)
+{
+    if (*p_value > p_item->max)
+    {
+        *p_value = p_item->max;
+    }
+    if (*p_value < p_item->min)
+    {
+        *p_value = p_item->min;
+    }
+
+    if ((p_item->gap_from != 0U) && (*p_value >= p_item->gap_from) && (*p_value <= p_item->gap_to))
+    {
+        /* Из разрыва — вверх, к первому валидному значению за ним. */
+        const uint8_t ABOVE = (uint8_t) (p_item->gap_to + 1U);
+        *p_value            = (ABOVE <= p_item->max) ? ABOVE : p_item->min;
+    }
+}
+
 static menu_item_type_t menu_type_from_sul(sul_settings_type_t type)
 {
     switch (type)
@@ -117,19 +151,14 @@ void menu_tree_refresh_protocol_section(settings_t *p_settings_rw)
         g_s_tree[T_PROTO_PARAM].type  = menu_type_from_sul(p_entry->type);
         g_s_tree[T_PROTO_PARAM].value_offset =
             (uint16_t) (offsetof(settings_t, user.proto_slice) + p_entry->slice_offset);
-        g_s_tree[T_PROTO_PARAM].min     = p_entry->min;
-        g_s_tree[T_PROTO_PARAM].max     = p_entry->max;
-        g_s_tree[T_PROTO_PARAM].options = p_entry->p_options;
+        g_s_tree[T_PROTO_PARAM].min      = p_entry->min;
+        g_s_tree[T_PROTO_PARAM].max      = p_entry->max;
+        g_s_tree[T_PROTO_PARAM].gap_from = p_entry->gap_from;
+        g_s_tree[T_PROTO_PARAM].gap_to   = p_entry->gap_to;
+        g_s_tree[T_PROTO_PARAM].options  = p_entry->p_options;
 
-        /* Клампим ТЕКУЩЕЕ значение под новый диапазон — proto_slice[0] мог
-         * остаться от другого протокола с более широким диапазоном (напр.
-         * адрес НКУ-CAN 0..15 -> скорость демо 0..2); без этого рендер читал
-         * бы options[value] за пределами массива меток нового протокола. */
         uint8_t *p_val = (uint8_t *) p_settings_rw + g_s_tree[T_PROTO_PARAM].value_offset;
-        if (*p_val > p_entry->max)
-        {
-            *p_val = p_entry->max;
-        }
+        normalize_param_value(&g_s_tree[T_PROTO_PARAM], p_val);
     }
     else
     {

@@ -35,12 +35,7 @@
  */
 
 #include "app_tasks.h"
-
 #include "bsp/opto.h"
-#include "log/log.h"
-
-#define LOG_TAG "dispatcher"
-
 /**
  * @brief Вычислить индикацию из ТЕКУЩЕГО состояния обоих каналов. ОТВЕТ
  *        (IN2) перебивает ВЫЗОВ (IN1), если оба почему-то активны
@@ -52,47 +47,30 @@ static dispatcher_indication_t resolve_indication(void)
     const bool CALL_ACTIVE   = (bsp_opto_read(BSP_OPTO_CH_IN1) == BSP_OPTO_STATE_ACTIVE);
 
     return ANSWER_ACTIVE ? DISPATCHER_INDICATION_ANSWER
-         : CALL_ACTIVE   ? DISPATCHER_INDICATION_CALL
-                          : DISPATCHER_INDICATION_NONE;
+           : CALL_ACTIVE ? DISPATCHER_INDICATION_CALL
+                         : DISPATCHER_INDICATION_NONE;
 }
 
-static const char *indication_name(dispatcher_indication_t v)
+const char *dispatcher_indication_name(dispatcher_indication_t v)
 {
     switch (v)
     {
-        case DISPATCHER_INDICATION_CALL:   return "CALL";
-        case DISPATCHER_INDICATION_ANSWER: return "ANSWER";
-        case DISPATCHER_INDICATION_NONE:
-        default:                           return "NONE";
-    }
-}
-
-/**
- * @brief Залогировать переход строго по фронтам (не по значению каждый
- *        тик — dispatcher_poll() зовёт это ТОЛЬКО когда индикация реально
- *        изменилась). ВЫКЛ->ВКЛ и ВКЛ->ВЫКЛ — раздельные строки, каждая по
- *        своему "режиму" (CALL/ANSWER); прямой переход CALL<->ANSWER (оба —
- *        не NONE) — это одновременно выключение старого И появление нового,
- *        печатаются обе строки.
- */
-static void log_transition(dispatcher_indication_t old_state, dispatcher_indication_t new_state)
-{
-    if (old_state != DISPATCHER_INDICATION_NONE)
-    {
-        LOG_I(LOG_TAG, "mode %s disabled", indication_name(old_state));
-    }
-    if (new_state != DISPATCHER_INDICATION_NONE)
-    {
-        LOG_I(LOG_TAG, "mode %s appeared", indication_name(new_state));
+    case DISPATCHER_INDICATION_CALL:
+        return "CALL";
+    case DISPATCHER_INDICATION_ANSWER:
+        return "ANSWER";
+    case DISPATCHER_INDICATION_NONE:
+    default:
+        return "NONE";
     }
 }
 
 static const bsp_opto_config_t K_OPTO_CONFIG = {
-    .callbacks   = { NULL, NULL, NULL }, /* непрерывный опрос — см. докстрок файла */
-    .modes       = { BSP_OPTO_MODE_LEVEL, BSP_OPTO_MODE_LEVEL, BSP_OPTO_MODE_LEVEL },
-    .edges       = { BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING },
-    .rs_as_gpio  = false, /* RS_RX остаётся под LPUART3 — не наш случай (см. докстрок файла) */
-    .debounce_ms = 10U,   /* середина рекомендованного диапазона 5-10 мс, bsp/opto/opto.h */
+    .callbacks = { NULL, NULL, NULL }, /* непрерывный опрос — см. докстрок файла */
+    .modes = { BSP_OPTO_MODE_LEVEL, BSP_OPTO_MODE_LEVEL, BSP_OPTO_MODE_LEVEL },
+    .edges = { BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING, BSP_OPTO_EDGE_RISING },
+    .rs_as_gpio = false, /* RS_RX остаётся под LPUART3 — не наш случай (см. докстрок файла) */
+    .debounce_ms = 10U, /* середина рекомендованного диапазона 5-10 мс, bsp/opto/opto.h */
 };
 
 void dispatcher_init(void)
@@ -112,8 +90,14 @@ void dispatcher_poll(void)
 
     if (NEW_STATE != g_dispatcher_indication)
     {
-        log_transition(g_dispatcher_indication, NEW_STATE);
-
+        /* ЛОГИРОВАНИЕ ОТСЮДА УБРАНО СОЗНАТЕЛЬНО. Эта функция исполняется в
+         * контексте демона программных таймеров, у которого стек
+         * configTIMER_TASK_STACK_DEPTH = 1 КБ против 4 КБ у app-задач
+         * (FreeRTOSConfig.h / app_tasks.h). LOG_* внутри тянет vsnprintf —
+         * на таком стеке это риск переполнения, а хук переполнения раньше
+         * немо зависал, и симптом был неотличим от «не кормим watchdog»
+         * (см. app/crash_log.h). Переход печатает render_task — он и так
+         * будится этим же событием и имеет полный стек (task_render.c). */
         g_dispatcher_indication = NEW_STATE;
 
         if (g_render_task_handle != NULL)

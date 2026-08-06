@@ -64,6 +64,7 @@ add_executable(
   src/app/task_menu.c     # модель меню: кнопки/hold-to-enter/nav/edit/save — НЕ рисует
   src/app/task_render.c   # презентация: единственный вызывающий gfx_present(), event-driven
   src/app/dispatcher.c    # диспетчерский вход opto IN1/IN2 (§3.4) — не задача, обвязка bsp_opto
+  src/app/crash_log.c     # причина предыдущего сброса (.noinit-запись) — диагностика зависаний
   ${BSP_GENERATED}/clock_config.c # BOARD_BootClockRUN (зовётся board_hw_init)
   ${BSP_STARTUP_FILE}
   ${BSP_SYSCALLS_FILE}

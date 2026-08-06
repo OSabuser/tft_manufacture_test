@@ -20,6 +20,7 @@ Dev-документация по **реализованному** слою `fir
 - [ARCH.md](../../firmware/tft_app/ARCH.md) — архитектура и проектное обоснование (источник истины по дизайну).
 - [PLAN.md](../../firmware/tft_app/PLAN.md) — статус фаз разработки (источник истины по статусу).
 - [DEV_ARCH.md](../DEV_ARCH.md) — устройство репозитория и сборки.
+- [PERF_AND_HANG_INVESTIGATION.md](../PERF_AND_HANG_INVESTIGATION.md) — разбор некэшируемого XIP (флеш был размечен Device memory → рендер ×45 медленнее и сбросы по watchdog), диагностика отказов (`crash_log`, детектор голодания, «хлебные крошки»). Затрагивает все образы, не только tft_app.
 - [bsp/display/README.md](../../bsp/display/README.md) — драйвер ELCDIF (два формата пикселя: XRGB8888/RGB565).
 
 ## Границы

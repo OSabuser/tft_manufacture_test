@@ -51,6 +51,18 @@ void bsp_wdog_refresh(void);
  */
 bool bsp_wdog_caused_last_reset(void);
 
+/*
+ * То же, но БЕЗ предварительного bsp_wdog_init(): читает WDOG1->WRSR напрямую.
+ *
+ * Нужно тем, кто watchdog не взводит, а только кормит унаследованный —
+ * например tft_app: WDE write-once, WDOG взводит загрузчик, поэтому
+ * bsp_wdog_caused_last_reset() в приложении всегда false (флаг ставится
+ * внутри init(), которую приложение не вызывает). WRSR read-only и отражает
+ * ПОСЛЕДНИЙ сброс, самоочищаясь на каждый следующий — читать можно в любой
+ * момент, состояние модуля не требуется.
+ */
+bool bsp_wdog_reset_was_timeout(void);
+
 /* true после успешного bsp_wdog_init(). */
 bool bsp_wdog_is_armed(void);
 

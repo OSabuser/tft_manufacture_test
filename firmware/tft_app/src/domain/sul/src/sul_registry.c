@@ -43,8 +43,12 @@ static const sul_settings_desc_t K_DEMO_SETTINGS = {
     .count     = sizeof(K_DEMO_SETTINGS_ENTRIES) / sizeof(K_DEMO_SETTINGS_ENTRIES[0]),
 };
 
-/* УИМ-6100 — один параметр: адрес станции 1..50. */
-//TODO: адреса имеют специальный диапазон (1..40 & 46..50)
+/* УИМ-6100 — один параметр: адрес индикатора. Множество НЕ непрерывно:
+ * 1..40 — этажный индикатор, 46..50 — роли (кабина / главный этаж / доп.
+ * главный / универсальный / вторичная кабина), 41..45 зарезервированы
+ * протоколом. Выражено разрывом в дескрипторе (см. sul_settings_entry_t):
+ * хранимое значение остаётся НАСТОЯЩИМ адресом, редактор просто перескакивает
+ * 41..45 — трансляции индекс↔адрес нет ни в decode(), ни в HW-фильтрах. */
 static const sul_settings_entry_t K_UIM_SETTINGS_ENTRIES[] = {
     {
         .p_label      = "Адрес",
@@ -52,6 +56,8 @@ static const sul_settings_entry_t K_UIM_SETTINGS_ENTRIES[] = {
         .slice_offset = 0U,
         .min          = 1U,
         .max          = 50U,
+        .gap_from     = 41U,
+        .gap_to       = 45U,
         .p_options    = NULL,
     },
 };
@@ -88,12 +94,13 @@ static const sul_driver_t s_registry[] = {
             SUL_CONNECTION_TIMEOUT_DISABLED, /* синтетический источник, обрыва не бывает */
     },
     {
-        .id         = SUL_PROTOCOL_DEMO,
+        .id         = SUL_PROTOCOL_UIM,
         .p_name     = "УИМ-6100",
         .decode     = uim_decode,
         .p_settings = &K_UIM_SETTINGS,
         .p_ctx      = &g_s_uim_ctx,
         /* .take_pending_write не задан — UIM никогда не пишет settings сам */
+        .take_pending_tx = uim_take_pending_tx, /* обязательный отклик станции */
         .connection_timeout_ms = 3000U, /* (~3с на отметку потери связи) */
     },
 };

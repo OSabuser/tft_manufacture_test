@@ -28,6 +28,8 @@ static const char *mode_label(sul_mode_t mode)
     {
         case SUL_MODE_FIREMAN:     return "ПОЖАРНЫЙ";
         case SUL_MODE_FIRE_ALARM:  return "ПОЖАР";
+        case SUL_MODE_EVACUATION:  return "ЭВАКУАЦИЯ";
+        case SUL_MODE_ERROR:       return "АВАРИЯ";
         case SUL_MODE_OVERLOAD:    return "ПЕРЕГРУЗ";
         case SUL_MODE_SEISMIC:     return "СЕЙСМО";
         case SUL_MODE_MAINTENANCE: return "СЕРВИС";

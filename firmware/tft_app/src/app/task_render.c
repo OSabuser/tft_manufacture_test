@@ -23,10 +23,11 @@
  * render_task без единого нового кадра СУЛ.
  */
 
-#include "app_tasks.h"
-
 #include "FreeRTOS.h"
+#include "app_tasks.h"
+#include "crash_log.h"
 #include "domain/elevator_model.h"
+#include "log/log.h"
 #include "queue.h"
 #include "services/gfx.h"
 #include "task.h"
@@ -34,6 +35,8 @@
 #include "ui/menu_view.h"
 
 #include <stdbool.h>
+
+#define LOG_TAG "render"
 
 #define DISPLAY_WAIT_POLL_MS 5U /* пока g_display_ready не выставлен bringup_task'ом */
 
@@ -50,7 +53,7 @@ void render_task(void *p_arg)
     ui_fallback_render_initial(&last, g_dispatcher_indication);
     gfx_present();
 
-    bool was_menu_open = false;
+    bool was_menu_open                      = false;
     dispatcher_indication_t last_dispatcher = g_dispatcher_indication;
 
     for (;;)
@@ -66,16 +69,34 @@ void render_task(void *p_arg)
                 /* Открытие: стереть индикацию из ВСЕГО AS и прогнать полный
                  * кадр в ОБА FB — после этого вне окна оба буфера корректны
                  * (чёрные), и навигация может обновлять только окно. */
+                crash_log_set_breadcrumb("render:menu-open");
                 gfx_clear();
                 menu_view_render(&g_menu);
                 gfx_present();
                 gfx_present(); /* тот же AS — во второй FB (double buffering) */
+                crash_log_set_breadcrumb("idle");
             }
             else
             {
                 /* Навигация/правка: только окно (~27% кадра). */
+                crash_log_set_breadcrumb("render:menu-nav");
+
+                /* ЗАМЕР ОТЗЫВЧИВОСТИ (временно, до разбора регресса): по
+                 * какой фазе уходит время — рисование в AS (uncached SDRAM,
+                 * попиксельно), busy-wait PXP или ожидание FRAME_DONE.
+                 * Навигация человеко-темповая, флуда не будет. */
+                const TickType_t T0 = xTaskGetTickCount();
                 menu_view_render(&g_menu);
+                const TickType_t T1 = xTaskGetTickCount();
                 gfx_present_rect(0U, 0U, MENU_VIEW_WIN_W, MENU_VIEW_WIN_H);
+                const TickType_t T2 = xTaskGetTickCount();
+
+                crash_log_set_breadcrumb("idle");
+
+                LOG_I(LOG_TAG, "menu-nav: draw=%u pxp=%u vsync=%u total=%u мс (err=%u)",
+                      (unsigned) ((T1 - T0) * portTICK_PERIOD_MS), (unsigned) g_gfx_last_pxp_ms,
+                      (unsigned) g_gfx_last_vsync_ms, (unsigned) ((T2 - T0) * portTICK_PERIOD_MS),
+                      (unsigned) g_gfx_present_errors);
             }
         }
         else
@@ -88,6 +109,23 @@ void render_task(void *p_arg)
              * могли бы увидеть РАЗНЫЕ значения за одну итерацию (тот же
              * класс гонки, что чинили для курсора меню, см. PLAN.md). */
             const dispatcher_indication_t DISPATCHER_NOW = g_dispatcher_indication;
+
+            if (DISPATCHER_NOW != last_dispatcher)
+            {
+                /* Лог перехода — ЗДЕСЬ, а не в dispatcher_poll(): та работает
+                 * в контексте демона таймеров с 1 КБ стека, vsnprintf там
+                 * опасен (см. dispatcher.c). Строго по фронтам: две строки на
+                 * прямой переход CALL↔ANSWER (гашение старого + появление
+                 * нового), одна — на переход в/из NONE. */
+                if (last_dispatcher != DISPATCHER_INDICATION_NONE)
+                {
+                    LOG_I(LOG_TAG, "mode %s disabled", dispatcher_indication_name(last_dispatcher));
+                }
+                if (DISPATCHER_NOW != DISPATCHER_INDICATION_NONE)
+                {
+                    LOG_I(LOG_TAG, "mode %s appeared", dispatcher_indication_name(DISPATCHER_NOW));
+                }
+            }
 
             if (was_menu_open || (DISPATCHER_NOW != last_dispatcher))
             {
@@ -111,7 +149,9 @@ void render_task(void *p_arg)
 
             if (present_needed)
             {
+                crash_log_set_breadcrumb("render:indication");
                 gfx_present(); /* индикация — всегда полный кадр */
+                crash_log_set_breadcrumb("idle");
             }
 
             last_dispatcher = DISPATCHER_NOW;

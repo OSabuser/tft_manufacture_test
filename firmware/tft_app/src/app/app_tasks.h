@@ -165,6 +165,11 @@ void dispatcher_init(void);
  */
 void dispatcher_poll(void);
 
+/** Имя состояния диспетчерского входа для логов ("CALL"/"ANSWER"/"NONE").
+ *  Логирует render_task, а НЕ dispatcher_poll(): у демона таймеров стек 1 КБ
+ *  против 4 КБ у задач, vsnprintf там опасен (см. dispatcher.c). */
+const char *dispatcher_indication_name(dispatcher_indication_t v);
+
 /** Диагностика трейлера слота (read-only, безопасно звать многократно) —
  *  общая для bringup_task (before/after-confirm) и sul_rx_task (периодический
  *  re-log). Определена в task_bringup.c. */

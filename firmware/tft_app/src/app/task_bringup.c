@@ -18,6 +18,7 @@
 #include "FreeRTOS.h"
 #include "bootutil/bootutil_public.h"
 #include "bsp/boot_state.h"
+#include "crash_log.h"
 #include "bsp/display.h"
 #include "bsp/qspi_flash.h"
 #include "bsp/sdram.h"
@@ -141,6 +142,10 @@ void bringup_task(void *p_arg)
      * от target-side USB CDC). */
     (void) bsp_uart_host_init(115200U);
     log_uart_init();
+
+    /* Причина ПРЕДЫДУЩЕГО сброса — первым делом после подъёма лога, до любой
+     * инициализации, которая может снова упасть (см. app/crash_log.h). */
+    crash_log_report_previous();
 
     /* flash_map_backend требует bsp_qspi_init() ДО любой flash_area_*. */
     const bool QSPI_OK = (bsp_qspi_init() == BSP_OK);

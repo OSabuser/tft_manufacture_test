@@ -59,6 +59,12 @@ typedef struct
     uint16_t         value_offset; /**< offsetof(settings_t, <uint8-поле>)  */
     uint8_t          min;          /**< для SELECT/BYTE/BOOL                */
     uint8_t          max;
+    /** Разрыв внутри [min..max]: значения gap_from..gap_to пропускаются при
+     *  редактировании (напр. адрес УИМ 1..40 ∪ 46..50 — 41..45 резерв).
+     *  gap_from == 0 — разрыва нет. Хранимое значение остаётся настоящим
+     *  значением параметра, индекс↔значение не транслируется. */
+    uint8_t          gap_from;
+    uint8_t          gap_to;
     uint8_t          parent;      /**< индекс родителя (MENU_ROOT_INDEX — верхний уровень) */
     uint8_t          first_child; /**< для SUBMENU — диапазон детей          */
     uint8_t          last_child;

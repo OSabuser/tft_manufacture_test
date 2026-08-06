@@ -343,6 +343,18 @@ add_host_test(
 
 add_host_test(
   NAME
+  test_sul_uim
+  SOURCES
+  tft_app_sul_uim/test_sul_uim.c
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
+  ${TFT_APP_DOMAIN_DIR}/sul/uim/src/uim.c
+  INCLUDES
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/include
+  ${TFT_APP_DOMAIN_DIR}/sul/include
+  ${TFT_APP_DOMAIN_DIR}/sul/uim/include)
+
+add_host_test(
+  NAME
   test_tft_app_controller
   SOURCES
   tft_app_controller/test_controller.c
@@ -390,11 +402,13 @@ add_host_test(
   ${TFT_APP_DOMAIN_DIR}/sul/nku_can/src/nku_can.c
   ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo.c
   ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo_route.c
+  ${TFT_APP_DOMAIN_DIR}/sul/uim/src/uim.c
   ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
   INCLUDES
   ${TFT_APP_DOMAIN_DIR}/sul/include
   ${TFT_APP_DOMAIN_DIR}/sul/nku_can/include
   ${TFT_APP_DOMAIN_DIR}/sul/demo/include
+  ${TFT_APP_DOMAIN_DIR}/sul/uim/include
   ${TFT_APP_DOMAIN_DIR}/elevator_model/include)
 
 # tft_app — menu_tree (Фаза 3.3: секция "Протокол" строится из
@@ -410,6 +424,7 @@ add_host_test(
   ${TFT_APP_DOMAIN_DIR}/sul/nku_can/src/nku_can.c
   ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo.c
   ${TFT_APP_DOMAIN_DIR}/sul/demo/src/demo_route.c
+  ${TFT_APP_DOMAIN_DIR}/sul/uim/src/uim.c
   ${TFT_APP_DOMAIN_DIR}/elevator_model/src/elevator_model.c
   INCLUDES
   ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/menu/include
@@ -418,6 +433,7 @@ add_host_test(
   ${TFT_APP_DOMAIN_DIR}/sul/include
   ${TFT_APP_DOMAIN_DIR}/sul/nku_can/include
   ${TFT_APP_DOMAIN_DIR}/sul/demo/include
+  ${TFT_APP_DOMAIN_DIR}/sul/uim/include
   ${TFT_APP_DOMAIN_DIR}/elevator_model/include)
 
 # tft_app — sul_demo (Фаза 3.3: чистый декодер демо-протокола, §8)

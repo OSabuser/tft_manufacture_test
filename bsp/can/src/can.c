@@ -338,6 +338,26 @@ bsp_status_t bsp_can_set_filter(uint8_t index, uint32_t can_id, uint32_t mask, b
     return BSP_OK;
 }
 
+bsp_status_t bsp_can_clear_filters(void)
+{
+    if (!g_s_initialized)
+    {
+        return BSP_ERR_PARAM;
+    }
+
+    for (uint8_t i = 0U; i < BSP_CAN_FILTER_MAX; i++)
+    {
+        if ((g_s_rx_mb_active_mask & (1U << i)) != 0U)
+        {
+            FLEXCAN_SetRxMbConfig(BSP_CAN_BASE, RX_MB_FIRST + i, NULL, false);
+        }
+    }
+
+    g_s_rx_mb_active_mask = 0U;
+
+    return BSP_OK;
+}
+
 bsp_status_t bsp_can_accept_all(void)
 {
     if (!g_s_initialized)
@@ -350,17 +370,7 @@ bsp_status_t bsp_can_accept_all(void)
      * (все биты игнорируются — принимает любой ID).
      * Деактивируем остальные.
      */
-
-    /* Деактивировать все ранее настроенные RX MB. */
-    for (uint8_t i = 0U; i < BSP_CAN_FILTER_MAX; i++)
-    {
-        if ((g_s_rx_mb_active_mask & (1U << i)) != 0U)
-        {
-            FLEXCAN_SetRxMbConfig(BSP_CAN_BASE, RX_MB_FIRST + i, NULL, false);
-        }
-    }
-
-    g_s_rx_mb_active_mask = 0U;
+    (void) bsp_can_clear_filters();
 
     /* Настроить MB2 на приём всех STD-фреймов. */
     flexcan_rx_mb_config_t rx_mb_cfg;

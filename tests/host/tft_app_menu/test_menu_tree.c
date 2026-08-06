@@ -41,9 +41,13 @@ static void test_protocol_section_built_from_nku_can_descriptor(void)
     const uint8_t T_PROTO           = proto_index();
     const uint8_t T_PROTO_PARAM     = (uint8_t) (T_PROTO + 1U);
 
-    TEST_ASSERT_EQUAL_UINT8(1U, p_items[T_PROTO].max); /* 2 протокола в реестре: НКУ-CAN + демо */
+    /* max = count-1: список выбора строится из реестра, не хардкодом. Метки
+     * идут в порядке id — «?» здесь означало бы дырку в id (см.
+     * test_driver_ids_are_unique в test_sul_registry.c). */
+    TEST_ASSERT_EQUAL_UINT8((uint8_t) (sul_registry_count() - 1U), p_items[T_PROTO].max);
     TEST_ASSERT_EQUAL_STRING("НКУ-CAN", p_items[T_PROTO].options[0]);
     TEST_ASSERT_EQUAL_STRING("Демо", p_items[T_PROTO].options[1]);
+    TEST_ASSERT_EQUAL_STRING("УИМ-6100", p_items[T_PROTO].options[2]);
 
     TEST_ASSERT_EQUAL_STRING("Адрес", p_items[T_PROTO_PARAM].label);
     TEST_ASSERT_EQUAL(MENU_BYTE, p_items[T_PROTO_PARAM].type);
@@ -90,6 +94,61 @@ static void test_stale_value_clamped_on_protocol_switch(void)
     menu_tree_refresh_protocol_section(&s);
 
     TEST_ASSERT_EQUAL_UINT8(2U, s.user.proto_slice[0]); /* клампится к max демо, не остаётся 15 */
+
+    sul_registry_set_active(SUL_PROTOCOL_NKU_CAN);
+}
+
+/* Секция УИМ несёт РАЗРЫВ диапазона (1..40 ∪ 46..50) — дескриптор
+ * транслируется в пункт целиком, вместе с gap_from/gap_to. */
+static void test_protocol_section_carries_gap_for_uim(void)
+{
+    settings_t s;
+    memset(&s, 0, sizeof(s));
+
+    sul_registry_set_active(SUL_PROTOCOL_UIM);
+    menu_tree_refresh_protocol_section(&s);
+
+    const menu_item_desc_t *p_items = menu_tree_items();
+    const uint8_t T_PROTO_PARAM     = (uint8_t) (proto_index() + 1U);
+
+    TEST_ASSERT_EQUAL_STRING("Адрес", p_items[T_PROTO_PARAM].label);
+    TEST_ASSERT_EQUAL_UINT8(1U, p_items[T_PROTO_PARAM].min);
+    TEST_ASSERT_EQUAL_UINT8(50U, p_items[T_PROTO_PARAM].max);
+    TEST_ASSERT_EQUAL_UINT8(41U, p_items[T_PROTO_PARAM].gap_from);
+    TEST_ASSERT_EQUAL_UINT8(45U, p_items[T_PROTO_PARAM].gap_to);
+
+    sul_registry_set_active(SUL_PROTOCOL_NKU_CAN);
+}
+
+/* Дефолт proto_slice = {0} НИЖЕ минимума УИМ (адрес 1..50): без нормализации
+ * адрес 0 уехал бы в HW-фильтр CAN. Кламп двусторонний, не только по max. */
+static void test_stale_value_below_min_raised_on_protocol_switch(void)
+{
+    settings_t s;
+    memset(&s, 0, sizeof(s)); /* proto_slice[0] == 0 */
+
+    sul_registry_set_active(SUL_PROTOCOL_UIM);
+    menu_tree_refresh_protocol_section(&s);
+
+    TEST_ASSERT_EQUAL_UINT8(1U, s.user.proto_slice[0]);
+
+    sul_registry_set_active(SUL_PROTOCOL_NKU_CAN);
+}
+
+/* Значение, попавшее В РАЗРЫВ, нормализуется вверх — к первому валидному за
+ * разрывом (41..45 → 46), а не остаётся зарезервированным. */
+static void test_stale_value_inside_gap_normalized(void)
+{
+    settings_t s;
+    memset(&s, 0, sizeof(s));
+
+    sul_registry_set_active(SUL_PROTOCOL_UIM);
+    menu_tree_refresh_protocol_section(&s);
+
+    s.user.proto_slice[0] = 43U; /* внутри резерва */
+    menu_tree_refresh_protocol_section(&s);
+
+    TEST_ASSERT_EQUAL_UINT8(46U, s.user.proto_slice[0]);
 
     sul_registry_set_active(SUL_PROTOCOL_NKU_CAN);
 }
@@ -149,6 +208,9 @@ int main(void)
     RUN_TEST(test_protocol_section_built_from_nku_can_descriptor);
     RUN_TEST(test_protocol_section_switches_to_demo_descriptor);
     RUN_TEST(test_stale_value_clamped_on_protocol_switch);
+    RUN_TEST(test_protocol_section_carries_gap_for_uim);
+    RUN_TEST(test_stale_value_below_min_raised_on_protocol_switch);
+    RUN_TEST(test_stale_value_inside_gap_normalized);
     RUN_TEST(test_protocol_param_edits_correct_settings_field);
     RUN_TEST(test_dummy_param_edits_correct_settings_field);
 

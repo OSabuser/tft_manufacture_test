@@ -175,7 +175,8 @@
                 "test_tft_app_menu",
                 "test_sul_registry",
                 "test_tft_app_menu_tree",
-                "test_sul_demo"
+                "test_sul_demo",
+                "test_sul_uim"
             ]
         },
         {
@@ -206,7 +207,8 @@
                 "test_tft_app_menu",
                 "test_sul_registry",
                 "test_tft_app_menu_tree",
-                "test_sul_demo"
+                "test_sul_demo",
+                "test_sul_uim"
             ]
         },
         {

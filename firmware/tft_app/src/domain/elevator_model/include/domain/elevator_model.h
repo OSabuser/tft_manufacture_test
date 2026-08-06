@@ -65,6 +65,8 @@ extern "C"
         SUL_MODE_OVERLOAD,    /**< перегруз                                   */
         SUL_MODE_FIRE_ALARM,  /**< пожарная тревога                           */
         SUL_MODE_FIREMAN,     /**< режим пожарного                            */
+        SUL_MODE_EVACUATION,  /**< эвакуация (УИМ-6100: код этажа 56)         */
+        SUL_MODE_ERROR, /**< авария: лифт не работает / неисправность ИБП */
     } sul_mode_t;
 
     /**
@@ -95,6 +97,7 @@ extern "C"
         bool lading;      /**< погрузка          */
         bool maintenance; /**< сервисный режим   */
         bool fireman;     /**< перевозка пожарных подразделений   */
+        bool evacuation;  /**< эвакуация         */
         bool seismic;     /**< сейсмоопасность   */
         bool error;       /**< авария            */
 

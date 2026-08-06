@@ -30,6 +30,28 @@ target_include_directories(bsp_board SYSTEM PUBLIC generated)
 # Дефайны PUBLIC — транзитивно подтянутся во все firmware таргеты
 target_compile_definitions(bsp_board PUBLIC CPU_MIMXRT1052CVJ5B)
 
+# XIP_EXTERNAL_FLASH — КРИТИЧНО ДЛЯ ПРОИЗВОДИТЕЛЬНОСТИ, не только для boot-хедера.
+#
+# board_mpu_init() (generated/board.c) прячет под этим макросом Region 3 —
+# "Normal WB, RO, XIP" на 0x60000000. Без него флеш остаётся под Region 2,
+# размеченным как DEVICE memory: инструкции НЕ кэшируются и НЕ префетчатся,
+# каждая выборка идёт в QSPI через FlexSPI, I-Cache бесполезен.
+#
+# Макрос уже раздают INTERFACE-цели bsp_boot_xip/bsp_boot_xip_no_dcd, но их
+# линкуют firmware-таргеты (app, bootloader), а board.c компилируется ЗДЕСЬ,
+# в отдельной статической библиотеке — до неё определение не доходило, и
+# Region 3 вырезался препроцессором во ВСЕХ образах.
+#
+# Цена была измерена на стенде: рендер окна меню 480x272 — draw=940 мс при
+# pxp=8 мс (композит железом). То есть ~99% времени уходило в некэшируемую
+# выборку инструкций. Эталонные старые проекты исполняли код из SDRAM
+# (Normal WB) — отсюда и разница в отзывчивости.
+#
+# Регион RO и покрывает физический флеш, поэтому корректен для любого образа,
+# независимо от того, исполняется он XIP или из RAM. Записи в флеш идут
+# IP-командами FlexSPI (bsp_qspi_flash), а не через этот AHB-регион.
+target_compile_definitions(bsp_board PRIVATE XIP_EXTERNAL_FLASH=1)
+
 # sdk_device PUBLIC — транзитивно подтянется во все firmware таргеты
 target_link_libraries(bsp_board PUBLIC sdk_device sdk_clock sdk_common
                                        sdk_lpuart)

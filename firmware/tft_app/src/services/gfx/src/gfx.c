@@ -31,25 +31,42 @@
  * сканирует FB непрерывно, это доминирующая нагрузка на 16-бит SDRAM). PXP читает
  * AS(8888)/PS(565), блендит внутри в ≥8 бит, пишет выход в 565. Форматы поверхностей
  * PXP независимы, поэтому 565-выход НЕ ломает альфа-смешивание. */
-#define FRAMEBUFFER_ALIGN 64U /* см. OLD_PROJECT FRAME_BUFFER_ALIGN — типичное ELCDIF/PXP/AXI выравнивание */
-#define SURFACE_PIXELS (800U * 600U)
+#define FRAMEBUFFER_ALIGN                                                                          \
+    64U /* см. OLD_PROJECT FRAME_BUFFER_ALIGN — типичное ELCDIF/PXP/AXI выравнивание */
+#define SURFACE_PIXELS     (800U * 600U)
 #define AS_BYTES_PER_PIXEL 4U /* AS: ARGB8888 */
 #define FB_BYTES_PER_PIXEL 2U /* PS + выходные FB: RGB565 */
-#define ALPHA_OPAQUE 0xFF000000U /* AS: alpha=0xFF → пиксель непрозрачен для PXP-блендинга */
-#define FALLBACK_CHAR '-'
+#define ALPHA_OPAQUE       0xFF000000U /* AS: alpha=0xFF → пиксель непрозрачен для PXP-блендинга */
+#define FALLBACK_CHAR      '-'
+
+/* Бюджеты ожиданий в present-пути. Оба ожидания раньше были БЕЗУСЛОВНЫМИ —
+ * см. докстрок gfx_pxp_run() про сброс по watchdog без следов в логе. */
+#define GFX_PXP_TIMEOUT_MS   500U /* полный композит — ~66 мс (замер), запас x7  */
+#define GFX_VSYNC_TIMEOUT_MS 200U /* кадр ELCDIF при 65 Гц — ~15 мс, запас x13   */
 
 /* AS — CPU рисует сюда (ARGB8888, alpha значим). Гибрид: остаётся 32-бит. */
 AT_NONCACHEABLE_SECTION_ALIGN(static uint32_t s_alpha_buffer[SURFACE_PIXELS], FRAMEBUFFER_ALIGN);
 /* PS — фон под AS (сейчас сплошной чёрный, заливается однократно в gfx_init). RGB565. */
-AT_NONCACHEABLE_SECTION_ALIGN(static uint16_t s_processing_buffer[SURFACE_PIXELS], FRAMEBUFFER_ALIGN);
+AT_NONCACHEABLE_SECTION_ALIGN(static uint16_t s_processing_buffer[SURFACE_PIXELS],
+                              FRAMEBUFFER_ALIGN);
 /* Выходные буферы PXP = сканируемые ELCDIF (double buffer, свап в gfx_present). RGB565. */
 AT_NONCACHEABLE_SECTION_ALIGN(static uint16_t s_framebuffer[2][SURFACE_PIXELS], FRAMEBUFFER_ALIGN);
 
 static uint16_t s_fb_width;
 static uint16_t s_fb_height;
 
-static uint8_t s_back_index;            /* индекс FB, в который PXP компонует следующий кадр */
-static SemaphoreHandle_t s_frame_done;  /* даётся из ELCDIF ISR по завершении кадра          */
+static uint8_t s_back_index; /* индекс FB, в который PXP компонует следующий кадр */
+static SemaphoreHandle_t s_frame_done; /* даётся из ELCDIF ISR по завершении кадра          */
+/* Счётчик неудачных present'ов (таймаут PXP/vsync или AXI-ошибка) — читает
+ * app-слой для диагностики; см. gfx.h. */
+volatile uint32_t g_gfx_present_errors;
+
+/* Замер фаз последнего present'а (мс). Диагностика отзывчивости: считаем
+ * отдельно busy-wait PXP и ожидание FRAME_DONE — какая фаза съедает время,
+ * по логам иначе не различить (см. gfx.h). */
+volatile uint32_t g_gfx_last_pxp_ms;
+volatile uint32_t g_gfx_last_vsync_ms;
+
 static pxp_output_buffer_config_t s_output_cfg; /* хранится: gfx_present меняет buffer0Addr   */
 
 static inline void set_pixel(uint16_t x, uint16_t y, gfx_color_t color)
@@ -81,11 +98,11 @@ static inline void blend_pixel(uint16_t x, uint16_t y, gfx_color_t color, uint8_
         return;
     }
 
-    const uint32_t bg  = s_alpha_buffer[idx];
-    const uint32_t inv = 255U - a;
-    const uint32_t r = (((color >> 16) & 0xFFU) * a + ((bg >> 16) & 0xFFU) * inv) / 255U;
-    const uint32_t g = (((color >> 8) & 0xFFU) * a + ((bg >> 8) & 0xFFU) * inv) / 255U;
-    const uint32_t b = (((color) & 0xFFU) * a + ((bg) & 0xFFU) * inv) / 255U;
+    const uint32_t bg   = s_alpha_buffer[idx];
+    const uint32_t inv  = 255U - a;
+    const uint32_t r    = (((color >> 16) & 0xFFU) * a + ((bg >> 16) & 0xFFU) * inv) / 255U;
+    const uint32_t g    = (((color >> 8) & 0xFFU) * a + ((bg >> 8) & 0xFFU) * inv) / 255U;
+    const uint32_t b    = (((color) & 0xFFU) * a + ((bg) & 0xFFU) * inv) / 255U;
     s_alpha_buffer[idx] = (r << 16) | (g << 8) | b | ALPHA_OPAQUE;
 }
 
@@ -168,7 +185,7 @@ static void draw_glyph(const tImage *p_image, uint16_t x_pos, uint16_t y_pos, gf
         else
         {
             const uint32_t len = header & 0xFFFFU;
-            const uint8_t  a   = GLYPH_COVERAGE(p_image->data[in_idx]);
+            const uint8_t a    = GLYPH_COVERAGE(p_image->data[in_idx]);
             for (uint32_t i = 0U; (i < len) && (out_n < total); i++)
             {
                 blend_pixel((uint16_t) (x_pos + col), (uint16_t) (y_pos + row), color, a);
@@ -229,7 +246,7 @@ uint16_t gfx_draw_string(const tFont *p_font, const char *p_str, uint16_t x, uin
     while (*p_str != '\0')
     {
         uint8_t consumed = 1U;
-        const long code   = next_codepoint(p_str, &consumed);
+        const long code  = next_codepoint(p_str, &consumed);
         p_str += consumed;
 
         const tImage *p_glyph = find_glyph_with_fallback(p_font, code);
@@ -257,7 +274,7 @@ uint16_t gfx_string_width(const tFont *p_font, const char *p_str)
     while (*p_str != '\0')
     {
         uint8_t consumed = 1U;
-        const long code   = next_codepoint(p_str, &consumed);
+        const long code  = next_codepoint(p_str, &consumed);
         p_str += consumed;
 
         const tImage *p_glyph = find_glyph_with_fallback(p_font, code);
@@ -285,7 +302,8 @@ void gfx_draw_arrow(gfx_arrow_dir_t dir, uint16_t x, uint16_t y, uint16_t size, 
     {
         const uint16_t half_width = (uint16_t) (((uint32_t) row * (size / 2U)) / (size - 1U));
         const uint16_t center     = (uint16_t) (x + size / 2U);
-        const uint16_t py = (dir == GFX_ARROW_UP) ? (uint16_t) (y + row) : (uint16_t) (y + (size - 1U) - row);
+        const uint16_t py =
+            (dir == GFX_ARROW_UP) ? (uint16_t) (y + row) : (uint16_t) (y + (size - 1U) - row);
 
         for (uint16_t dx = 0U; dx <= half_width; dx++)
         {
@@ -297,13 +315,43 @@ void gfx_draw_arrow(gfx_arrow_dir_t dir, uint16_t x, uint16_t y, uint16_t size, 
 
 /* ── Прямоугольники — примитивы (фон/полоса-курсор/разделители меню) ─────── */
 
+/**
+ * @brief Залить прямоугольник — ПОСТРОЧНО, как gfx_clear_rect().
+ *
+ * Раньше здесь был двойной цикл по set_pixel() — то есть на КАЖДЫЙ пиксель
+ * вызов функции + две проверки границ + пересчёт индекса с перечитыванием
+ * s_fb_width. В Debug-сборке (`-O0`, инлайна нет) это доминировало в стоимости
+ * рендера меню: замер на стенде дал draw=940 мс при pxp=8 мс, то есть 99%
+ * времени уходило в рисование, а не в композит.
+ *
+ * Теперь: клампинг ОДИН раз, дальше плотный цикл записи 32-битных слов по
+ * строке. Запись идёт в AS (non-cacheable SDRAM), поэтому важно не столько
+ * количество инструкций, сколько отсутствие лишних обращений к памяти на
+ * пиксель.
+ */
 void gfx_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, gfx_color_t color)
 {
-    for (uint16_t j = 0U; j < h; j++)
+    if ((x >= s_fb_width) || (y >= s_fb_height) || (w == 0U) || (h == 0U))
     {
+        return;
+    }
+    if ((uint32_t) x + w > s_fb_width)
+    {
+        w = (uint16_t) (s_fb_width - x);
+    }
+    if ((uint32_t) y + h > s_fb_height)
+    {
+        h = (uint16_t) (s_fb_height - y);
+    }
+
+    const uint32_t PIXEL = (color & 0x00FFFFFFU) | ALPHA_OPAQUE;
+
+    for (uint16_t row = 0U; row < h; row++)
+    {
+        uint32_t *p_line = &s_alpha_buffer[(uint32_t) (y + row) * s_fb_width + x];
         for (uint16_t i = 0U; i < w; i++)
         {
-            set_pixel((uint16_t) (x + i), (uint16_t) (y + j), color);
+            p_line[i] = PIXEL;
         }
     }
 }
@@ -402,8 +450,23 @@ static void gfx_pxp_init(void)
     pxp_configure_rect(0U, 0U, s_fb_width, s_fb_height, (uint32_t) s_framebuffer[0]);
 }
 
-/* Запустить PXP и дождаться завершения композиции (busy-wait, как в эталоне). */
-static void gfx_pxp_run(void)
+/**
+ * @brief Запустить PXP и дождаться завершения композиции (busy-wait).
+ *
+ * ОГРАНИЧЕНО ПО ВРЕМЕНИ И ПРОВЕРЯЕТ ОШИБКИ — так было не всегда, и это стоило
+ * боевого бага: раньше здесь стоял `while (!CompleteFlag) {}` без таймаута, а
+ * флаги AXI-ошибок сбрасывались перед пуском и после НЕ проверялись. Если PXP
+ * упирался в AXI-ошибку, CompleteFlag не появлялся никогда — и этот spin
+ * навсегда занимал CPU. Поскольку он исполняется в render_task (приоритет
+ * ВЫШЕ sul_rx_task, единственной задачи, кормящей watchdog), плата уходила в
+ * сброс через 10 c без единого следа в логе (см. app/crash_log.h).
+ *
+ * Теперь: истёк бюджет или поднялась AXI-ошибка → возврат false. Кадр
+ * пропускается, система остаётся живой и диагностируемой.
+ *
+ * @return true — композиция завершена; false — таймаут/AXI-ошибка.
+ */
+static bool gfx_pxp_run(void)
 {
     PXP_ClearStatusFlags(PXP, kPXP_CommandLoadFlag);
     PXP_ClearStatusFlags(PXP, kPXP_Axi0ReadErrorFlag);
@@ -411,8 +474,31 @@ static void gfx_pxp_run(void)
     PXP_ClearStatusFlags(PXP, kPXP_CompleteFlag);
 
     PXP_Start(PXP);
-    while ((kPXP_CompleteFlag & PXP_GetStatusFlags(PXP)) == 0U)
+
+    /* Полнокадровый композит на этом железе — ~66 мс (замер, см. PLAN.md
+     * Фаза 3.2.4). Бюджет с большим запасом, чтобы не ловить ложных
+     * срабатываний на медленных конфигурациях. */
+    const TickType_t DEADLINE = xTaskGetTickCount() + pdMS_TO_TICKS(GFX_PXP_TIMEOUT_MS);
+
+    for (;;)
     {
+        const uint32_t FLAGS = PXP_GetStatusFlags(PXP);
+
+        if ((FLAGS & (uint32_t) kPXP_CompleteFlag) != 0U)
+        {
+            return true;
+        }
+
+        if ((FLAGS & ((uint32_t) kPXP_Axi0ReadErrorFlag | (uint32_t) kPXP_Axi0WriteErrorFlag)) !=
+            0U)
+        {
+            return false; /* PXP уже не завершится — выходим сразу */
+        }
+
+        if ((int32_t) (xTaskGetTickCount() - DEADLINE) >= 0)
+        {
+            return false;
+        }
     }
 }
 
@@ -454,7 +540,7 @@ bsp_status_t gfx_init(bsp_display_type_t type)
     const bsp_display_size_t *p_size = bsp_display_get_size();
     s_fb_width                       = p_size->width;
     s_fb_height                      = p_size->height;
-    s_back_index                     = 0U; /* FB[0] показывается; первый present уйдёт в FB[1] */
+    s_back_index = 0U; /* FB[0] показывается; первый present уйдёт в FB[1] */
 
     gfx_pxp_init();
 
@@ -479,11 +565,34 @@ static void present_rect_internal(uint16_t x, uint16_t y, uint16_t w, uint16_t h
         (uint32_t) &s_framebuffer[s_back_index][(uint32_t) y * s_fb_width + x];
     pxp_configure_rect(x, y, w, h, OUT_ADDR);
 
-    gfx_pxp_run(); /* AS над PS → прямоугольник заднего FB */
+    const TickType_t T_PXP0 = xTaskGetTickCount();
+    const bool PXP_OK = gfx_pxp_run(); /* AS над PS → прямоугольник заднего FB */
+    g_gfx_last_pxp_ms = (uint32_t) (xTaskGetTickCount() - T_PXP0) * portTICK_PERIOD_MS;
+
+    if (!PXP_OK)
+    {
+        /* Композит не удался — свап не делаем (в заднем буфере мусор), но и не
+         * висим: возвращаем индекс, чтобы следующий кадр снова целился в тот
+         * же буфер, и отдаём CPU. Диагностику печатает вызывающий слой. */
+        s_back_index ^= 1U;
+        g_gfx_present_errors++;
+        return;
+    }
 
     /* Синхронизация с развёрткой: дождаться конца кадра, затем отдать ELCDIF
-     * новый буфер — он переключится аппаратно на границе кадра (tear-free). */
-    (void) xSemaphoreTake(s_frame_done, portMAX_DELAY);
+     * новый буфер — он переключится аппаратно на границе кадра (tear-free).
+     * Ожидание ОГРАНИЧЕНО: без FRAME_DONE (ELCDIF встал / IRQ потерян) раньше
+     * рендер вис здесь навсегда с portMAX_DELAY. Блокирующее ожидание CPU не
+     * отнимает, поэтому watchdog это не роняло — но экран замирал молча. */
+    const TickType_t T_VS0 = xTaskGetTickCount();
+    const BaseType_t VS_RC = xSemaphoreTake(s_frame_done, pdMS_TO_TICKS(GFX_VSYNC_TIMEOUT_MS));
+    g_gfx_last_vsync_ms    = (uint32_t) (xTaskGetTickCount() - T_VS0) * portTICK_PERIOD_MS;
+
+    if (VS_RC != pdTRUE)
+    {
+        g_gfx_present_errors++;
+        return; /* свап пропущен; следующий present попробует снова */
+    }
 
     /* ELCDIF всегда получает БАЗОВЫЙ адрес кадра (сканирует весь FB). */
     bsp_display_set_next_buffer((uint32_t) s_framebuffer[s_back_index]);

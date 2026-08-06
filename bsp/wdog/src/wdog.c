@@ -68,6 +68,12 @@ bool bsp_wdog_caused_last_reset(void)
     return g_s_last_reset_was_wdog;
 }
 
+bool bsp_wdog_reset_was_timeout(void)
+{
+    /* WRSR read-only, не требует инициализации модуля — см. wdog.h. */
+    return (BSP_WDOG_BASE->WRSR & WDOG_WRSR_TOUT_MASK) != 0U;
+}
+
 bool bsp_wdog_is_armed(void)
 {
     return g_s_armed;

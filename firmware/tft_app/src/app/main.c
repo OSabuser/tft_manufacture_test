@@ -17,6 +17,7 @@
 #include "board.h"
 #include "bsp/button.h"
 #include "bsp/led.h"
+#include "crash_log.h"
 #include "queue.h"
 #include "task.h"
 #include "timers.h"
@@ -27,10 +28,10 @@
 
 /* ── Разделяемое состояние задач (объявления — app_tasks.h) ──────────────── */
 
-volatile bool g_display_ready     = false;
-volatile bool g_menu_active       = false;
-QueueHandle_t g_render_queue      = NULL;
-TaskHandle_t g_render_task_handle = NULL;
+volatile bool g_display_ready                            = false;
+volatile bool g_menu_active                              = false;
+QueueHandle_t g_render_queue                             = NULL;
+TaskHandle_t g_render_task_handle                        = NULL;
 volatile dispatcher_indication_t g_dispatcher_indication = DISPATCHER_INDICATION_NONE;
 
 int main(void)
@@ -38,7 +39,7 @@ int main(void)
     board_hw_init(); /* BOARD_ConfigMPU + BOARD_InitPins + BOARD_BootClockRUN */
     bsp_led_init();
     (void) bsp_button_init(); /* GPIO настроен в BOARD_InitPins; сброс debounce */
-    dispatcher_init();        /* opto IN1/IN2 (§3.4) — пины тоже уже в BOARD_InitPins */
+    dispatcher_init(); /* opto IN1/IN2 (§3.4) — пины тоже уже в BOARD_InitPins */
 
     g_render_queue = xQueueCreate(1, sizeof(render_msg_t));
     configASSERT(g_render_queue != NULL);
@@ -68,21 +69,48 @@ int main(void)
 
 /* ── FreeRTOS hooks (строгая диагностика) ────────────────────────────────── */
 
+/* ── Отказы: записать причину и сбросить (диагностика — app/crash_log.h) ────
+ *
+ * Раньше оба хука немо зависали с выключенными прерываниями, и плату через
+ * 10 с добивал watchdog — снаружи это было НЕОТЛИЧИМО от «задача-кормилец не
+ * получала CPU». Теперь причина попадает в `.noinit`-запись и печатается при
+ * следующем старте; сброс — немедленный, чтобы не ждать watchdog.
+ */
+
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name)
 {
     (void) task;
-    (void) name;
-    taskDISABLE_INTERRUPTS();
-    for (;;)
-    {
-        /* WDOG сбросит плату — детерминированный отказ вместо тихой порчи. */
-    }
+    crash_log_record_and_reset(CRASH_CAUSE_STACK_OVERFLOW, name, 0U, 0U);
 }
 
 void vApplicationMallocFailedHook(void)
 {
-    taskDISABLE_INTERRUPTS();
-    for (;;)
-    {
-    }
+    crash_log_record_and_reset(CRASH_CAUSE_MALLOC_FAILED, NULL, 0U, 0U);
+}
+
+/**
+ * @brief HardFault — достать PC/LR из кадра исключения и записать причину.
+ *
+ * `naked` + asm: нужен НЕТРОНУТЫЙ SP на входе, чтобы понять, какой стек
+ * (MSP/PSP) использовался, и найти в нём сохранённый кадр {r0-r3,r12,LR,PC,
+ * xPSR}. Компилятор в обычной функции успел бы сдвинуть SP прологом.
+ * Перекрывает `.weak`-заглушку из startup_MIMXRT1052.S (там бесконечный цикл).
+ */
+__attribute__((naked)) void HardFault_Handler(void)
+{
+    __asm volatile("tst   lr, #4            \n" /* бит 2 EXC_RETURN: какой стек */
+                   "ite   eq                \n"
+                   "mrseq r0, msp           \n"
+                   "mrsne r0, psp           \n"
+                   "b     hardfault_report  \n");
+}
+
+/** Вторая половина HardFault_Handler: p_frame — кадр исключения на стеке. */
+void hardfault_report(const uint32_t *p_frame); /* вызывается только из asm выше */
+
+void hardfault_report(const uint32_t *p_frame)
+{
+    /* Раскладка кадра (ARMv7-M): [0]=r0 [1]=r1 [2]=r2 [3]=r3 [4]=r12
+     * [5]=LR [6]=PC [7]=xPSR. PC — инструкция, вызвавшая отказ. */
+    crash_log_record_and_reset(CRASH_CAUSE_HARDFAULT, NULL, p_frame[6], p_frame[5]);
 }

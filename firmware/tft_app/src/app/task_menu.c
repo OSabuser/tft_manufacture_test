@@ -18,11 +18,11 @@
  * BUTTONS_TASK/menu_task отдельно от REFRESH_TASK/tft_refresh_task.
  */
 
-#include "app_tasks.h"
-
 #include "FreeRTOS.h"
+#include "app_tasks.h"
 #include "bsp/button.h"
 #include "bsp/opto.h"
+#include "crash_log.h"
 #include "domain/sul.h"
 #include "log/log.h"
 #include "menu/menu.h"
@@ -46,8 +46,13 @@ void input_poll_cb(TimerHandle_t x_timer)
 {
     (void) x_timer;
     bsp_button_poll();
-    bsp_opto_process();  /* debounce IN1/IN2 (§3.4) — короткая, как button */
-    dispatcher_poll();   /* непрерывный опрос bsp_opto_read(), не колбэк — см. dispatcher.c */
+    bsp_opto_process(); /* debounce IN1/IN2 (§3.4) — короткая, как button */
+    dispatcher_poll(); /* непрерывный опрос bsp_opto_read(), не колбэк — см. dispatcher.c */
+
+    /* Детектор голодания — ЗДЕСЬ, потому что демон таймеров нельзя выголодать
+     * (высший приоритет в системе). Срабатывает раньше аппаратного watchdog и
+     * записывает, ЧЕМ была занята система: иначе сброс приходит молча. */
+    crash_log_check_starvation();
 }
 
 void menu_task(void *p_arg)
@@ -95,7 +100,9 @@ void menu_task(void *p_arg)
                 {
                     /* Выход: сохранить (если менялось). Адрес подхватит
                      * sul_rx_task из настроек на следующей итерации. */
+                    crash_log_set_breadcrumb("menu:settings-save");
                     const bsp_status_t RC = settings_store_save();
+                    crash_log_set_breadcrumb("idle");
                     LOG_I(LOG_TAG, "settings saved rc=%d", RC);
                 }
                 changed = true;

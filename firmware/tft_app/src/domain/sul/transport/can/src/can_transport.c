@@ -32,85 +32,167 @@
 #define REMOTE_ANNOUNCE_ID  0x401U /* 0x4X1 — анонс адреса станции         */
 #define REMOTE_CMD_ID       0x50BU /* 0x5XB — несущая команды (X — любой)  */
 
-/* MB index 0..4 — PACKET1..5 (точные, зависят от адреса);
- * MB index 5..6 — wildcard удалённой адресации (от адреса НЕ зависят). */
-
 /* Хранилище последнего принятого кадра — см. предупреждение в can.h про
  * время жизни p_out->p_data, возвращаемого sul_transport_can_receive(). */
 static bsp_can_frame_t s_last_frame;
 
-/* Сентинел вне диапазона 0..15 — форсирует применение фильтров на первый
- * вызов sul_transport_can_set_address(), независимо от переданного адреса
- * (порт OLD_PROJECT msg_receiver_task: last_nku_address = 0xFFU). */
-static uint8_t s_last_applied_address = 0xFFU;
+/* ── Наборы фильтров: раскладка — ДАННЫЕ, применение — общее ────────────────
+ *
+ * У протоколов на одной шине РАЗНЫЕ раскладки фильтров, а не только разные
+ * ID в одной раскладке: НКУ-CAN нужно 7 MB (5 точных PACKET1..5 + 2 wildcard
+ * удалённой адресации), УИМ-6100 — ровно ОДИН (ID кадра == адрес индикатора,
+ * эталон OLD_PROJECT_TFT4_UIM can.c/set_canrx_id()).
+ *
+ * Поэтому diff-защита сравнивает ВЕСЬ набор, а не адрес: раньше сравнивался
+ * только `last_applied_address`, и переключение протокола НКУ↔УИМ при
+ * совпавшем числовом адресе НЕ переприменяло фильтры — раскладка оставалась
+ * от прежнего протокола. Плюс перед применением набор снимается целиком
+ * (bsp_can_clear_filters): иначе «лишние» MB прежней раскладки остаются
+ * активными и пропускают чужие кадры (bsp_can_set_filter только ДОБАВЛЯЕТ).
+ */
+#define FILTER_SET_MAX 8U
+
+typedef struct
+{
+    uint32_t id;
+    uint32_t mask;
+} can_filter_t;
+
+typedef struct
+{
+    can_filter_t items[FILTER_SET_MAX];
+    uint8_t count;
+} can_filter_set_t;
+
+/** Что реально запрограммировано в FlexCAN; count == 0 — ничего (форсирует
+ *  применение на первый вызов, как сентинел 0xFF в OLD_PROJECT). */
+static can_filter_set_t s_applied;
+
+static bool filter_sets_equal(const can_filter_set_t *p_a, const can_filter_set_t *p_b)
+{
+    if (p_a->count != p_b->count)
+    {
+        return false;
+    }
+
+    for (uint8_t i = 0U; i < p_a->count; i++)
+    {
+        if ((p_a->items[i].id != p_b->items[i].id) || (p_a->items[i].mask != p_b->items[i].mask))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * @brief Применить набор фильтров, если он отличается от запрограммированного.
+ *
+ * No-op при совпадении — дёшево звать на каждой итерации приёма. При отличии:
+ * снять ВСЕ прежние фильтры, затем поставить новые по порядку (MB index = i).
+ */
+static bsp_status_t apply_filter_set(const can_filter_set_t *p_set)
+{
+    if ((p_set->count == 0U) || (p_set->count > FILTER_SET_MAX))
+    {
+        return BSP_ERR_PARAM;
+    }
+
+    if (filter_sets_equal(p_set, &s_applied))
+    {
+        return BSP_OK;
+    }
+
+    const bsp_status_t CLR_RC = bsp_can_clear_filters();
+    if (CLR_RC != BSP_OK)
+    {
+        return CLR_RC;
+    }
+    s_applied.count = 0U; /* прежняя раскладка снята — что бы ни было дальше */
+
+    for (uint8_t i = 0U; i < p_set->count; i++)
+    {
+        const bsp_status_t RC =
+            bsp_can_set_filter(i, p_set->items[i].id, p_set->items[i].mask, false);
+        if (RC != BSP_OK)
+        {
+            return RC;
+        }
+    }
+
+    s_applied = *p_set;
+    return BSP_OK;
+}
 
 bsp_status_t sul_transport_can_init(void)
 {
     const bsp_can_config_t cfg = { .bitrate = 125000U }; /* см. OLD_PROJECT msg_receiver_task */
 
+    s_applied.count = 0U; /* форсирует применение первого набора фильтров */
+
     return bsp_can_init(&cfg);
     /* Фильтры не настраиваем здесь — вызывающий (sul_rx_task) обязан сразу
-     * позвать sul_transport_can_set_address(), см. can.h. */
+     * позвать set_address СВОЕГО протокола, см. can.h. */
 }
 
-bsp_status_t sul_transport_can_set_address(uint8_t nku_address)
+bsp_status_t sul_transport_can_set_address_nku(uint8_t nku_address)
 {
-    //FIXME: у УИМ адрес устанавливается напрямую из настройки протокола
-    const uint8_t ADDR = (nku_address <= NKU_ADDRESS_MAX) ? nku_address : NKU_ADDRESS_MAX;
-
-    if (ADDR == s_last_applied_address)
-    {
-        return BSP_OK; /* не менялось — переконфигурация MB не нужна */
-    }
-
+    const uint8_t ADDR    = (nku_address <= NKU_ADDRESS_MAX) ? nku_address : NKU_ADDRESS_MAX;
     const uint32_t GROUP4 = (uint32_t) ADDR << 4U;
     const uint32_t GROUP6 = (uint32_t) ADDR << 6U;
 
-    bsp_status_t st = bsp_can_set_filter(0U, PACKET1_BASE | GROUP4, STD_ID_MASK, false);
-    if (st != BSP_OK)
+    const can_filter_set_t SET = {
+        .items =
+            {
+                { PACKET1_BASE | GROUP4, STD_ID_MASK },
+                { PACKET2_BASE | GROUP4, STD_ID_MASK },
+                { PACKET3_BASE | GROUP4, STD_ID_MASK },
+                { PACKET4_BASE | GROUP4, STD_ID_MASK },
+                { PACKET5_BASE | GROUP6, STD_ID_MASK },
+                /* Wildcard удалённой адресации — от адреса НЕ зависят, но
+                 * входят в набор: раскладка описывается одним объектом. */
+                { REMOTE_ANNOUNCE_ID, REMOTE_ADDR_ID_MASK },
+                { REMOTE_CMD_ID, REMOTE_ADDR_ID_MASK },
+            },
+        .count = 7U,
+    };
+
+    return apply_filter_set(&SET);
+}
+
+bsp_status_t sul_transport_can_set_address_uim(uint8_t uim_address)
+{
+    /* Один точный фильтр: у УИМ CAN ID кадра РАВЕН адресу индикатора
+     * (эталон: FLEXCAN_RX_MB_STD_MASK(id, 0, 0) + set_canrx_id()). */
+    const can_filter_set_t SET = {
+        .items = { { (uint32_t) uim_address, STD_ID_MASK } },
+        .count = 1U,
+    };
+
+    return apply_filter_set(&SET);
+}
+
+bsp_status_t sul_transport_can_send(const sul_tx_frame_t *p_frame, uint32_t timeout_ms)
+{
+    if ((p_frame == NULL) || (p_frame->len > BSP_CAN_DATA_MAX_LEN))
     {
-        return st;
-    }
-    st = bsp_can_set_filter(1U, PACKET2_BASE | GROUP4, STD_ID_MASK, false);
-    if (st != BSP_OK)
-    {
-        return st;
-    }
-    st = bsp_can_set_filter(2U, PACKET3_BASE | GROUP4, STD_ID_MASK, false);
-    if (st != BSP_OK)
-    {
-        return st;
-    }
-    st = bsp_can_set_filter(3U, PACKET4_BASE | GROUP4, STD_ID_MASK, false);
-    if (st != BSP_OK)
-    {
-        return st;
-    }
-    st = bsp_can_set_filter(4U, PACKET5_BASE | GROUP6, STD_ID_MASK, false);
-    if (st != BSP_OK)
-    {
-        return st;
+        return BSP_ERR_PARAM;
     }
 
-    /* Wildcard-фильтры удалённой адресации (см. блок констант выше). От
-     * адреса не зависят — но живут здесь же, а не в init(): применение
-     * идемпотентно и дёшево (адрес меняется редко), зато ВСЕ фильтры
-     * настраиваются одной функцией в одном месте — нет второй точки входа,
-     * которую можно забыть позвать (init() фильтры не трогает намеренно,
-     * см. комментарий там). */
-    st = bsp_can_set_filter(5U, REMOTE_ANNOUNCE_ID, REMOTE_ADDR_ID_MASK, false);
-    if (st != BSP_OK)
+    bsp_can_frame_t tx = {
+        .id          = p_frame->id,
+        .dlc         = p_frame->len,
+        .is_extended = false, /* УИМ/НКУ — 11-bit STD */
+        .is_remote   = false,
+    };
+
+    for (uint8_t i = 0U; i < p_frame->len; i++)
     {
-        return st;
-    }
-    st = bsp_can_set_filter(6U, REMOTE_CMD_ID, REMOTE_ADDR_ID_MASK, false);
-    if (st != BSP_OK)
-    {
-        return st;
+        tx.data[i] = p_frame->data[i];
     }
 
-    s_last_applied_address = ADDR;
-    return BSP_OK;
+    return bsp_can_send(&tx, timeout_ms);
 }
 
 bsp_status_t sul_transport_can_receive(uint32_t timeout_ms, sul_frame_t *p_out)

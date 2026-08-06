@@ -356,6 +356,44 @@ void test_accept_all_without_init(void)
     TEST_ASSERT_EQUAL(BSP_ERR_PARAM, bsp_can_accept_all());
 }
 
+/* bsp_can_clear_filters() — симметрия к set_filter(): без неё набор фильтров
+ * можно было только пополнять. Нужна при смене РАСКЛАДКИ (напр. переключение
+ * протокола СУЛ: 7 MB → 1 MB, иначе «лишние» остаются активными). */
+void test_clear_filters_deactivates_each_active_mb(void)
+{
+    helper_init_default();
+
+    bsp_can_set_filter(0U, 0x100U, 0x7FFU, false);
+    bsp_can_set_filter(1U, 0x200U, 0x7FFU, false);
+    bsp_can_set_filter(2U, 0x300U, 0x7FFU, false);
+
+    FLEXCAN_SetRxMbConfig_fake.call_count = 0U;
+
+    TEST_ASSERT_EQUAL(BSP_OK, bsp_can_clear_filters());
+
+    /* Ровно по одному вызову деактивации на каждый настроенный MB. */
+    TEST_ASSERT_EQUAL_UINT32(3U, FLEXCAN_SetRxMbConfig_fake.call_count);
+}
+
+/* Повторный вызов — no-op: активных MB уже нет, деактивировать нечего. */
+void test_clear_filters_is_idempotent(void)
+{
+    helper_init_default();
+
+    bsp_can_set_filter(0U, 0x100U, 0x7FFU, false);
+    (void) bsp_can_clear_filters();
+
+    FLEXCAN_SetRxMbConfig_fake.call_count = 0U;
+
+    TEST_ASSERT_EQUAL(BSP_OK, bsp_can_clear_filters());
+    TEST_ASSERT_EQUAL_UINT32(0U, FLEXCAN_SetRxMbConfig_fake.call_count);
+}
+
+void test_clear_filters_without_init(void)
+{
+    TEST_ASSERT_EQUAL(BSP_ERR_PARAM, bsp_can_clear_filters());
+}
+
 /* ══════════════════════════════════════════════════════════════════════
  *  RX — bsp_can_receive()
  * ══════════════════════════════════════════════════════════════════════ */
@@ -581,6 +619,9 @@ int main(void)
     RUN_TEST(test_accept_all);
     RUN_TEST(test_accept_all_clears_previous_filters);
     RUN_TEST(test_accept_all_without_init);
+    RUN_TEST(test_clear_filters_deactivates_each_active_mb);
+    RUN_TEST(test_clear_filters_is_idempotent);
+    RUN_TEST(test_clear_filters_without_init);
 
     /* RX */
     RUN_TEST(test_receive_success);

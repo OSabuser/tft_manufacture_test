@@ -29,8 +29,8 @@ void menu_open(menu_ctx_t *p_ctx)
     p_ctx->open           = true;
     p_ctx->dirty          = false;
     p_ctx->save_requested = false;
-    p_ctx->cur            = p_ctx->items[MENU_ROOT_INDEX].first_child; /* первый пункт верхнего уровня */
-    p_ctx->page           = 0U;
+    p_ctx->cur = p_ctx->items[MENU_ROOT_INDEX].first_child; /* первый пункт верхнего уровня */
+    p_ctx->page = 0U;
 }
 
 bool menu_is_open(const menu_ctx_t *p_ctx)
@@ -70,14 +70,27 @@ void menu_next(menu_ctx_t *p_ctx)
     p_ctx->page = page_of(p_ctx, p_ctx->cur, first);
 }
 
-/* Инкремент editable-значения с заворотом min→max→min. */
+/* Инкремент editable-значения с заворотом min→max→min и перескоком «разрыва»
+ * (см. menu_item_desc_t.gap_from/gap_to — напр. адрес УИМ 1..40 ∪ 46..50:
+ * с 40 одно нажатие даёт 46, значения 41..45 недостижимы). */
 static void cycle_value(menu_ctx_t *p_ctx)
 {
     const menu_item_desc_t *p_it = &p_ctx->items[p_ctx->cur];
-    uint8_t                *p_v  = field_ptr(p_ctx, p_ctx->cur);
+    uint8_t *p_v                 = field_ptr(p_ctx, p_ctx->cur);
 
-    *p_v          = (*p_v >= p_it->max) ? p_it->min : (uint8_t) (*p_v + 1U);
-    p_ctx->dirty  = true;
+    uint8_t next = (*p_v >= p_it->max) ? p_it->min : (uint8_t) (*p_v + 1U);
+
+    if ((p_it->gap_from != 0U) && (next >= p_it->gap_from) && (next <= p_it->gap_to))
+    {
+        next = (uint8_t) (p_it->gap_to + 1U);
+        if (next > p_it->max)
+        {
+            next = p_it->min; /* разрыв упирается в max — заворот */
+        }
+    }
+
+    *p_v         = next;
+    p_ctx->dirty = true;
 }
 
 void menu_action(menu_ctx_t *p_ctx)

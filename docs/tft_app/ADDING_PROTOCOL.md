@@ -13,7 +13,7 @@
 
 ---
 
-## 1. Что строим — 5 частей (2 опциональны)
+## 1. Что строим — 6 частей (3 опциональны)
 
 ```mermaid
 flowchart TB
@@ -21,31 +21,36 @@ flowchart TB
         DEC["decode() + ctx<br/>чистый C, host-тест"]
         DESC["sul_settings_desc_t<br/>параметры для меню (опц.)"]
         PW["take_pending_write<br/>протокол сам пишет settings (опц.)"]
+        TX["take_pending_tx<br/>протокол сам отвечает в шину (опц.)"]
         TR["transport<br/>HW-адаптер ИЛИ синтетика"]
     end
     subgraph SHARED["правится точечно"]
-        REG["запись в sul_registry.c<br/>id + decode + p_settings + p_ctx + take_pending_write"]
+        REG["запись в sul_registry.c<br/>id + decode + p_settings + p_ctx<br/>+ take_pending_write + take_pending_tx"]
         RX["ветка в task_sul_rx.c<br/>только если НОВЫЙ вид транспорта"]
     end
     DEC --> REG
     DESC --> REG
     PW --> REG
+    TX --> REG
     TR --> RX
     REG --> RX
 ```
 
-| Часть | Обязательна? | НКУ-CAN | Демо |
-| --- | --- | --- | --- |
-| **decode() + ctx** | да, всегда | [nku_can.c](../../firmware/tft_app/src/domain/sul/nku_can/src/nku_can.c) | [demo.c](../../firmware/tft_app/src/domain/sul/demo/src/demo.c) |
-| **connection_timeout_ms** | да, всегда (см. §5) — но может быть `DISABLED` | `3000` мс | `SUL_CONNECTION_TIMEOUT_DISABLED` |
-| **sul_settings_desc_t** | нет — только если есть настраиваемый параметр в меню | адрес 0..15 (BYTE) | скорость (SELECT) |
-| **take_pending_write** | нет — только если протокол сам инициирует запись (не через меню) | удалённая адресация (§3.5) | нет |
-| **transport** | да, но может переиспользовать уже подключённый вид (см. §6) | `transport/can` — реальная шина | `transport/demo` — пустышка, кадр не несёт содержимого |
-| **ветка в `task_sul_rx.c`** | только если transport — новый ВИД (не переиспользует уже подключённый) | уже была (Фаза 1) | добавлена в Фазе 3.3 |
+| Часть | Обязательна? | НКУ-CAN | Демо | УИМ-6100 |
+| --- | --- | --- | --- | --- |
+| **decode() + ctx** | да, всегда | [nku_can.c](../../firmware/tft_app/src/domain/sul/nku_can/src/nku_can.c) | [demo.c](../../firmware/tft_app/src/domain/sul/demo/src/demo.c) | [uim.c](../../firmware/tft_app/src/domain/sul/uim/src/uim.c) |
+| **connection_timeout_ms** | да, всегда (см. §5) — но может быть `DISABLED` | `3000` мс | `SUL_CONNECTION_TIMEOUT_DISABLED` | `3000` мс |
+| **sul_settings_desc_t** | нет — только если есть настраиваемый параметр в меню | адрес 0..15 (BYTE) | скорость (SELECT) | адрес 1..50 (BYTE) |
+| **take_pending_write** | нет — только если протокол сам инициирует запись (не через меню) | удалённая адресация (§3.5) | нет | нет |
+| **take_pending_tx** | нет — только если протокол сам отвечает в шину (см. §5.1) | нет | нет | обязательный отклик станции |
+| **transport** | да, но может переиспользовать уже подключённый вид (см. §6) | `transport/can` — реальная шина | `transport/demo` — пустышка, кадр не несёт содержимого | `transport/can` (переиспользован) |
+| **ветка в `task_sul_rx.c`** | только если transport — новый ВИД (не переиспользует уже подключённый) | уже была (Фаза 1) | добавлена в Фазе 3.3 | своя ветка (свои фильтры), транспорт тот же |
 
 **Важное разграничение** (легко перепутать): `sul_settings_desc_t` — это ПОЛЬЗОВАТЕЛЬ редактирует
 значение в меню; `take_pending_write` — САМ ПРОТОКОЛ решает записать значение (по команде с шины,
 без участия пользователя). Оба пишут в один и тот же `proto_slice[]` (§8), но с разных сторон.
+`take_pending_tx` — третий, независимый канал: протокол просит ОТПРАВИТЬ кадр (не про settings и
+не про индикацию).
 
 **`connection_timeout_ms` — НЕ пользовательская настройка.** Реальный период отправки у станции
 (раз в ~200 мс, раз в ~1 с — по семействам сильно разное) — знание протокола, оператор его не
@@ -205,6 +210,64 @@ set_active()` только меняет, какая запись реестра 
 
 ---
 
+## 5.1 Шаг 4a — take_pending_tx (только если протокол сам отвечает в шину)
+
+Нужен, если станция ТРЕБУЕТ отклик — как УИМ-6100: роли 46/47/48 обязаны ответить кадром
+`0x81 0x00` на CAN ID «адрес + 0x80», когда в принятом кадре сброшен бит W_3.7 (эталон
+`send_response_to_station()`).
+
+**Правило то же, что у `take_pending_write` (§4):** домен шину не трогает (ARCH §4) — он лишь
+формирует ЧТО отправить, транспорт знает КУДА и КАК.
+
+```c
+/* sul.h */
+typedef struct { uint32_t id; uint8_t data[SUL_TX_DATA_MAX]; uint8_t len; } sul_tx_frame_t;
+typedef bool (*sul_take_pending_tx_fn_t)(void *p_ctx, sul_tx_frame_t *p_out);
+```
+
+Реализация в модуле протокола — чистая функция, читает состояние ctx после последнего decode():
+
+```c
+bool <protocol>_take_pending_tx(void *p_ctx, sul_tx_frame_t *p_out)
+{
+    <protocol>_ctx_t *p_state = (<protocol>_ctx_t *) p_ctx;
+    if (/* отвечать нечего */) { return false; }
+    p_state->should_respond = false;   /* one-shot: один отклик на кадр */
+    p_out->id = ...; p_out->len = ...; p_out->data[0] = ...;
+    return true;
+}
+```
+
+**Два обязательных свойства** (оба — граблями, оба закрыты тестами
+`tests/host/tft_app_sul_uim/`):
+
+1. **Транзитность.** Запрос обязан сбрасываться в НАЧАЛЕ каждого `decode()` — иначе кадр,
+   отброшенный любым гейтом (чужой ID, битый DLC), оставит висеть отклик от предыдущего кадра, и
+   app-слой отправит его повторно.
+2. **One-shot.** Сам `take_pending_tx()` гасит флаг при выдаче — app-слой вправе позвать его
+   повторно, и второй раз должен получить `false`.
+
+**Проводка в app-слое** ([task_sul_rx.c](../../firmware/tft_app/src/app/task_sul_rx.c)):
+отправитель транспорта выбирается в той же ветке, что и приём, а дальше код полностью
+generic — ветки по id для отклика НЕТ:
+
+```c
+sul_tx_send_fn_t p_send = NULL;          /* NULL — у протокола нет исходящего пути (демо) */
+if (p_driver->id == SUL_PROTOCOL_NKU_CAN) { ...; p_send = sul_transport_can_send; }
+else if (p_driver->id == SUL_PROTOCOL_UIM) { ...; p_send = sul_transport_can_send; }
+...
+if ((p_driver->take_pending_tx != NULL) && (p_send != NULL))
+{
+    sul_tx_frame_t tx;
+    if (p_driver->take_pending_tx(p_driver->p_ctx, &tx)) { (void) p_send(&tx, CAN_TX_TIMEOUT_MS); }
+}
+```
+
+Новый вид транспорта обязан дать свой `sul_transport_<bus>_send()` с той же сигнатурой
+(`bsp_status_t (*)(const sul_tx_frame_t *, uint32_t)`) — иначе протоколы на нём отвечать не смогут.
+
+---
+
 ## 6. Шаг 5 — transport (только если новый вид шины)
 
 **Архитектурное решение, найденное на демо-протоколе (Фаза 3.3):** transport **не входит** в
@@ -216,14 +279,30 @@ host-тестируется), но **вызывается только из `tas
 
 Отсюда развилка:
 - **Протокол на уже подключённом виде шины** (напр. второй CAN-протокол) — новый transport не
-  нужен; `task_sul_rx.c` может не тронуться вообще, если оба протокола используют один и тот же
-  `sul_transport_can_receive()`. Если конкретному протоколу всё же нужна другая
-  инициализация/фильтры — по образцу ветки НКУ-CAN (реаппликация параметров внутри существующей
-  ветки, см. §7).
+  нужен; `sul_transport_can_receive()`/`_send()` переиспользуются как есть. Но **раскладка
+  RX-фильтров почти наверняка своя** (см. ниже) — тогда добавляется одна функция
+  `sul_transport_can_set_address_<proto>()` рядом с существующими и одна строка в её ветке
+  `task_sul_rx.c` (§7).
 - **Протокол на новом виде шины** (напр. первый UART-протокол Фазы 8 — УИМ/SD7/УЭЛ/УКЛ,
   большинство из них не CAN, см. ARCH §14) — создать `domain/sul/transport/<bus>/` (по образцу
   `transport/can`/`transport/demo`) **и** добавить ветку в `task_sul_rx.c` (§7). Второй и
   последующие протоколы на ТОМ ЖЕ новом виде шины эту ветку уже не трогают.
+
+**Раскладка фильтров — своя у каждого протокола, а не «тот же набор с другим адресом».** НКУ-CAN
+занимает 7 Message Buffer'ов (5 точных `PACKET1..5` + 2 wildcard удалённой адресации), УИМ-6100 —
+ровно ОДИН (CAN ID кадра == адрес индикатора). Поэтому одной `set_address()` на всех быть не
+может: у каждого CAN-протокола своя `sul_transport_can_set_address_<proto>()`, которая строит свой
+набор `{id, mask}` и отдаёт его общему применятелю внутри
+[can_transport.c](../../firmware/tft_app/src/domain/sul/transport/can/src/can_transport.c).
+Применятель делает две вещи, которые легко упустить, реализуя «по-быстрому»:
+
+1. **Diff по ВСЕМУ набору, не по адресу.** Первая версия сравнивала только
+   `last_applied_address` — переключение протокола НКУ↔УИМ при совпавшем числовом адресе НЕ
+   переприменяло фильтры, и раскладка оставалась от прежнего протокола.
+2. **Снятие прежнего набора перед установкой нового** (`bsp_can_clear_filters()`).
+   `bsp_can_set_filter()` только ДОБАВЛЯЕТ — без снятия «лишние» MB прежней раскладки (у НКУ их 7,
+   у УИМ нужен 1) остались бы активными и пропускали чужие кадры. Симметричная функция снятия в
+   `bsp_can` изначально отсутствовала — добавлена вместе с УИМ.
 
 **Готча: HW-фильтры — слепая зона host-тестов** (боевая, Фаза 3.5). Если decode() должен видеть
 кадры ВНЕ основного набора ID протокола (широковещательные команды, кадры с чужим адресом — как
@@ -238,22 +317,29 @@ MB 5/6). Точные фильтры под «свои» ID отбрасываю
 
 ## 7. Шаг 6 — диспетчеризация в `task_sul_rx.c`
 
-Только если шаг 6 завёл новый вид транспорта. Это **единственное** оставшееся место, которое
-знает про конкретные протоколы/транспорты — везде остальное протокол-агностично (в т.ч.
-`take_pending_write`, §4 — тот генерик, ветки по id для него уже НЕТ):
+Нужна, если у протокола своя раскладка фильтров ИЛИ новый вид транспорта. Это **единственное**
+оставшееся место, которое знает про конкретные протоколы/транспорты — везде остальное
+протокол-агностично (в т.ч. `take_pending_write` §4 и `take_pending_tx` §5.1 — оба generic,
+ветки по id для них НЕТ):
 
 ```c
 const sul_driver_t *p_driver = sul_registry_active();
 
 sul_frame_t frame;
 bsp_status_t rx_rc;
+sul_tx_send_fn_t p_send = NULL;          /* отправитель ТОГО ЖЕ транспорта, §5.1 */
+
 if (p_driver->id == SUL_PROTOCOL_NKU_CAN)
 {
-    /* существующая ветка: адрес из настроек -> ctx И CAN-фильтры, sul_transport_can_receive() */
+    /* адрес из настроек -> И в ctx декодера, И в HW-фильтры (оба конца!) */
+    nku_can_set_address(p_driver->p_ctx, ADDR);
+    (void) sul_transport_can_set_address_nku(ADDR);   /* no-op, если набор не менялся */
+    rx_rc  = sul_transport_can_receive(CAN_RX_TIMEOUT_MS, &frame);
+    p_send = sul_transport_can_send;
 }
 else if (p_driver->id == SUL_PROTOCOL_<НОВЫЙ>)
 {
-    /* реаппликация параметров протокола (если есть, из proto_slice[0]) + приём с нового transport */
+    /* то же, но своя раскладка фильтров: sul_transport_can_set_address_<новый>() */
 }
 else /* демо и т.д. — оставшиеся протоколы без своей ветки */
 {
@@ -264,14 +350,15 @@ if (rx_rc == BSP_OK)
 {
     if (p_driver->decode(p_driver->p_ctx, &frame, &decoded) == SUL_STATUS_OK) { /* ... */ }
 
-    /* Generic, без ветки по id — см. §4. */
-    if (p_driver->take_pending_write != NULL)
-    {
-        sul_slice_write_t write;
-        if (p_driver->take_pending_write(p_driver->p_ctx, &write)) { /* ...идемпотентная запись... */ }
-    }
+    /* Generic, без ветки по id — см. §4 и §5.1. */
+    if (p_driver->take_pending_write != NULL) { /* ...идемпотентная запись settings... */ }
+    if ((p_driver->take_pending_tx != NULL) && (p_send != NULL)) { /* ...отправка отклика... */ }
 }
 ```
+
+**Оба конца адреса — обязательно.** Реаппликация только в ctx декодера бесполезна: HW-фильтры
+отбросят кадры чужого адреса до всякого софта (боевая находка Фазы 3, повторно — Фазы 3.5).
+Симметрично, только фильтры без ctx — декодер не узнает свои ID.
 
 `p_driver->p_ctx` уже правильного типа для активного протокола — просто скастовать
 (`(‹protocol›_ctx_t *) p_driver->p_ctx`), диспетчеризация по типу ctx отдельно писать не нужно.
@@ -320,8 +407,14 @@ if (rx_rc == BSP_OK)
   вообще (см. [MODE_PRIORITY.md §5](MODE_PRIORITY.md)).
 - **UI/fallback, render_task** — читают `indication_task_t`, о протоколах не знают.
 - **Settings store** — `proto_slice[]` уже общий, под любой протокол (по одному активному за раз).
-- **`task_sul_rx.c` для `take_pending_write`** (§4/§7) — generic, ветка по id нужна ТОЛЬКО для
-  транспорта (§6/§7), не для записи settings.
+- **`task_sul_rx.c` для `take_pending_write`/`take_pending_tx`** (§4/§5.1/§7) — generic, ветка по
+  id нужна ТОЛЬКО для транспорта (§6/§7), не для записи settings и не для отклика.
+
+**Исключение — модель.** Если протокол приносит режим, которого в `sul_result_t` ещё НЕТ (у УИМ так
+появилась «Эвакуация», код этажа 56), правки нужны и в модели: `bool` в `sul_result_t` +
+`SUL_MODE_*` + строка в `k_mode_priority[]` + метка в `fallback.c`. Это законно — модель
+каноническая, но открытая (ARCH §6). Симптом, если этого НЕ сделать: декодер удерживает режим, а
+`sul_resolve_mode()` отдаёт `NORMAL` — на экране обычный этаж во время спецрежима, молча.
 
 Если правка одного из этих слоёв кажется необходимой для нового протокола — вероятно, протокол
 пытается пронести через `sul_result_t` что-то непротокольное (см. ARCH §6 — «провиженинг-концепты
@@ -337,5 +430,7 @@ if (rx_rc == BSP_OK)
 | Синтетический / decode-less протокол | [demo/](../../firmware/tft_app/src/domain/sul/demo/), [transport/demo/](../../firmware/tft_app/src/domain/sul/transport/demo/) |
 | Данные декодера отдельно от логики | [demo_route.h/.c](../../firmware/tft_app/src/domain/sul/demo/src/) |
 | Протокол сам пишет settings (без меню) | [nku_can_take_pending_write()](../../firmware/tft_app/src/domain/sul/nku_can/src/nku_can.c) — удалённая адресация, §4 выше |
+| Протокол сам отвечает в шину | [uim_take_pending_tx()](../../firmware/tft_app/src/domain/sul/uim/src/uim.c) — отклик станции, §5.1 выше |
+| Один байт кадра несёт ДВА смысла + гистерезис | [uim.c](../../firmware/tft_app/src/domain/sul/uim/src/uim.c) (`decode_floor_code`), [test_sul_uim README](../../tests/host/tft_app_sul_uim/README.md) |
 | Полная связка настройки → меню → протокол | [MENU.md §4](MENU.md), [SETTINGS.md](SETTINGS.md) |
 | Пошагово: как добавить НЕпротокольную настройку | [ADDING_SETTING.md](ADDING_SETTING.md) |

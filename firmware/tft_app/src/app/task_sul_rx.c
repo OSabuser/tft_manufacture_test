@@ -19,6 +19,7 @@
 #include "app_tasks.h"
 #include "bsp/led.h"
 #include "bsp/wdog.h"
+#include "crash_log.h"
 #include "domain/controller.h"
 #include "domain/elevator_model.h"
 #include "domain/sul.h"
@@ -26,6 +27,7 @@
 #include "domain/sul/nku_can.h"
 #include "domain/sul/transport/can.h"
 #include "domain/sul/transport/demo.h"
+#include "domain/sul/uim.h"
 #include "log/log.h"
 #include "queue.h"
 #include "services/settings_store.h"
@@ -36,11 +38,23 @@
 #define LOG_TAG "sul_rx"
 
 #define HEARTBEAT_PERIOD_MS 500U
-#define WDOG_FEED_PERIOD_MS 100U /* кормим чаще периода мигания — таймаут WDOG >= 1 c */
+/* Каденция итерации цикла. WDOG взводит ЗАГРУЗЧИК (WDE — write-once), таймаут
+ * 10 c — см. firmware/bootloader/src/main.c; приложение только кормит.
+ *
+ * ВНИМАНИЕ на бюджет: bsp_wdog_refresh() ниже — ЕДИНСТВЕННАЯ точка кормления в
+ * прошивке, и она в задаче с САМЫМ НИЗКИМ приоритетом. Любой, кто выше
+ * (демон таймеров, menu_task, render_task), удерживая CPU дольше 10 c,
+ * приводит к сбросу. Диагностика такого случая — app/crash_log.h
+ * («WATCHDOG TIMEOUT, крэш-записи нет»). */
+#define WDOG_FEED_PERIOD_MS 100U
 #define STATUS_LOG_PERIOD_MS                                                                       \
     2000U /* периодический re-log трейлера — виден независимо
                                      * от момента подключения терминала */
 #define CAN_RX_TIMEOUT_MS 100U /* держит цикл отзывчивым к WDOG/heartbeat-каденции */
+/* Отклик протокола (take_pending_tx) — TX-мейлбокс свободен практически всегда;
+ * короткий таймаут, чтобы неисправная шина не съедала бюджет итерации. */
+#define CAN_TX_TIMEOUT_MS 10U
+
 /* «Пропадание трафика» — см. ARCH, поток данных: poll + timeout→default.
  * Порог — СВОЙСТВО ПРОТОКОЛА (p_driver->connection_timeout_ms, domain/sul.h),
  * не константа здесь: разные станции шлют раз в ~200 мс или раз в ~1 с, а
@@ -49,6 +63,12 @@
  * протоколом при регистрации в sul_registry.c. Меряется от last_frame_tick —
  * пауза меню не портит логику: если трафик реально стоял, «--» появится сразу
  * по возврату из меню; если шёл — SINCE_FRAME_MS обнулится первым же кадром. */
+
+/**
+ * @brief Отправитель кадра активного транспорта — выбирается в той же ветке,
+ *        что и приём, используется generic-кодом отклика (take_pending_tx).
+ */
+typedef bsp_status_t (*sul_tx_send_fn_t)(const sul_tx_frame_t *p_frame, uint32_t timeout_ms);
 
 void sul_rx_task(void *p_arg)
 {
@@ -63,26 +83,38 @@ void sul_rx_task(void *p_arg)
     controller_init(&ctrl_ctx);
 
     const TickType_t FEED_PERIOD = pdMS_TO_TICKS(WDOG_FEED_PERIOD_MS);
-    uint32_t elapsed_ms          = 0U;
-    uint32_t since_status_ms     = 0U;
     TickType_t last_wake         = xTaskGetTickCount();
     TickType_t last_frame_tick   = xTaskGetTickCount();
+
+    /* Дедлайны по РЕАЛЬНЫМ тикам, а не «+100 мс за итерацию».
+     *
+     * Раньше счётчики инкрементировались на WDOG_FEED_PERIOD_MS каждый проход,
+     * т.е. предполагали, что итерация длится ровно 100 мс. Вне меню так и было
+     * (busy-spin в bsp_can_receive съедает таймаут), но ПОД МЕНЮ CAN-блок
+     * пропускается — итерация становится микросекундной, vTaskDelayUntil() при
+     * просроченном дедлайне не блокирует, и «мс» бежали в сотни раз быстрее
+     * реального времени: heartbeat частил, а log_slot_status() (это ЧТЕНИЯ
+     * QSPI) вызывался вместо раза в 2 с — десятки раз в секунду. */
+    TickType_t next_heartbeat = xTaskGetTickCount();
+    TickType_t next_status    = xTaskGetTickCount();
 
     for (;;)
     {
         bsp_wdog_refresh();
+        crash_log_feed_mark(); /* «я жива» — детектор голодания в input_poll_cb */
 
-        elapsed_ms += WDOG_FEED_PERIOD_MS;
-        if (elapsed_ms >= HEARTBEAT_PERIOD_MS)
+        const TickType_t NOW = xTaskGetTickCount();
+
+        /* Знаковая разница — корректна при перевороте счётчика тиков. */
+        if ((int32_t) (NOW - next_heartbeat) >= 0)
         {
-            elapsed_ms = 0U;
+            next_heartbeat = NOW + pdMS_TO_TICKS(HEARTBEAT_PERIOD_MS);
             bsp_led_toggle(LED_APP);
         }
 
-        since_status_ms += WDOG_FEED_PERIOD_MS;
-        if (since_status_ms >= STATUS_LOG_PERIOD_MS)
+        if ((int32_t) (NOW - next_status) >= 0)
         {
-            since_status_ms = 0U;
+            next_status = NOW + pdMS_TO_TICKS(STATUS_LOG_PERIOD_MS);
             log_slot_status("periodic");
         }
 
@@ -104,15 +136,30 @@ void sul_rx_task(void *p_arg)
              * decode (см. PLAN.md — найдено на реальной станции, адрес 1). */
             sul_frame_t frame;
             bsp_status_t rx_rc;
+            /* Отправитель ТОГО ЖЕ транспорта, что и приём — выбирается здесь,
+             * в единственной protocol-aware ветке, и используется ниже уже
+             * generic-кодом (см. take_pending_tx). NULL — у протокола нет
+             * исходящего пути (демо: синтетика без шины). */
+            sul_tx_send_fn_t p_send = NULL;
             if (p_driver->id == SUL_PROTOCOL_NKU_CAN)
             {
                 const uint8_t NKU_ADDR = settings_store_get()->user.proto_slice[0];
                 nku_can_set_address((nku_can_ctx_t *) p_driver->p_ctx, NKU_ADDR);
-                (void) sul_transport_can_set_address(NKU_ADDR); /* no-op, если адрес не менялся */
-                rx_rc = sul_transport_can_receive(CAN_RX_TIMEOUT_MS, &frame);
+                /* no-op, если раскладка фильтров не менялась */
+                (void) sul_transport_can_set_address_nku(NKU_ADDR);
+                rx_rc  = sul_transport_can_receive(CAN_RX_TIMEOUT_MS, &frame);
+                p_send = sul_transport_can_send;
             }
             else if (p_driver->id == SUL_PROTOCOL_UIM)
             {
+                /* Тот же паттерн, что у НКУ-CAN, но своя раскладка фильтров:
+                 * у УИМ CAN ID кадра РАВЕН адресу индикатора. Оба конца
+                 * (decode-ctx И HW-фильтр) — из одной настройки. */
+                const uint8_t UIM_ADDR = settings_store_get()->user.proto_slice[0];
+                uim_set_address((uim_ctx_t *) p_driver->p_ctx, UIM_ADDR);
+                (void) sul_transport_can_set_address_uim(UIM_ADDR);
+                rx_rc  = sul_transport_can_receive(CAN_RX_TIMEOUT_MS, &frame);
+                p_send = sul_transport_can_send;
             }
             else /* SUL_PROTOCOL_DEMO — без реальной шины, всегда успешно */
             {
@@ -162,6 +209,25 @@ void sul_rx_task(void *p_arg)
                         }
                     }
                 }
+
+                /* Протокол сам инициирует ОТПРАВКУ кадра — напр. обязательный
+                 * отклик станции у УИМ-6100. Тот же generic-паттерн, что и
+                 * take_pending_write выше: ветки по id здесь НЕТ, протокол лишь
+                 * говорит ЧТО отправить, транспорт (p_send, выбран в ветке
+                 * приёма) — КУДА и КАК. Домен шину не трогает (ARCH §4). */
+                if ((p_driver->take_pending_tx != NULL) && (p_send != NULL))
+                {
+                    sul_tx_frame_t tx;
+                    if (p_driver->take_pending_tx(p_driver->p_ctx, &tx))
+                    {
+                        const bsp_status_t TX_RC = p_send(&tx, CAN_TX_TIMEOUT_MS);
+                        if (TX_RC != BSP_OK)
+                        {
+                            LOG_W(LOG_TAG, "%s: tx id=0x%X len=%u failed (rc=%d)", p_driver->p_name,
+                                  (unsigned) tx.id, tx.len, TX_RC);
+                        }
+                    }
+                }
             }
 
             if (p_driver->connection_timeout_ms != SUL_CONNECTION_TIMEOUT_DISABLED)
@@ -189,13 +255,18 @@ void sul_rx_task(void *p_arg)
                 if (DIFF.pos_pending || DIFF.direction_pending || DIFF.mode_pending)
                 {
 
+                    /* mode=%u — РАЗРЕШЁННЫЙ режим (sul_mode_t после таблицы
+                     * приоритетов), остальные поля — сырые ортогональные
+                     * сигналы. Оба нужны на стенде: видно и что принёс
+                     * декодер, и что из этого выбрал резолвер. */
                     LOG_I(LOG_TAG,
-                          "update from %s: pos=%s next=%s dir=%u arrival=%d move=%d overload=%d "
-                          "fire=%d lading=%d maint=%d fireman=%d seismic=%d err=%d floor=%u",
+                          "update from %s: pos=%s next=%s dir=%u mode=%u arrival=%d move=%d "
+                          "overload=%d fire=%d evac=%d err=%d lading=%d maint=%d fireman=%d "
+                          "seismic=%d floor=%u",
                           p_driver->p_name, decoded.pos, decoded.next, (unsigned) decoded.direction,
-                          decoded.arrival, decoded.movement, decoded.overload, decoded.fire_alarm,
-                          decoded.lading, decoded.maintenance, decoded.fireman, decoded.seismic,
-                          decoded.error, decoded.floor_num);
+                          (unsigned) DIFF.mode, decoded.arrival, decoded.movement, decoded.overload,
+                          decoded.fire_alarm, decoded.evacuation, decoded.error, decoded.lading,
+                          decoded.maintenance, decoded.fireman, decoded.seismic, decoded.floor_num);
 
                     const render_msg_t MSG = { .task = DIFF, .result = decoded };
                     (void) xQueueOverwrite(g_render_queue, &MSG);
