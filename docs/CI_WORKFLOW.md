@@ -5,6 +5,10 @@
 > репозитории: `ci.yml` (обычный PR/push-цикл) и `release.yml` (публикация
 > релизных бинарников по тегу). Это техническая справка «как оно работает
 > сейчас», а не хронология решений.
+>
+> **Порядок действий человека при выпуске релиза** (мерж в `main`, версия,
+> тег, проверка результата) — [RELEASE_PROCESS.md](RELEASE_PROCESS.md);
+> здесь — только устройство самих workflow.
 
 ---
 
@@ -128,7 +132,7 @@ job-level `if:`, использовать именно эту форму.
 | --- | --- | --- | --- |
 | `firmware` | `ubuntu-latest`, devcontainer (тот же подход и кэш, что в `ci.yml`) | всегда | сверяет тег `firmware-v*` с `VERSION` в `firmware/test/CMakeLists.txt` (если применимо); `just build::hab-firmware-test-debug` → артефакт `firmware-hab-debug`; сверяет тег `bootloader-v*` с `VERSION` в `firmware/bootloader/CMakeLists.txt` (если применимо); `just build::hab-bootloader-release` → артефакт `bootloader-hab-release` |
 | `publish-firmware` | `ubuntu-latest` | только push тега `firmware-v*` | скачивает `firmware-hab-debug`; `gh release create firmware-vX.Y.Z firmware_test_hab.bin` — standalone-релиз для `tools/host/flash_usb.py`, без TUI |
-| `publish-bootloader` | `ubuntu-latest` | только push тега `bootloader-v*` | скачивает `bootloader-hab-release`; `gh release create bootloader-vX.Y.Z bootloader_hab.bin` — standalone-релиз (USB ROM/SWD, без TUI); `--notes` явно предупреждает, что HAB-подпись тестовым ключом, не production (см. `firmware/bootloader/SIGNING_CEREMONY.md`) |
+| `publish-bootloader` | `ubuntu-latest` | только push тега `bootloader-v*` | скачивает `bootloader-hab-release`; `gh release create bootloader-vX.Y.Z bootloader_hab.bin` — standalone-релиз (USB ROM/SWD, без TUI); `--notes` явно предупреждает, что HAB-подпись тестовым ключом, не production (см. `tools/host/hab/keys/SIGNING_CEREMONY.md`) |
 | `service-tui-macos` / `service-tui-windows` | `macos-latest` / `windows-latest` | push тега `tui-v*` ИЛИ `workflow_dispatch` с `release_type=tui` | `astral-sh/setup-uv` + `extractions/setup-just` (на раннерах нет `uv`/`just` из коробки); скачивает `firmware-hab-debug` в `build/Debug/` и `bootloader-hab-release` в `build/Release/`; сверяет тег `tui-v*` с `version` в `pyproject.toml` (если применимо); `just host::service-setup` + `just host::package-tui` (падает явно, если `build/Release/bootloader_hab.bin` не найден — production-функция TUI жёстко требует именно этот файл); архивирует `dist/service-tui-vX.Y.Z-<os>/` в zip (`zip -r` на macOS, `Compress-Archive` на Windows); артефакт `service-tui-macos`/`service-tui-windows` |
 | `publish-tui` | `ubuntu-latest`, `needs: [service-tui-macos, service-tui-windows]` | только push тега `tui-v*` | скачивает оба zip; `gh release create tui-vX.Y.Z *.zip` |
 
@@ -194,5 +198,5 @@ branch и `release_type`. Джобы `publish-*` в этом сценарии п
 - **`bootloader-v*`/`tui-v*` релизы несут HAB-образ, подписанный ТЕСТОВЫМ
   ключом** (`tools/host/hab/keys/`, HAB Open, схема NOCAK) — не production.
   Реальная SRK-церемония описана в
-  `firmware/bootloader/SIGNING_CEREMONY.md`, в CI пока не встроена (сама
+  `tools/host/hab/keys/SIGNING_CEREMONY.md`, в CI пока не встроена (сама
   церемония — не автоматизируемый процесс, см. документ).

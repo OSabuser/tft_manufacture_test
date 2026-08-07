@@ -65,6 +65,8 @@ just host::debug-server                 # GDB-сервер для отладки
 
 Прошивка подробно — [docs/HOW_TO_FLASH.md](docs/HOW_TO_FLASH.md)
 Отладка подробно — [docs/HOW_TO_DEBUG.md](docs/HOW_TO_DEBUG.md)
+Выпуск релизов — [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md) (порядок действий),
+[docs/CI_WORKFLOW.md](docs/CI_WORKFLOW.md) (устройство workflow)
 
 ---
 
