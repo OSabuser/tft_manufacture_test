@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(
   firmware_test
-  VERSION 0.1.2
+  VERSION 0.1.3
   LANGUAGES C ASM)
 
 set(TARGET_NAME firmware_test)
