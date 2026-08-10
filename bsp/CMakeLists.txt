@@ -29,6 +29,7 @@ target_include_directories(bsp_board SYSTEM PUBLIC generated)
 
 # Дефайны PUBLIC — транзитивно подтянутся во все firmware таргеты
 target_compile_definitions(bsp_board PUBLIC CPU_MIMXRT1052CVJ5B)
+target_compile_definitions(bsp_board PRIVATE XIP_EXTERNAL_FLASH=1)
 
 # sdk_device PUBLIC — транзитивно подтянется во все firmware таргеты
 target_link_libraries(bsp_board PUBLIC sdk_device sdk_clock sdk_common
