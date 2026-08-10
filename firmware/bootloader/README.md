@@ -157,7 +157,9 @@ just build::test-host
 just build::build-mcuboot-stub
 ```
 
-Чек-листы ручной проверки лежат рядом со стендом в `test_stub/`.
+Порядок ручного прогона — [test_stub/HARDWARE_VERIFICATION.md](test_stub/HARDWARE_VERIFICATION.md):
+шесть блоков (обычная загрузка, установка с SD, recovery, откат, регрессия по USB ROM) с подготовкой
+стенда и ожидаемым результатом каждого сценария.
 
 ---
 
