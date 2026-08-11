@@ -156,6 +156,7 @@ target_link_libraries(
           bsp_button
           bsp_opto # диспетчерский вход IN1/IN2 (§3.4), app/dispatcher.c
           bsp_wdog
+          bsp_provisioning # UID чипа для загрузочного экрана (§3.10)
           bsp_boot_state
           bsp_qspi_flash
           bsp_uart_host
@@ -175,7 +176,9 @@ target_link_libraries(
           tft_app_settings_store
           # Фаза 3.2.1/3.2.2: движок меню (модель) + рендер
           tft_app_menu
-          tft_app_ui_menu)
+          tft_app_ui_menu
+          # Фаза 3.10: загрузочный экран
+          tft_app_ui_boot_screen)
 
 target_link_options(
   app

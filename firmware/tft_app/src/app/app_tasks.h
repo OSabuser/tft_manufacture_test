@@ -45,7 +45,8 @@
 #include "queue.h"
 #include "task.h"
 #include "timers.h"
-#include "ui/fallback.h" /* dispatcher_indication_t */
+#include "ui/boot_screen.h" /* boot_screen_info_t */
+#include "ui/fallback.h"    /* dispatcher_indication_t */
 
 #include <stdbool.h>
 
@@ -188,6 +189,32 @@ void dispatcher_poll(void);
  *  Логирует render_task, а НЕ dispatcher_poll(): у демона таймеров стек 1 КБ
  *  против 4 КБ у задач, vsnprintf там опасен (см. dispatcher.c). */
 const char *dispatcher_indication_name(dispatcher_indication_t v);
+
+/**
+ * @brief Что показать на загрузочном экране (§3.10).
+ *
+ * Заполняет ОДИН раз bringup_task (данные тянутся из четырёх мест — заголовок
+ * образа, настройки, реестр протоколов, крэш-запись, т.е. это композиция, а не
+ * презентация — ARCH §4); читает render_task. Заполняется ДО создания
+ * render_task, дальше не меняется — синхронизация не нужна.
+ *
+ * Строковые поля указывают на статику (литералы, имена из реестра, поля
+ * снятой crash_info_t) — время жизни бесконечное.
+ */
+extern boot_screen_info_t g_boot_screen_info;
+
+/**
+ * @brief Версия ЭТОГО образа из заголовка MCUboot своего слота (§3.10).
+ *
+ * Единственный источник правды: то, чем подписан образ, и то, по чему
+ * загрузчик выбирает слот (docs/RELEASE_PROCESS.md §1.1). Отдельного
+ * `version.h` нет намеренно — два места разъезжаются, заголовок образа
+ * разъехаться не может.
+ *
+ * @return false — заголовок не прочитался или magic не совпал; выходные
+ *         значения не тронуты, экран покажет «н/д» вместо выдуманного.
+ */
+bool app_image_version(uint8_t *p_major, uint8_t *p_minor, uint16_t *p_revision);
 
 /**
  * @brief Применить уровень логов из настроек (§3.9).

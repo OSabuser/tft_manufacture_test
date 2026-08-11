@@ -473,3 +473,15 @@ add_host_test(
   ${CMAKE_SOURCE_DIR}/bsp/reset/src/reset_decode.c
   INCLUDES
   ${CMAKE_SOURCE_DIR}/bsp/reset/include)
+
+# tft_app — загрузочный экран (Фаза 3.10). Тестируется ТОЛЬКО компоновщик:
+# какие строки появляются, какие пропускаются, как форматируются. Рендер —
+# отдельная единица трансляции с gfx, на хосте не проверяется (как menu_view).
+add_host_test(
+  NAME
+  test_tft_app_boot_screen
+  SOURCES
+  tft_app_boot_screen/test_boot_screen.c
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/ui/boot_screen/src/boot_screen_compose.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/ui/boot_screen/include)

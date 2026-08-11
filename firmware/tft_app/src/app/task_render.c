@@ -30,7 +30,9 @@
 #include "log/log.h"
 #include "queue.h"
 #include "services/gfx.h"
+#include "services/settings_store.h"
 #include "task.h"
+#include "ui/boot_screen.h"
 #include "ui/fallback.h"
 #include "ui/menu_view.h"
 
@@ -50,17 +52,75 @@ void render_task(void *p_arg)
     }
 
     sul_result_t last = sul_default_state();
+
+    /* ── Загрузочный экран (§3.10) ────────────────────────────────────────
+     * Показывается вместо первого кадра индикации: пока он на экране, СУЛ
+     * уже принимается и декодируется — задержано только отображение. */
+    const uint8_t BOOT_SECS   = settings_store_get()->device.boot_screen_secs;
+    bool boot_screen_active   = (BOOT_SECS > 0U);
+    uint32_t boot_screen_ends = app_now_ms() + ((uint32_t) BOOT_SECS * 1000U);
+
     heartbeat_enter(HB_TASK_RENDER, app_now_ms(), "render:first-frame");
-    ui_fallback_render_initial(&last, g_dispatcher_indication);
-    gfx_present();
+    if (boot_screen_active)
+    {
+        gfx_clear();
+        ui_boot_screen_render(&g_boot_screen_info);
+        gfx_present();
+        gfx_present(); /* тот же AS — во второй FB (double buffering) */
+    }
+    else
+    {
+        ui_fallback_render_initial(&last, g_dispatcher_indication);
+        gfx_present();
+    }
     heartbeat_leave(HB_TASK_RENDER, app_now_ms());
 
     bool was_menu_open                      = false;
+    bool force_indication                   = false;
     dispatcher_indication_t last_dispatcher = g_dispatcher_indication;
 
     for (;;)
     {
-        (void) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        /* Пока показывается загрузочный экран — ждём НЕ вечно, а до конца
+         * показа. Выдержка живёт именно здесь, в ожидании, а НЕ в
+         * vTaskDelay() внутри heartbeat_enter/leave: у render_task порог
+         * супервизора guard_ms = 2000 мс (§3.7), и трёхсекундный показ под
+         * скобками уронил бы плату. В простое же event-driven задача свежа
+         * по определению. */
+        TickType_t wait = portMAX_DELAY;
+        if (boot_screen_active)
+        {
+            const int32_t LEFT_MS = (int32_t) (boot_screen_ends - app_now_ms());
+            wait                  = (LEFT_MS > 0) ? pdMS_TO_TICKS((uint32_t) LEFT_MS) : 0U;
+        }
+
+        (void) ulTaskNotifyTake(pdTRUE, wait);
+
+        if (boot_screen_active)
+        {
+            /* Меню важнее экрана: оператор не должен ждать окончания показа. */
+            const bool DISMISS =
+                ((int32_t) (app_now_ms() - boot_screen_ends) >= 0) || menu_is_open(&g_menu);
+
+            if (!DISMISS)
+            {
+                /* Свежее состояние СУЛ ПОГЛОЩАЕМ, но не рисуем — чтобы по
+                 * окончании показа индикация появилась сразу актуальной, а не
+                 * с «--» до следующего кадра. */
+                render_msg_t msg;
+                if (xQueueReceive(g_render_queue, &msg, 0) == pdTRUE)
+                {
+                    last = msg.result;
+                }
+                continue;
+            }
+
+            boot_screen_active = false;
+            /* Экран снят — индикацию надо нарисовать явно: очередь может быть
+             * пуста, а dispatcher не менялся, и обычные условия ниже не
+             * сработали бы. Если открылось меню — его ветка отрисует сама. */
+            force_indication = true;
+        }
 
         const bool MENU_OPEN_NOW = menu_is_open(&g_menu);
 
@@ -132,8 +192,9 @@ void render_task(void *p_arg)
                 }
             }
 
-            if (was_menu_open || (DISPATCHER_NOW != last_dispatcher))
+            if (was_menu_open || force_indication || (DISPATCHER_NOW != last_dispatcher))
             {
+                force_indication = false;
                 /* Меню только что закрылось, ИЛИ диспетчерский вход
                  * изменился без нового кадра СУЛ в очереди (свой продюсер,
                  * не sul_rx_task) — восстановить индикацию последним

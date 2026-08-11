@@ -17,18 +17,6 @@
  * 'CRA3' (крошка расширена, см. ниже). */
 #define CRASH_MAGIC 0x43524133U
 
-/** Имя задачи: FreeRTOS-имена и наши («sul_rx»/«menu»/«render») коротки. */
-#define CRASH_NAME_MAX 16U
-
-/* Крошка — ОТДЕЛЬНЫЙ, больший лимит. На HW-проверке §3.7 общий лимит 16 съел
- * последний символ: в лог ушло 'render:menu-ope' вместо 'render:menu-open'.
- * Крошки соседних веток одной задачи различаются В КОНЦЕ строки
- * («render:menu-open» / «render:menu-nav» / «render:indication»), т.е. обрезка
- * бьёт ровно по различающей части — при том, что крошка и существует, чтобы
- * различать. 32 — с запасом к самой длинной сейчас (18: «render:first-frame»,
- * «menu:settings-save»). */
-#define CRASH_WHERE_MAX 32U
-
 /**
  * Крэш-запись. `.noinit` — не обнуляется startup'ом, переживает сброс ядра
  * (см. crash_log.h). volatile: пишется перед сбросом, читается после — для
@@ -129,58 +117,68 @@ void crash_log_record_stall(const char *p_task, const char *p_where, uint32_t ag
      * которого супервизор перестал кормить (см. crash_log.h, два режима). */
 }
 
-void crash_log_report_previous(void)
+void crash_log_take_previous(crash_info_t *p_out)
 {
-    /* Аппаратный свидетель, доступный ПРИЛОЖЕНИЮ, ровно один — WDOG1->WRSR
-     * (bsp_wdog_reset_was_timeout()): регистр read-only и самоочищается на
-     * каждый сброс, поэтому потребления не требует и работает на любой стадии
-     * цепочки загрузки.
-     *
-     * Полного источника сброса (питание / кнопка / отладчик / перегрев) у
-     * приложения НЕТ и быть не может: SRC->SRSR — ресурс однократного
-     * потребления, и его забирает ЗАГРУЗЧИК (bsp_boot_state_init() читает бит
-     * POR для счётчика попыток recovery и очищает регистр целиком) задолго до
-     * нашего main(). Подтверждено на стенде 2026-08-11: SRSR=0 даже после
-     * снятия питания. Чтобы источник дошёл сюда, загрузчик должен передавать
-     * его явно — см. PLAN.md §3.8 и bsp/reset/README.md. */
-    const bool WDOG_TIMEOUT = bsp_wdog_reset_was_timeout();
+    p_out->wdog_timeout = bsp_wdog_reset_was_timeout();
+    p_out->valid        = (g_s_crash.magic == CRASH_MAGIC);
 
-    if (g_s_crash.magic == CRASH_MAGIC)
+    if (!p_out->valid)
     {
-        /* Копия до гашения — поля volatile, читаем по одному разу. */
-        const uint32_t CAUSE = g_s_crash.cause;
-        const uint32_t PC    = g_s_crash.pc;
-        const uint32_t LR    = g_s_crash.lr;
-        char name[CRASH_NAME_MAX];
-        for (uint32_t i = 0U; i < CRASH_NAME_MAX; i++)
-        {
-            name[i] = g_s_crash.name[i];
-        }
-        name[CRASH_NAME_MAX - 1U] = '\0';
+        p_out->cause    = CRASH_CAUSE_NONE;
+        p_out->pc       = 0U;
+        p_out->lr       = 0U;
+        p_out->name[0]  = '\0';
+        p_out->where[0] = '\0';
+        return;
+    }
 
-        char where[CRASH_WHERE_MAX];
-        for (uint32_t i = 0U; i < CRASH_WHERE_MAX; i++)
-        {
-            where[i] = g_s_crash.where[i];
-        }
-        where[CRASH_WHERE_MAX - 1U] = '\0';
+    /* Поля volatile — читаем по одному разу. */
+    p_out->cause = (crash_cause_t) g_s_crash.cause;
+    p_out->pc    = g_s_crash.pc;
+    p_out->lr    = g_s_crash.lr;
 
-        g_s_crash.magic = 0U; /* один раз — следующий старт будет чистым */
+    for (uint32_t i = 0U; i < CRASH_NAME_MAX; i++)
+    {
+        p_out->name[i] = g_s_crash.name[i];
+    }
+    p_out->name[CRASH_NAME_MAX - 1U] = '\0';
 
+    for (uint32_t i = 0U; i < CRASH_WHERE_MAX; i++)
+    {
+        p_out->where[i] = g_s_crash.where[i];
+    }
+    p_out->where[CRASH_WHERE_MAX - 1U] = '\0';
+
+    /* Гасим — запись однократного потребления (см. crash_log.h). Дальше все
+     * потребители (лог, загрузочный экран) читают снятую копию. */
+    g_s_crash.magic = 0U;
+}
+
+const char *crash_log_cause_name(const crash_info_t *p_info)
+{
+    return p_info->valid ? cause_name((uint32_t) p_info->cause) : NULL;
+}
+
+void crash_log_report(const crash_info_t *p_info)
+{
+    if (p_info->valid)
+    {
         /* WDOG1.TOUT рядом с причиной различает ДВА пути сброса, которые сама
          * причина не различает: залипание задачи добивает watchdog (TOUT=1),
          * а отказ в коде сбрасывается нами через NVIC_SystemReset() (TOUT=0). */
-        if (CAUSE == (uint32_t) CRASH_CAUSE_TASK_STALL)
+        if (p_info->cause == CRASH_CAUSE_TASK_STALL)
         {
             /* Для протухшей задачи поля переиспользованы: name — какая именно,
              * where — где она залипла, pc — сколько мс молчала. */
             LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: %s task='%s' залипла в '%s', молчала %u мс [TOUT=%u]",
-                  cause_name(CAUSE), name, where, (unsigned) PC, WDOG_TIMEOUT ? 1U : 0U);
+                  cause_name((uint32_t) p_info->cause), p_info->name, p_info->where,
+                  (unsigned) p_info->pc, p_info->wdog_timeout ? 1U : 0U);
         }
         else
         {
             LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: %s task='%s' pc=0x%08X lr=0x%08X [TOUT=%u]",
-                  cause_name(CAUSE), name, (unsigned) PC, (unsigned) LR, WDOG_TIMEOUT ? 1U : 0U);
+                  cause_name((uint32_t) p_info->cause), p_info->name, (unsigned) p_info->pc,
+                  (unsigned) p_info->lr, p_info->wdog_timeout ? 1U : 0U);
         }
         return;
     }
@@ -188,7 +186,7 @@ void crash_log_report_previous(void)
     /* Записи нет, а watchdog всё же сработал. Супервизор (§3.7) причину пишет
      * ЗАРАНЕЕ, поэтому её отсутствие здесь означает отказ САМОГО кормильца —
      * демона программных таймеров — либо срыв ещё до его старта. */
-    if (WDOG_TIMEOUT)
+    if (p_info->wdog_timeout)
     {
         LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: WATCHDOG, крэш-записи НЕТ — "
                        "не отработал сам супервизор/демон таймеров");
@@ -196,7 +194,7 @@ void crash_log_report_previous(void)
     }
 
     /* Ни записи, ни таймаута. Что именно — питание, кнопка или отладчик —
-     * приложению неизвестно (см. про SRSR выше), поэтому перечисляем честно,
-     * а не выдаём догадку за факт. */
+     * приложению неизвестно (SRC->SRSR потребляет загрузчик, см. §3.8),
+     * поэтому перечисляем честно, а не выдаём догадку за факт. */
     LOG_I(LOG_TAG, "предыдущий сброс: штатный (питание/кнопка/отладчик)");
 }

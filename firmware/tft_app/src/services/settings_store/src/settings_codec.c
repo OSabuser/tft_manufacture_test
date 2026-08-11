@@ -18,6 +18,7 @@ static const settings_t K_DEFAULTS = {
             .panel_type  = SETTINGS_DEFAULT_PANEL,
             .protocol_id = 0U, /* NKU_CAN */
             .log_level = 1U, /* «Инфо» — бизнес-логика из коробки; меню поменяет */
+            .boot_screen_secs = 3U, /* §3.10; 0 = не показывать */
         },
     .user =
         {

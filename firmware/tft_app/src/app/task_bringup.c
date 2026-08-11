@@ -16,8 +16,10 @@
 #include "FreeRTOS.h"
 #include "app_tasks.h"
 #include "bootutil/bootutil_public.h"
+#include "bootutil/image.h"
 #include "bsp/boot_state.h"
 #include "bsp/display.h"
+#include "bsp/provisioning.h"
 #include "bsp/qspi_flash.h"
 #include "bsp/sdram.h"
 #include "bsp/uart_host.h"
@@ -138,6 +140,31 @@ static bool bring_up_display_and_can(void)
  * пункте. Неизвестный индекс → «Инфо»: неверная настройка не должна
  * приводить к немому устройству.
  */
+bool app_image_version(uint8_t *p_major, uint8_t *p_minor, uint16_t *p_revision)
+{
+    const struct flash_area *p_fa = NULL;
+    if (flash_area_open(APP_OWN_SLOT_ID, &p_fa) != 0)
+    {
+        return false;
+    }
+
+    /* Заголовок MCUboot лежит в НАЧАЛЕ слота; тот же путь, которым загрузчик
+     * читает версии слотов (firmware/bootloader/src/slot_version.c). */
+    struct image_header hdr;
+    const int RC = flash_area_read(p_fa, 0U, &hdr, sizeof(hdr));
+    flash_area_close(p_fa);
+
+    if ((RC != 0) || (hdr.ih_magic != IMAGE_MAGIC))
+    {
+        return false; /* лучше «н/д» на экране, чем выдуманная версия */
+    }
+
+    *p_major    = hdr.ih_ver.iv_major;
+    *p_minor    = hdr.ih_ver.iv_minor;
+    *p_revision = hdr.ih_ver.iv_revision;
+    return true;
+}
+
 void app_log_level_apply(uint8_t setting_index)
 {
     static const int K_LEVELS[] = {
@@ -148,6 +175,52 @@ void app_log_level_apply(uint8_t setting_index)
 
     const uint8_t COUNT = (uint8_t) (sizeof(K_LEVELS) / sizeof(K_LEVELS[0]));
     log_set_level((setting_index < COUNT) ? K_LEVELS[setting_index] : LOG_LEVEL_INFO);
+}
+
+/**
+ * @brief Собрать данные загрузочного экрана (§3.10).
+ *
+ * Композиция app-слоя: тянет из четырёх независимых источников. Экран сам
+ * ничего не добывает — он получает готовую структуру (ARCH §4).
+ *
+ * @param p_crash  УЖЕ снятая причина сброса — сюда кладутся указатели на её
+ *                 поля, поэтому структура обязана быть долгоживущей (static).
+ */
+static void boot_screen_fill(const crash_info_t *p_crash)
+{
+    boot_screen_info_t *p_i = &g_boot_screen_info;
+
+    p_i->app_version_valid =
+        app_image_version(&p_i->app_major, &p_i->app_minor, &p_i->app_revision);
+
+    /* Версию загрузчика приложению никто не сообщает — он не MCUboot-образ.
+     * NULL → «н/д»; появится, когда он пойдёт под релиз (PLAN.md §3.10). */
+    p_i->p_bootloader_version = NULL;
+
+    /* Панель — до Фазы 9 хардкод (провижининга нет), но берём из настроек,
+     * чтобы строка ожила сама, когда провижининг появится. */
+    p_i->p_panel = (settings_store_get()->device.panel_type == 2U) ? "TFT8" : "?";
+
+    const sul_driver_t *p_drv = sul_registry_active();
+    p_i->p_protocol           = p_drv->p_name;
+    if ((p_drv->p_settings != NULL) && (p_drv->p_settings->count > 0U))
+    {
+        p_i->p_param_label = p_drv->p_settings->p_entries[0].p_label;
+        p_i->param_value   = settings_store_get()->user.proto_slice[0];
+    }
+
+    p_i->uid_valid = (bsp_prov_read_uid(p_i->uid, sizeof(p_i->uid)) == BSP_OK);
+
+    /* Причина — ТОЛЬКО если сброс был нештатный: при штатном строки на экране
+     * быть не должно вовсе (см. ui/boot_screen.h). */
+    p_i->p_reset_cause = crash_log_cause_name(p_crash);
+    p_i->p_reset_where = ((p_crash->cause == CRASH_CAUSE_TASK_STALL) && (p_crash->where[0] != '\0'))
+                             ? p_crash->where
+                             : NULL;
+
+    /* Слоты Фаз 4/5 — пока NULL, строк не дают. */
+    p_i->p_custom     = NULL;
+    p_i->p_style_name = NULL;
 }
 
 void bringup_task(void *p_arg)
@@ -182,6 +255,13 @@ void bringup_task(void *p_arg)
      * и причина всё равно печатается ниже. Потерять её можно только если
      * bsp_qspi_init() ЗАВИСНЕТ намертво — но такая плата не грузится в
      * принципе, и её диагностика — LED-паттерны загрузчика, не наш UART. */
+    /* Причину предыдущего сброса СНИМАЕМ здесь (тихо — печать ниже): запись
+     * однократного потребления, и потребителей теперь двое — лог и
+     * загрузочный экран (§3.10). static: на её поля указывает
+     * g_boot_screen_info, время жизни должно быть бесконечным. */
+    static crash_info_t s_crash;
+    crash_log_take_previous(&s_crash);
+
     const bool QSPI_OK = (bsp_qspi_init() == BSP_OK);
 
     bsp_status_t settings_rc = BSP_OK;
@@ -203,13 +283,17 @@ void bringup_task(void *p_arg)
     app_log_level_apply(settings_store_get()->device.log_level);
 
     /* ── Конец тихой зоны: печатаем накопленное, в прежнем порядке ─────────── */
-    crash_log_report_previous();
+    crash_log_report(&s_crash);
     LOG_I(LOG_TAG, "tft_app boot: qspi=%s", QSPI_OK ? "OK" : "FAIL");
     if (QSPI_OK)
     {
         LOG_I(LOG_TAG, "settings: load rc=%d proto_addr=%u", settings_rc,
               settings_store_get()->user.proto_slice[0]);
     }
+
+    /* Данные загрузочного экрана — после настроек и выбора протокола, ДО
+     * создания render_task (она их только читает, дальше не меняются). */
+    boot_screen_fill(&s_crash);
 
     /* «Дошёл до устойчивого состояния» — сбрасывает счётчик попыток загрузки
      * (recovery загрузчика). SRC GPR, без flash. Безусловно, до потенциально

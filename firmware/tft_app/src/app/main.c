@@ -33,6 +33,7 @@ volatile bool g_menu_active                              = false;
 QueueHandle_t g_render_queue                             = NULL;
 TaskHandle_t g_render_task_handle                        = NULL;
 volatile dispatcher_indication_t g_dispatcher_indication = DISPATCHER_INDICATION_NONE;
+boot_screen_info_t g_boot_screen_info                    = { 0 };
 
 int main(void)
 {
