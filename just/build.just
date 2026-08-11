@@ -83,8 +83,11 @@ sign-app-debug: build-app-debug
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{ BUILD_DIR }}/Debug/signed"
+    # Версия — из CMake (project(tft_app VERSION ...)), не хардкод: она уходит
+    # в заголовок MCUboot и участвует в выборе слота загрузчиком.
+    APP_VERSION="$(cat "{{ BUILD_DIR }}/Debug/app_version.txt")"
     {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
-        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 0.1.0 --align 1 --pad-header --pad \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v "${APP_VERSION}" --align 1 --pad-header --pad \
         "{{ BUILD_DIR }}/Debug/app.bin" "{{ BUILD_DIR }}/Debug/signed/app_slot_a.bin"
     echo "  ✅  build/Debug/signed/app_slot_a.bin (Slot A 0x60040000) — прошивка через just host::flash-swd-app-slot-debug"
 
@@ -94,8 +97,11 @@ sign-app-release: build-app-release
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{ BUILD_DIR }}/Release/signed"
+    # Версия — из CMake (project(tft_app VERSION ...)), не хардкод: она уходит
+    # в заголовок MCUboot и участвует в выборе слота загрузчиком.
+    APP_VERSION="$(cat "{{ BUILD_DIR }}/Release/app_version.txt")"
     {{ MCUBOOT_UV }} "{{ MCUBOOT_IMGTOOL }}" sign \
-        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v 0.1.0 --align 1 --pad-header --pad \
+        -k "{{ MCUBOOT_KEY }}" -H 0x200 -S 0x200000 -v "${APP_VERSION}" --align 1 --pad-header --pad \
         "{{ BUILD_DIR }}/Release/app.bin" "{{ BUILD_DIR }}/Release/signed/app_slot_a.bin"
     echo "  ✅  build/Release/signed/app_slot_a.bin (Slot A 0x60040000)"
 

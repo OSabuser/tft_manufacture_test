@@ -97,7 +97,7 @@ void setUp(void)
 
     /* Каждый тест начинает с чистого состояния логгера */
     log_init(capture_cb, NULL);
-    log_set_enabled(true); /* тумблер §3.6 — не сбрасывается log_init(), сбросить явно */
+    log_set_level(LOG_LEVEL_VERBOSE); /* уровень §3.9 — не сбрасывается log_init(), сбросить явно */
 }
 
 void tearDown(void)
@@ -353,47 +353,107 @@ void test_ctx_pointer_passed_to_callback(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * 7. Runtime toggle — рантайм-тумблер поверх компайл-тайм LOG_LEVEL (§3.6)
+ * 7. Runtime level — рантайм-уровень поверх компайл-тайм LOG_LEVEL (§3.9)
+ *
+ * Гейтится ТО, ЧТО ОСТАЛОСЬ скомпилированным. Тесты идут на host-сборке, где
+ * компайл-тайм LOG_LEVEL максимальный, поэтому рантайм-уровень здесь виден
+ * во всём диапазоне.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-void test_enabled_by_default(void)
+void test_default_level_passes_everything(void)
 {
-    LOG_I("TAG", "message");
+    /* До первого log_set_level() рантайм-гейт не режет ничего сверх
+     * компайл-тайм: ранние сообщения bringup не должны теряться молча. */
+    TEST_ASSERT_EQUAL_INT(LOG_LEVEL_VERBOSE, log_get_level());
+
+    LOG_V("TAG", "verbose");
     TEST_ASSERT_EQUAL_INT(1, g_s_capture.call_count);
 }
 
-void test_is_enabled_reflects_state(void)
+void test_get_level_reflects_set_level(void)
 {
-    TEST_ASSERT_TRUE(log_is_enabled());
-    log_set_enabled(false);
-    TEST_ASSERT_FALSE(log_is_enabled());
-    log_set_enabled(true);
-    TEST_ASSERT_TRUE(log_is_enabled());
+    log_set_level(LOG_LEVEL_INFO);
+    TEST_ASSERT_EQUAL_INT(LOG_LEVEL_INFO, log_get_level());
+
+    log_set_level(LOG_LEVEL_OFF);
+    TEST_ASSERT_EQUAL_INT(LOG_LEVEL_OFF, log_get_level());
 }
 
-void test_disabled_suppresses_output(void)
+void test_off_suppresses_everything_including_error(void)
 {
-    log_set_enabled(false);
-    LOG_I("TAG", "message");
+    log_set_level(LOG_LEVEL_OFF);
+
+    LOG_E("TAG", "error");
+    LOG_I("TAG", "info");
+    LOG_D("TAG", "debug");
+
     TEST_ASSERT_EQUAL_INT(0, g_s_capture.call_count);
 }
 
-void test_reenabled_resumes_output(void)
+void test_info_level_passes_info_and_above(void)
 {
-    log_set_enabled(false);
+    log_set_level(LOG_LEVEL_INFO);
+
+    LOG_E("TAG", "error");
+    LOG_W("TAG", "warn");
+    LOG_I("TAG", "info");
+
+    TEST_ASSERT_EQUAL_INT(3, g_s_capture.call_count);
+}
+
+void test_info_level_cuts_debug_and_verbose(void)
+{
+    /* Боевая развилка меню: «Инфо» обязана глушить отладочный поток
+     * модулей, оставляя бизнес-логику. */
+    log_set_level(LOG_LEVEL_INFO);
+
+    LOG_D("TAG", "debug");
+    LOG_V("TAG", "verbose");
+
+    TEST_ASSERT_EQUAL_INT(0, g_s_capture.call_count);
+}
+
+void test_debug_level_passes_debug_but_cuts_verbose(void)
+{
+    log_set_level(LOG_LEVEL_DEBUG);
+
+    LOG_D("TAG", "debug");
+    TEST_ASSERT_EQUAL_INT(1, g_s_capture.call_count);
+
+    LOG_V("TAG", "verbose");
+    TEST_ASSERT_EQUAL_INT(1, g_s_capture.call_count);
+}
+
+void test_level_change_takes_effect_immediately(void)
+{
+    log_set_level(LOG_LEVEL_OFF);
     LOG_I("TAG", "swallowed");
-    log_set_enabled(true);
+
+    log_set_level(LOG_LEVEL_INFO);
     LOG_I("TAG", "visible");
 
     TEST_ASSERT_EQUAL_INT(1, g_s_capture.call_count);
 }
 
-void test_disabled_does_not_take_mutex(void)
+void test_level_clamped_below_range(void)
 {
-    log_set_enabled(false);
-    LOG_I("TAG", "message");
+    log_set_level(-5);
+    TEST_ASSERT_EQUAL_INT(LOG_LEVEL_OFF, log_get_level());
+}
 
-    /* Гейт — раньше форматирования/мьютекса (дёшево при выключенном тумблере). */
+void test_level_clamped_above_range(void)
+{
+    log_set_level(999);
+    TEST_ASSERT_EQUAL_INT(LOG_LEVEL_VERBOSE, log_get_level());
+}
+
+void test_suppressed_message_does_not_take_mutex(void)
+{
+    log_set_level(LOG_LEVEL_INFO);
+    LOG_D("TAG", "debug");
+
+    /* Гейт — раньше форматирования/мьютекса: отсечённый уровень почти
+     * ничего не стоит. */
     TEST_ASSERT_EQUAL_INT(0, log_mutex_lock_fake.call_count);
     TEST_ASSERT_EQUAL_INT(0, log_mutex_unlock_fake.call_count);
 }
@@ -439,12 +499,17 @@ int main(void)
     RUN_TEST(test_ctx_null_passed_to_callback);
     RUN_TEST(test_ctx_pointer_passed_to_callback);
 
-    /* Runtime toggle */
-    RUN_TEST(test_enabled_by_default);
-    RUN_TEST(test_is_enabled_reflects_state);
-    RUN_TEST(test_disabled_suppresses_output);
-    RUN_TEST(test_reenabled_resumes_output);
-    RUN_TEST(test_disabled_does_not_take_mutex);
+    /* Runtime level */
+    RUN_TEST(test_default_level_passes_everything);
+    RUN_TEST(test_get_level_reflects_set_level);
+    RUN_TEST(test_off_suppresses_everything_including_error);
+    RUN_TEST(test_info_level_passes_info_and_above);
+    RUN_TEST(test_info_level_cuts_debug_and_verbose);
+    RUN_TEST(test_debug_level_passes_debug_but_cuts_verbose);
+    RUN_TEST(test_level_change_takes_effect_immediately);
+    RUN_TEST(test_level_clamped_below_range);
+    RUN_TEST(test_level_clamped_above_range);
+    RUN_TEST(test_suppressed_message_does_not_take_mutex);
 
     return UNITY_END();
 }

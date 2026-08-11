@@ -42,7 +42,13 @@ extern "C"
     {
         uint8_t panel_type; /**< bsp_display_type_t; хардкод TFT8, provisioning — Фаза 9 */
         uint8_t protocol_id; /**< активный протокол реестра sul (NKU_CAN = 0)             */
-        uint8_t log_enabled; /**< рантайм-тумблер логов (под-шаг 3.6)                     */
+        /* Рантайм-уровень логов (§3.9) — ИНДЕКС ПУНКТА МЕНЮ, не значение
+           LOG_LEVEL_*: 0 = Выкл, 1 = Инфо, 2 = Отладка. Хранить здесь сам
+           LOG_LEVEL нельзя — редактор MENU_SELECT адресует `options[value]`,
+           и значение вне [min..max] дало бы чтение за границей массива меток
+           (тот же класс бага, что чинили клампом в §3.3). Перевод
+           индекс → LOG_LEVEL_* — app-слой, app_log_level_apply(). */
+        uint8_t log_level;
         uint8_t _pad;
     } settings_device_t;
 
@@ -57,7 +63,6 @@ extern "C"
         uint8_t music_volume_idx;
         uint8_t year_production; /**< 0 = скрыть, иначе 2000+N (25 = 2025)      */
         char serial[SETTINGS_SERIAL_LEN]; /**< ASCII, '\0'-терминирован     */
-        uint8_t dummy_option;
         /* Ярус B — протокольные: активный протокол трактует slice через
        sul_settings_desc_t (§8). НКУ-CAN: proto_slice[0] = адрес 0..15. */
         uint8_t proto_slice[SETTINGS_PROTO_SLICE_LEN];

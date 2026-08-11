@@ -174,13 +174,16 @@ static void test_protocol_param_edits_correct_settings_field(void)
     TEST_ASSERT_EQUAL_UINT8(1U, s.user.proto_slice[0]);
 }
 
-/* Конец-в-конец: правка пункта, построенного из дескриптора, действительно
- * попадает в то самое поле settings_t, которое назвал дескриптор протокола —
- * не только структура данных совпадает, но и реальный edit через menu.c. */
-static void test_dummy_param_edits_correct_settings_field(void)
+/* Пункт «Логи» (§3.9) — SELECT на ТРИ позиции, а не BOOL, как было до 3.9.
+ * Хранится ИНДЕКС пункта (0 Выкл / 1 Инфо / 2 Отладка), а НЕ значение
+ * LOG_LEVEL_*: menu_view.c адресует options[value], и значение вне [min..max]
+ * дало бы чтение за границей массива меток. Отсюда главное, что проверяем
+ * ниже: на максимуме редактор обязан завернуться в min (тот же класс бага,
+ * что клампом чинили в §3.3), а не уехать в 3. */
+static void test_log_level_cycles_through_three_positions(void)
 {
     settings_t s;
-    memset(&s, 0, sizeof(s));
+    memset(&s, 0, sizeof(s)); /* не дефолты кодека — чистый ноль */
 
     sul_registry_set_active(SUL_PROTOCOL_NKU_CAN);
     menu_tree_refresh_protocol_section(&s);
@@ -190,15 +193,17 @@ static void test_dummy_param_edits_correct_settings_field(void)
     menu_open(&ctx);
     menu_next(&ctx); /* T_PROTO -> T_PROTO_PARAM */
     menu_next(&ctx); /* T_PROTO_PARAM -> T_LOG */
-    menu_next(&ctx); /* T_LOG -> T_DUMMY */
 
-    menu_action(&ctx); /* инкремент значения 0 -> 1 */
+    TEST_ASSERT_EQUAL_UINT8(0U, s.device.log_level); /* Выкл */
 
-    TEST_ASSERT_EQUAL_UINT8(1U, s.user.dummy_option);
+    menu_action(&ctx);
+    TEST_ASSERT_EQUAL_UINT8(1U, s.device.log_level); /* Выкл -> Инфо */
 
-    menu_action(&ctx); /* инкремент значения 1 -> 0 */
+    menu_action(&ctx);
+    TEST_ASSERT_EQUAL_UINT8(2U, s.device.log_level); /* Инфо -> Отладка */
 
-    TEST_ASSERT_EQUAL_UINT8(0U, s.user.dummy_option);
+    menu_action(&ctx);
+    TEST_ASSERT_EQUAL_UINT8(0U, s.device.log_level); /* Отладка -> Выкл (заворот) */
 }
 
 int main(void)
@@ -212,7 +217,7 @@ int main(void)
     RUN_TEST(test_stale_value_below_min_raised_on_protocol_switch);
     RUN_TEST(test_stale_value_inside_gap_normalized);
     RUN_TEST(test_protocol_param_edits_correct_settings_field);
-    RUN_TEST(test_dummy_param_edits_correct_settings_field);
+    RUN_TEST(test_log_level_cycles_through_three_positions);
 
     return UNITY_END();
 }

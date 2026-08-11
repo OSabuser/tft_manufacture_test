@@ -47,6 +47,9 @@ bsp/
 ├── can/                    # bsp_can          — FlexCAN2 (трансивер SN65HVD230D)
 │   └── mocks/              # fff-заглушки для host-тестов
 ├── button/                 # bsp_button       — тактовые кнопки SWT6x6 с debounce
+├── wdog/                   # bsp_wdog         — аппаратный watchdog (WDOG1)
+├── reset/                  # bsp_reset        — источник последнего сброса (SRC->SRSR)
+├── boot_state/             # bsp_boot_state   — POR-детект + счётчик попыток загрузки (SRC_GPR)
 ├── display/                # bsp_display      — TFT-дисплей
 ├── usb_cdc/                # bsp_usb_cdc      — USB CDC ACM
 ├── sdram/                  # bsp_sdram        — внешний SDRAM через SEMC
@@ -95,6 +98,9 @@ target_link_libraries(test_hil_opto PRIVATE bsp_board bsp_boot_ram ...)
 | `bsp_opto`         | `opto/`         | [opto/README.md](opto/README.md)                 |
 | `bsp_can`          | `can/`          | [can/README.md](can/README.md)                   |
 | `bsp_button`       | `button/`       | [button/README.md](button/README.md)             |
+| `bsp_wdog`         | `wdog/`         | [wdog/README.md](wdog/README.md)                 |
+| `bsp_reset`        | `reset/`        | [reset/README.md](reset/README.md)               |
+| `bsp_boot_state`   | `boot_state/`   | [boot_state/README.md](boot_state/README.md)     |
 | `bsp_display`      | `display/`      | [display/README.md](display/README.md)           |
 | `bsp_usb_cdc`      | `usb_cdc/`      | [usb_cdc/README.md](usb_cdc/README.md)           |
 | `bsp_sdram`        | `sdram/`        | [sdram/README.md](sdram/README.md)               |
@@ -102,6 +108,26 @@ target_link_libraries(test_hil_opto PRIVATE bsp_board bsp_boot_ram ...)
 | `bsp_sd`           | `sd/`           | [sd/README.md](sd/README.md)                     |
 | `bsp_mqs`          | `mqs/`          | [mqs/README.md](mqs/README.md)                   |
 | `bsp_provisioning` | `provisioning/` | [provisioning/README.md](provisioning/README.md) |
+
+### ⚠️ Диагностика сброса: три модуля, один регистр
+
+`bsp_wdog`, `bsp_reset` и `bsp_boot_state` отвечают на смежные вопросы, и порядок
+между ними существенный:
+
+| Модуль | Регистр | Кто читает | Потребление |
+| --- | --- | --- | --- |
+| `bsp_wdog` | `WDOG1->WRSR` | любая стадия | нет — read-only, самоочищается на каждый сброс |
+| `bsp_boot_state` | `SRC->SRSR` + `SRC_GPR3` | **загрузчик** | **ДА** — берёт бит POR и очищает `SRSR` целиком |
+| `bsp_reset` | `SRC->SRSR` | пока никто | **ДА** — читает и очищает |
+
+`SRC->SRSR` — ресурс **однократного потребления**: биты залипают до явного
+снятия, и первым их забирает тот, кто раньше стартует. Сейчас это загрузчик
+(`bsp_boot_state_init()`), поэтому `bsp_reset` **не подключён ни к одному
+образу** — приложение по построению видит ноль (подтверждено на стенде).
+
+Практическое следствие: если новому коду нужна причина сброса, начинать надо с
+вопроса «на какой я стадии загрузки» и смотреть
+[reset/README.md](reset/README.md), а не просто линковать модуль.
 
 ---
 

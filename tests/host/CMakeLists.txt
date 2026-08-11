@@ -449,3 +449,27 @@ add_host_test(
   ${TFT_APP_DOMAIN_DIR}/sul/demo/include
   ${TFT_APP_DOMAIN_DIR}/sul/include
   ${TFT_APP_DOMAIN_DIR}/elevator_model/include)
+
+# tft_app — heartbeat-супервизор (Фаза 3.7: основание кормить watchdog).
+# Модуль намеренно чистый C и время получает параметром — вся логика
+# «кормить/не кормить» проверяется на хосте, без FreeRTOS и без железа.
+add_host_test(
+  NAME
+  test_tft_app_heartbeat
+  SOURCES
+  tft_app_heartbeat/test_heartbeat.c
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/app/heartbeat.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/app)
+
+# bsp_reset — разбор источника сброса (Фаза 3.8). Тестируется ТОЛЬКО чистая
+# часть (маска → причина): доступ к SRC->SRSR живёт в отдельной единице
+# трансляции reset.c, там нет логики — только регистры, проверяется на стенде.
+add_host_test(
+  NAME
+  test_bsp_reset
+  SOURCES
+  reset/test_bsp_reset.c
+  ${CMAKE_SOURCE_DIR}/bsp/reset/src/reset_decode.c
+  INCLUDES
+  ${CMAKE_SOURCE_DIR}/bsp/reset/include)

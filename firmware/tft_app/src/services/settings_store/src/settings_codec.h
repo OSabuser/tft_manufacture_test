@@ -18,7 +18,12 @@
 #include <stdint.h>
 
 #define SETTINGS_MAGIC   0x54465453U /* 'STFT' (little-endian) */
-#define SETTINGS_VERSION 1U
+/* 2 — §3.9. Бамп ОБЯЗАТЕЛЕН: удаление `dummy_option` сдвинуло `proto_slice`
+ * на байт вниз. Страница прежней раскладки прошла бы magic+version+CRC (CRC
+ * считается по байтам страницы, они не изменились) и была бы разобрана по
+ * новым полям — адрес протокола прочитался бы из бывшего `dummy_option`.
+ * С бампом такие страницы отбрасываются, и применяются дефолты. */
+#define SETTINGS_VERSION 2U
 
 /**
  * @brief Страница настроек — ровно один сектор QSPI.

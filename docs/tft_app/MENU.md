@@ -97,7 +97,7 @@ flowchart TD
 | Ярус настройки | Пример пункта | Привязка |
 | --- | --- | --- |
 | **A** железобетонные | громкость, год | `offsetof(settings_t, user.<поле>)` |
-| device/провиженинг | тумблер логов | `offsetof(settings_t, device.log_enabled)` |
+| device/провиженинг | уровень логов | `offsetof(settings_t, device.log_level)` |
 | **B** протокольные | адрес НКУ | `offsetof(settings_t, user.proto_slice[0])` |
 
 Ярус B (протокольные параметры) с Фазы 3.3 строится из дескриптора протокола
@@ -173,7 +173,7 @@ off-screen в альфа-поверхность AS (ARGB8888) **только о�
 flowchart LR
     BTN["bsp_button<br/>софт-таймер 5 мс<br/>(debounce, независимо от обеих задач)"]
     MT["menu_task<br/>модель + мгновенный вход/навигация + save<br/>НЕ рисует"]
-    RX["sul_rx_task<br/>CAN → decode → controller<br/>WDOG безусловно"]
+    RX["sul_rx_task<br/>CAN → decode → controller<br/>heartbeat безусловно"]
     RT["render_task<br/>ЕДИНСТВЕННЫЙ вызывающий gfx_present()<br/>event-driven"]
 
     BTN --> MT
@@ -192,7 +192,8 @@ flowchart LR
 
 **Мягкая пауза `sul_rx_task` на время меню.** Пока меню открыто, `menu_task` держит
 `g_menu_active=true`; `sul_rx_task` под этим флагом пропускает decode/controller/запись в очередь —
-но WDOG/heartbeat кормятся БЕЗУСЛОВНО (вне флага), задача не suspend'ится. При выходе из меню
+но heartbeat супервизора (§3.7) и LED-heartbeat отмечаются БЕЗУСЛОВНО (вне флага), задача не
+suspend'ится. При выходе из меню
 `render_task` (по признаку «меню только что закрылось») сразу перерисовывает последнее известное
 состояние индикации, не дожидаясь свежего CAN-кадра.
 

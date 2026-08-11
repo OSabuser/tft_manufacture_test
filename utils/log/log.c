@@ -39,9 +39,10 @@
 static log_write_cb_t g_s_write_cb = NULL;
 static void *g_s_p_ctx             = NULL;
 
-/* true по умолчанию — до первого log_set_enabled() (обычно из настроек,
- * §3.6) ранние сообщения bringup не должны теряться молча. */
-static bool g_s_log_enabled = true;
+/* VERBOSE по умолчанию — до первого log_set_level() (обычно из настроек,
+ * §3.9) рантайм-гейт не режет ничего сверх компайл-тайм LOG_LEVEL: ранние
+ * сообщения bringup не должны теряться молча. */
+static int g_s_log_level = LOG_LEVEL_VERBOSE;
 
 /* -------------------------------------------------------------------------- */
 /* Weak-хуки мьютекса — NOP для bare-metal                                    */
@@ -94,20 +95,34 @@ void log_init(log_write_cb_t p_write_cb, void *p_ctx)
     g_s_p_ctx    = p_ctx;
 }
 
-void log_set_enabled(bool enabled)
+void log_set_level(int level)
 {
-    g_s_log_enabled = enabled;
+    if (level < LOG_LEVEL_OFF)
+    {
+        g_s_log_level = LOG_LEVEL_OFF;
+    }
+    else if (level > LOG_LEVEL_VERBOSE)
+    {
+        g_s_log_level = LOG_LEVEL_VERBOSE;
+    }
+    else
+    {
+        g_s_log_level = level;
+    }
 }
 
-bool log_is_enabled(void)
+int log_get_level(void)
 {
-    return g_s_log_enabled;
+    return g_s_log_level;
 }
 
 void log_write(int level, const char *p_tag, const char *p_fmt, // NOLINT(readability-function-size)
                ...)
 {
-    if (!g_s_log_enabled || (g_s_write_cb == NULL))
+    /* Рантайм-гейт — ПЕРВОЙ проверкой, до мьютекса и форматирования: отключённый
+     * уровень должен стоить почти ничего. LOG_LEVEL_OFF = 0, а уровни сообщений
+     * начинаются с ERROR = 1, поэтому «выкл» отсекает всё без спецслучая. */
+    if ((level > g_s_log_level) || (g_s_write_cb == NULL))
     {
         return;
     }

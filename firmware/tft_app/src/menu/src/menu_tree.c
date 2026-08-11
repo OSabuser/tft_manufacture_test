@@ -6,9 +6,9 @@
 #include <stddef.h>
 
 /* Метки значений (ярус B/устройство). */
-static const char *const K_BOOL_LABELS[] = { "Выкл", "Вкл" };
-
-static const char *const K_DUMMY_LABELS[] = { "Гойда!", "Зрада!" };
+/* Уровень логов (§3.9) — ИНДЕКС, а не значение LOG_LEVEL_*: редактор
+ * MENU_SELECT адресует options[value]. Перевод в LOG_LEVEL — app-слой. */
+static const char *const K_LOG_LEVEL_LABELS[] = { "Выкл", "Инфо", "Отладка" };
 /* Верхняя граница на число протоколов в реестре — только размер буфера меток
  * (menu_tree_refresh_protocol_section), не ограничение самого реестра.
  * Сейчас 2 (НКУ-CAN, демо), с запасом под Фазу 8 (+ УИМ/SD7/УЭЛ/УКЛ — 6). */
@@ -25,7 +25,6 @@ enum
     T_PROTO_PARAM, /* единственный параметр АКТИВНОГО протокола (§8) — популируется
                     * из sul_settings_desc_t, см. menu_tree_refresh_protocol_section() */
     T_LOG,
-    T_DUMMY,
     T_EXIT,
 
     T_COUNT,
@@ -60,19 +59,12 @@ static menu_item_desc_t g_s_tree[T_COUNT] = {
                         .max          = 15U,
                         .parent       = MENU_ROOT_INDEX },
     [T_LOG]         = { .label        = "Логи",
-                        .type         = MENU_BOOL,
-                        .value_offset = offsetof(settings_t, device.log_enabled),
+                        .type         = MENU_SELECT,
+                        .value_offset = offsetof(settings_t, device.log_level),
                         .min          = 0U,
-                        .max          = 1U,
+                        .max          = 2U,
                         .parent       = MENU_ROOT_INDEX,
-                        .options      = K_BOOL_LABELS },
-    [T_DUMMY]       = { .label        = "Общий?",
-                        .type         = MENU_BOOL,
-                        .value_offset = offsetof(settings_t, user.dummy_option),
-                        .min          = 0U,
-                        .max          = 1U,
-                        .parent       = MENU_ROOT_INDEX,
-                        .options      = K_DUMMY_LABELS },
+                        .options      = K_LOG_LEVEL_LABELS },
     [T_EXIT]        = { .label = "Выход", .type = MENU_BACK, .parent = MENU_ROOT_INDEX },
 };
 

@@ -22,8 +22,10 @@
 #include "app_tasks.h"
 #include "bsp/button.h"
 #include "bsp/opto.h"
+#include "bsp/wdog.h"
 #include "crash_log.h"
 #include "domain/sul.h"
+#include "heartbeat.h"
 #include "log/log.h"
 #include "menu/menu.h"
 #include "menu/menu_tree.h"
@@ -39,6 +41,34 @@
 
 menu_ctx_t g_menu;
 
+/**
+ * @brief Кормление watchdog — ЕДИНСТВЕННАЯ точка в прошивке (§3.7).
+ *
+ * ЗДЕСЬ, а не в задаче, потому что демон программных таймеров нельзя
+ * выголодать (высший приоритет в системе). Кормим строго по основанию: свежи
+ * ВСЕ наблюдаемые задачи (app/heartbeat.h). Протух чей-то heartbeat —
+ * кормление прекращается НАВСЕГДА (решение защёлкивается внутри
+ * heartbeat_should_feed(), см. там почему это обязательно), и плату штатно
+ * сбрасывает аппаратный watchdog; мы лишь успеваем записать, КТО и ГДЕ залип,
+ * чтобы сброс не был немым.
+ *
+ * Никаких LOG_* в этом контексте: стек демона 1 КБ против 4 КБ у задач,
+ * vsnprintf там уже стрелял (см. docs/PERF_AND_HANG_INVESTIGATION.md).
+ * crash_log_record_stall() форматирования не делает — только запись полей.
+ */
+static void supervise_watchdog(void)
+{
+    hb_stall_t stall;
+
+    if (heartbeat_should_feed(app_now_ms(), &stall))
+    {
+        bsp_wdog_refresh();
+        return;
+    }
+
+    crash_log_record_stall(heartbeat_task_name(stall.task), stall.p_where, stall.age_ms);
+}
+
 /* Софт-таймер (высший приоритет демона) опрашивает debounce независимо от
  * menu_task/render_task — нажатия не теряются, пока кто-то из них занят.
  * Колбэк короткий, без блокировок. */
@@ -49,10 +79,7 @@ void input_poll_cb(TimerHandle_t x_timer)
     bsp_opto_process(); /* debounce IN1/IN2 (§3.4) — короткая, как button */
     dispatcher_poll(); /* непрерывный опрос bsp_opto_read(), не колбэк — см. dispatcher.c */
 
-    /* Детектор голодания — ЗДЕСЬ, потому что демон таймеров нельзя выголодать
-     * (высший приоритет в системе). Срабатывает раньше аппаратного watchdog и
-     * записывает, ЧЕМ была занята система: иначе сброс приходит молча. */
-    crash_log_check_starvation();
+    supervise_watchdog(); /* §3.7 — см. выше */
 }
 
 void menu_task(void *p_arg)
@@ -65,6 +92,8 @@ void menu_task(void *p_arg)
 
     for (;;)
     {
+        heartbeat_mark(HB_TASK_MENU, app_now_ms()); /* «прошла итерацию», §3.7 */
+
         bool changed = false;
 
         /* Порядок и структура — как в OLD_PROJECT_TFT8_UKL menu_task():
@@ -86,9 +115,9 @@ void menu_task(void *p_arg)
                 sul_registry_set_active(g_menu.settings->device.protocol_id);
                 menu_tree_refresh_protocol_section(g_menu.settings);
 
-                /* Тумблер логов (§3.6) — тот же паттерн: эффект сразу в этом
+                /* Уровень логов (§3.9) — тот же паттерн: эффект сразу в этом
                  * сеансе меню, не только после save(). */
-                log_set_enabled(g_menu.settings->device.log_enabled != 0U);
+                app_log_level_apply(g_menu.settings->device.log_level);
 
                 /* Обновить ДО settings_store_save() (флеш-запись, не
                  * мгновенная) — иначе sul_rx_task ещё несколько мс видел бы
@@ -99,10 +128,14 @@ void menu_task(void *p_arg)
                 if (!g_menu_active && g_menu.save_requested)
                 {
                     /* Выход: сохранить (если менялось). Адрес подхватит
-                     * sul_rx_task из настроек на следующей итерации. */
-                    crash_log_set_breadcrumb("menu:settings-save");
+                     * sul_rx_task из настроек на следующей итерации.
+                     *
+                     * Защищённая операция (§3.7): стирание+запись сектора QSPI
+                     * на порядки дольше 5-мс каденции этой задачи — без скобок
+                     * супервизор счёл бы её протухшей на каждом сохранении. */
+                    heartbeat_enter(HB_TASK_MENU, app_now_ms(), "menu:settings-save");
                     const bsp_status_t RC = settings_store_save();
-                    crash_log_set_breadcrumb("idle");
+                    heartbeat_leave(HB_TASK_MENU, app_now_ms());
                     LOG_I(LOG_TAG, "settings saved rc=%d", RC);
                 }
                 changed = true;
@@ -126,9 +159,18 @@ void menu_task(void *p_arg)
          * вход/навигацию (выход уже обновил его выше, до save()). */
         g_menu_active = menu_is_open(&g_menu);
 
-        if (changed && (g_render_task_handle != NULL))
+        if (changed)
         {
-            (void) xTaskNotifyGive(g_render_task_handle);
+            /* Debug (§3.9): что видит оператор на экране меню — какой пункт
+             * текущий и открыто ли оно. Только по СОБЫТИЮ кнопки, не каждую
+             * итерацию: цикл здесь 5 мс, безусловный лог был бы флудом. */
+            LOG_D(LOG_TAG, "nav: open=%d item=%u", menu_is_open(&g_menu) ? 1 : 0,
+                  (unsigned) menu_current(&g_menu));
+
+            if (g_render_task_handle != NULL)
+            {
+                (void) xTaskNotifyGive(g_render_task_handle);
+            }
         }
 
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(MENU_TICK_MS));

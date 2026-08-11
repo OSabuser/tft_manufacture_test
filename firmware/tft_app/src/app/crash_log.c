@@ -10,8 +10,24 @@
 
 #define LOG_TAG "crash"
 
-#define CRASH_MAGIC    0x43524148U /* 'CRAH' — запись валидна */
+/* 'CRA3' — версия раскладки записи. Бампается на КАЖДОЕ изменение раскладки:
+ * запись из образа с прежней раскладкой, оставшаяся в .noinit после обновления
+ * прошивки БЕЗ снятия питания, иначе прошла бы проверку магии и была бы
+ * разобрана по новым полям. История: 'CRAH' → 'CRA2' (появилось `where`) →
+ * 'CRA3' (крошка расширена, см. ниже). */
+#define CRASH_MAGIC 0x43524133U
+
+/** Имя задачи: FreeRTOS-имена и наши («sul_rx»/«menu»/«render») коротки. */
 #define CRASH_NAME_MAX 16U
+
+/* Крошка — ОТДЕЛЬНЫЙ, больший лимит. На HW-проверке §3.7 общий лимит 16 съел
+ * последний символ: в лог ушло 'render:menu-ope' вместо 'render:menu-open'.
+ * Крошки соседних веток одной задачи различаются В КОНЦЕ строки
+ * («render:menu-open» / «render:menu-nav» / «render:indication»), т.е. обрезка
+ * бьёт ровно по различающей части — при том, что крошка и существует, чтобы
+ * различать. 32 — с запасом к самой длинной сейчас (18: «render:first-frame»,
+ * «menu:settings-save»). */
+#define CRASH_WHERE_MAX 32U
 
 /**
  * Крэш-запись. `.noinit` — не обнуляется startup'ом, переживает сброс ядра
@@ -22,9 +38,10 @@ typedef struct
 {
     uint32_t magic;
     uint32_t cause;
-    uint32_t pc;
-    uint32_t lr;
-    char name[CRASH_NAME_MAX];
+    uint32_t pc;                 /**< HardFault: PC. TASK_STALL: возраст heartbeat, мс */
+    uint32_t lr;                 /**< HardFault: LR. Иначе 0                           */
+    char name[CRASH_NAME_MAX];   /**< имя задачи                       */
+    char where[CRASH_WHERE_MAX]; /**< крошка (TASK_STALL); иначе пусто */
 } crash_record_t;
 
 static volatile crash_record_t g_s_crash __attribute__((section(".noinit")));
@@ -39,72 +56,54 @@ static const char *cause_name(uint32_t cause)
         return "HARDFAULT";
     case CRASH_CAUSE_MALLOC_FAILED:
         return "MALLOC FAILED";
-    case CRASH_CAUSE_STARVATION:
-        return "STARVATION (кормилец WDOG не получал CPU)";
+    case CRASH_CAUSE_TASK_STALL:
+        return "TASK STALL";
     default:
         return "UNKNOWN";
     }
 }
 
-/* ── Детектор голодания ─────────────────────────────────────────────────────
+/**
+ * @brief Копирование строки с усечением в поле записи.
  *
- * Порог заметно НИЖЕ аппаратного таймаута (10 c, взводит загрузчик) — надо
- * успеть записать причину и сбросить самим, иначе watchdog приходит молча.
+ * Ручное, без strncpy: тянуть <string.h> во враждебный контекст (возможно,
+ * ISR с повреждённым стеком) незачем, а имя задачи могло прийти из битого TCB
+ * — читаем не больше буфера.
  */
-#define STARVATION_LIMIT_MS 4000U
-
-static volatile uint32_t g_s_last_feed_tick;
-static volatile bool g_s_feed_seen;
-static const char *volatile g_s_breadcrumb = "idle";
-
-void crash_log_set_breadcrumb(const char *p_where)
+static void copy_truncated(volatile char *p_dst, const char *p_src, uint32_t cap)
 {
-    g_s_breadcrumb = p_where;
+    uint32_t i = 0U;
+    if (p_src != NULL)
+    {
+        for (; (i < (cap - 1U)) && (p_src[i] != '\0'); i++)
+        {
+            p_dst[i] = p_src[i];
+        }
+    }
+    p_dst[i] = '\0';
 }
 
-void crash_log_feed_mark(void)
+/**
+ * @brief Заполнить запись. Магия — ПОСЛЕДНЕЙ: запись считается валидной только
+ *        когда всё остальное уже лежит (сброс посреди заполнения не даст
+ *        полуверную запись).
+ */
+static void record(crash_cause_t cause, const char *p_name, const char *p_where, uint32_t a,
+                   uint32_t b)
 {
-    g_s_last_feed_tick = (uint32_t) xTaskGetTickCount();
-    g_s_feed_seen      = true;
-}
+    g_s_crash.cause = (uint32_t) cause;
+    g_s_crash.pc    = a;
+    g_s_crash.lr    = b;
 
-void crash_log_check_starvation(void)
-{
-    if (!g_s_feed_seen)
-    {
-        return; /* кормилец ещё не стартовал (bring-up) — не считаем голоданием */
-    }
+    copy_truncated(g_s_crash.name, p_name, CRASH_NAME_MAX);
+    copy_truncated(g_s_crash.where, p_where, CRASH_WHERE_MAX);
 
-    const uint32_t SINCE_MS =
-        ((uint32_t) xTaskGetTickCount() - g_s_last_feed_tick) * portTICK_PERIOD_MS;
-
-    if (SINCE_MS >= STARVATION_LIMIT_MS)
-    {
-        crash_log_record_and_reset(CRASH_CAUSE_STARVATION, g_s_breadcrumb, SINCE_MS, 0U);
-    }
+    g_s_crash.magic = CRASH_MAGIC;
 }
 
 void crash_log_record_and_reset(crash_cause_t cause, const char *p_name, uint32_t pc, uint32_t lr)
 {
-    g_s_crash.cause = (uint32_t) cause;
-    g_s_crash.pc    = pc;
-    g_s_crash.lr    = lr;
-
-    /* Ручное копирование с усечением: strncpy тянуть в этот контекст незачем,
-     * а имя задачи могло прийти из повреждённого TCB — читаем не больше буфера. */
-    uint32_t i = 0U;
-    if (p_name != NULL)
-    {
-        for (; (i < (CRASH_NAME_MAX - 1U)) && (p_name[i] != '\0'); i++)
-        {
-            g_s_crash.name[i] = p_name[i];
-        }
-    }
-    g_s_crash.name[i] = '\0';
-
-    /* Магию — ПОСЛЕДНЕЙ: запись считается валидной только когда всё остальное
-     * уже лежит (сброс посреди заполнения не даст полуверную запись). */
-    g_s_crash.magic = CRASH_MAGIC;
+    record(cause, p_name, NULL, pc, lr);
 
     __DSB();
     NVIC_SystemReset();
@@ -114,8 +113,38 @@ void crash_log_record_and_reset(crash_cause_t cause, const char *p_name, uint32_
     }
 }
 
+void crash_log_record_stall(const char *p_task, const char *p_where, uint32_t age_ms)
+{
+    /* Только ПЕРВАЯ причина: см. crash_log.h — супервизор зовёт нас каждые
+     * 5 мс до самого срабатывания watchdog, и задачи, протухшие следом как
+     * лавина от того же залипания, затёрли бы первичный диагноз. */
+    if (g_s_crash.magic == CRASH_MAGIC)
+    {
+        return;
+    }
+
+    record(CRASH_CAUSE_TASK_STALL, p_task, p_where, age_ms, 0U);
+
+    /* Сброса ЗДЕСЬ нет и быть не должно: его сделает аппаратный watchdog,
+     * которого супервизор перестал кормить (см. crash_log.h, два режима). */
+}
+
 void crash_log_report_previous(void)
 {
+    /* Аппаратный свидетель, доступный ПРИЛОЖЕНИЮ, ровно один — WDOG1->WRSR
+     * (bsp_wdog_reset_was_timeout()): регистр read-only и самоочищается на
+     * каждый сброс, поэтому потребления не требует и работает на любой стадии
+     * цепочки загрузки.
+     *
+     * Полного источника сброса (питание / кнопка / отладчик / перегрев) у
+     * приложения НЕТ и быть не может: SRC->SRSR — ресурс однократного
+     * потребления, и его забирает ЗАГРУЗЧИК (bsp_boot_state_init() читает бит
+     * POR для счётчика попыток recovery и очищает регистр целиком) задолго до
+     * нашего main(). Подтверждено на стенде 2026-08-11: SRSR=0 даже после
+     * снятия питания. Чтобы источник дошёл сюда, загрузчик должен передавать
+     * его явно — см. PLAN.md §3.8 и bsp/reset/README.md. */
+    const bool WDOG_TIMEOUT = bsp_wdog_reset_was_timeout();
+
     if (g_s_crash.magic == CRASH_MAGIC)
     {
         /* Копия до гашения — поля volatile, читаем по одному разу. */
@@ -129,32 +158,45 @@ void crash_log_report_previous(void)
         }
         name[CRASH_NAME_MAX - 1U] = '\0';
 
+        char where[CRASH_WHERE_MAX];
+        for (uint32_t i = 0U; i < CRASH_WHERE_MAX; i++)
+        {
+            where[i] = g_s_crash.where[i];
+        }
+        where[CRASH_WHERE_MAX - 1U] = '\0';
+
         g_s_crash.magic = 0U; /* один раз — следующий старт будет чистым */
 
-        if (CAUSE == (uint32_t) CRASH_CAUSE_STARVATION)
+        /* WDOG1.TOUT рядом с причиной различает ДВА пути сброса, которые сама
+         * причина не различает: залипание задачи добивает watchdog (TOUT=1),
+         * а отказ в коде сбрасывается нами через NVIC_SystemReset() (TOUT=0). */
+        if (CAUSE == (uint32_t) CRASH_CAUSE_TASK_STALL)
         {
-            /* Для голодания поля переиспользованы: name — «хлебная крошка»
-             * (где залипли), pc — сколько мс кормилец не отмечался. */
-            LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: %s залипли в '%s', без кормления %u мс",
-                  cause_name(CAUSE), name, (unsigned) PC);
+            /* Для протухшей задачи поля переиспользованы: name — какая именно,
+             * where — где она залипла, pc — сколько мс молчала. */
+            LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: %s task='%s' залипла в '%s', молчала %u мс [TOUT=%u]",
+                  cause_name(CAUSE), name, where, (unsigned) PC, WDOG_TIMEOUT ? 1U : 0U);
         }
         else
         {
-            LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: %s task='%s' pc=0x%08X lr=0x%08X", cause_name(CAUSE),
-                  name, (unsigned) PC, (unsigned) LR);
+            LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: %s task='%s' pc=0x%08X lr=0x%08X [TOUT=%u]",
+                  cause_name(CAUSE), name, (unsigned) PC, (unsigned) LR, WDOG_TIMEOUT ? 1U : 0U);
         }
         return;
     }
 
-    /* Крэш-записи нет. Если watchdog всё же сработал — значит задача-кормилец
-     * не получала CPU (голодание), а не отказ в коде: это принципиально другой
-     * диагноз, см. crash_log.h. */
-    if (bsp_wdog_reset_was_timeout())
+    /* Записи нет, а watchdog всё же сработал. Супервизор (§3.7) причину пишет
+     * ЗАРАНЕЕ, поэтому её отсутствие здесь означает отказ САМОГО кормильца —
+     * демона программных таймеров — либо срыв ещё до его старта. */
+    if (WDOG_TIMEOUT)
     {
-        LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: WATCHDOG TIMEOUT (крэш-записи нет — "
-                       "задача-кормилец не получала CPU)");
+        LOG_E(LOG_TAG, "ПРЕДЫДУЩИЙ СБРОС: WATCHDOG, крэш-записи НЕТ — "
+                       "не отработал сам супервизор/демон таймеров");
         return;
     }
 
-    LOG_I(LOG_TAG, "предыдущий сброс: штатный (POR/внешний)");
+    /* Ни записи, ни таймаута. Что именно — питание, кнопка или отладчик —
+     * приложению неизвестно (см. про SRSR выше), поэтому перечисляем честно,
+     * а не выдаём догадку за факт. */
+    LOG_I(LOG_TAG, "предыдущий сброс: штатный (питание/кнопка/отладчик)");
 }

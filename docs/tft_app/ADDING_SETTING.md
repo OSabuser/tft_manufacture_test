@@ -4,7 +4,7 @@
 §8). Не про протоколы как таковые — это [ADDING_PROTOCOL.md](ADDING_PROTOCOL.md); не про то, что
 такое `settings_t`/ярусы/QSPI — это [SETTINGS.md](SETTINGS.md); не про движок меню как таковой —
 это [MENU.md](MENU.md). Здесь — практическая связка «хочу новый пункт в меню» → «что конкретно
-трогать», с одной реальной сквозной сверкой (тумблер логов, §7).
+трогать», с одной реальной сквозной сверкой (уровень логов, §7).
 
 ---
 
@@ -22,12 +22,12 @@ flowchart TD
 | Где хранится | своё именованное поле `settings_t.user`/`.device` | общий `proto_slice[]`, трактует активный протокол |
 | Кто описывает пункт меню | статическая строка в `menu_tree.c` (руками, один раз) | `sul_settings_desc_t` протокола (реестр строит пункт САМ при каждом переключении) |
 | Видна в меню | всегда | только когда этот протокол активен |
-| Пример | тумблер логов (§7), выбор протокола | адрес НКУ-CAN, скорость демо |
+| Пример | уровень логов (§7), выбор протокола | адрес НКУ-CAN, скорость демо |
 | Документ с деталями | этот, §4 | [ADDING_PROTOCOL.md §3](ADDING_PROTOCOL.md) |
 
 Признак протокольной — значение теряет смысл, если сменить протокол (адрес станции НКУ-CAN не
 значит ничего для демо-протокола). Если значение осмысленно всегда и для всех — пользовательская,
-даже если физически лежит в `settings_device_t` (пример — `log_enabled`: «device» по имени поля,
+даже если физически лежит в `settings_device_t` (пример — `log_level`: «device» по имени поля,
 но полноценный пункт меню уже сегодня).
 
 ---
@@ -58,7 +58,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `MENU_BYTE` | ✅ | `options = NULL` → рендер числом | адрес НКУ-CAN 0..15 |
 | `MENU_SELECT` | ✅ | `options[value]` → рендер меткой | протокол, скорость демо |
-| `MENU_BOOL` | ✅ | `min=0, max=1`, `options` — 2 метки (обычно Вкл/Выкл) | тумблер логов |
+| `MENU_BOOL` | ✅ | `min=0, max=1`, `options` — 2 метки (обычно Вкл/Выкл) | — (боевых пунктов нет; движок покрыт `tests/host/tft_app_menu`) |
 | `MENU_SUBMENU` / `MENU_BACK` | ✅ | навигация, не значение (`value_offset` игнорируется) | «Настройки», «Выход» |
 | `ARRAY` / `SERIAL` / `YEAR` / `PERCENT` / `BOOL_ARRAY` | ⬜ **нет** | под многобайтовые/составные значения (серийник, набор битов, год с иной раскладкой…) | — Фазы 5/6 |
 
@@ -114,7 +114,7 @@ flowchart LR
                  .min          = ...,
                  .max          = ...,
                  .parent       = MENU_ROOT_INDEX,
-                 .options      = NULL /* или массив меток, как K_BOOL_LABELS */ },
+                 .options      = NULL /* или массив меток, как K_LOG_LEVEL_LABELS */ },
      ```
    - `options` — только для `SELECT`/`BOOL`, длиной ровно `max - min + 1`, иначе `menu_view.c`
      прочитает `options[value]` за границей массива (та же готча, что клампится для протокольных
@@ -164,15 +164,19 @@ sul_settings_desc_t»). Коротко: дескриптор живёт в `sul_
 
 Поле в `settings_t` само по себе ничего не делает — это только хранение. Если нужен рантайм-эффект
 (не просто «лежит и переживает перезагрузку»), пишете обработчик и вызываете его в ДВУХ местах —
-паттерн уже дважды использован (`protocol_id`, `log_enabled`):
+паттерн уже дважды использован (`protocol_id`, `log_level`):
 
 ```c
 /* task_bringup.c — один раз при старте, из загруженных настроек */
-log_set_enabled(settings_store_get()->device.log_enabled != 0U);
+app_log_level_apply(settings_store_get()->device.log_level);
 
 /* task_menu.c — после КАЖДОГО menu_action(), тем же вызовом */
-log_set_enabled(g_menu.settings->device.log_enabled != 0U);
+app_log_level_apply(g_menu.settings->device.log_level);
 ```
+
+Обработчик живёт в **app-слое** (`app_log_level_apply()`, объявлен в `app_tasks.h`), а не в
+`settings_store` и не в `utils/log`: первый не должен знать про логгер, второй — про меню. Он же
+переводит ИНДЕКС пункта меню в значение уровня — см. §7.
 
 Почему в обоих местах: `task_bringup.c` — эффект должен быть виден с самого старта (не только
 после первого захода в меню); `task_menu.c` — эффект должен быть виден СРАЗУ в этом же сеансе
@@ -186,19 +190,50 @@ log_set_enabled(g_menu.settings->device.log_enabled != 0U);
 
 ---
 
-## 7. Пример — тумблер логов (эталон пользовательской BOOL-настройки)
+## 7. Пример — уровень логов (эталон пользовательской SELECT-настройки)
 
 | Шаг | Файл | Что именно |
 | --- | --- | --- |
-| Поле | [settings_store.h](../../firmware/tft_app/src/services/settings_store/include/services/settings_store.h) | `settings_device_t.log_enabled` (`uint8_t`) |
-| Дефолт | [settings_codec.c](../../firmware/tft_app/src/services/settings_store/src/settings_codec.c) | `.log_enabled = 1U` — логи включены из коробки |
-| Пункт дерева | [menu_tree.c](../../firmware/tft_app/src/menu/src/menu_tree.c) | `T_LOG`: `MENU_BOOL`, `offsetof(settings_t, device.log_enabled)`, `min=0/max=1`, `options=K_BOOL_LABELS` |
-| Эффект | [log.h](../../utils/log/log.h)/[log.c](../../utils/log/log.c) | `log_set_enabled()` — рантайм-гейт ПОВЕРХ компайл-тайм `LOG_LEVEL`, первая проверка в `log_write()` |
+| Поле | [settings_store.h](../../firmware/tft_app/src/services/settings_store/include/services/settings_store.h) | `settings_device_t.log_level` (`uint8_t`) |
+| Дефолт | [settings_codec.c](../../firmware/tft_app/src/services/settings_store/src/settings_codec.c) | `.log_level = 1U` — «Инфо» из коробки |
+| Пункт дерева | [menu_tree.c](../../firmware/tft_app/src/menu/src/menu_tree.c) | `T_LOG`: `MENU_SELECT`, `offsetof(settings_t, device.log_level)`, `min=0/max=2`, `options=K_LOG_LEVEL_LABELS` |
+| Перевод | `task_bringup.c` | `app_log_level_apply()` — индекс пункта → `LOG_LEVEL_*` |
+| Эффект | [log.h](../../utils/log/log.h)/[log.c](../../utils/log/log.c) | `log_set_level()` — рантайм-гейт ПОВЕРХ компайл-тайм `LOG_LEVEL`, первая проверка в `log_write()` |
 | Вызов эффекта | `task_bringup.c` + `task_menu.c` | оба места, см. §6 |
-| Host-тест хранения | `tests/host/log/test_log.c` | вкл/выкл по умолчанию, гейт реально давит вывод, повторное включение восстанавливает |
-| Host-тест меню | — | пункт `T_LOG` статический (не из дескриптора) — отдельного edit-теста нет, при желании — по образцу §4 п.5 |
+| Host-тест эффекта | `tests/host/log/test_log.c` | уровни режут ровно то, что должны; клампы; отсечённое сообщение не берёт мьютекс |
+| Host-тест меню | `tests/host/tft_app_menu/test_menu_tree.c` | `test_log_level_cycles_through_three_positions` — 0→1→2→0 через реальный `menu.c` |
 
-Полная деталь и история (почему бит, а не пер-тег гейт) — PLAN.md, Фаза 3.6.
+### ⚠️ Хранить ИНДЕКС, а не значение
+
+В поле лежит **индекс пункта меню** (0 Выкл / 1 Инфо / 2 Отладка), а НЕ значение `LOG_LEVEL_*`
+(`OFF=0, INFO=3, DEBUG=4`). Причина не в экономии байта:
+
+- редактор `MENU_SELECT` адресует `options[value]`, и значение вне `[min..max]` дало бы чтение за
+  границей массива меток — ровно тот класс бага, что клампом чинили в §3.3;
+- перевод индекс → уровень идёт **таблицей**, а не арифметикой: значения `LOG_LEVEL_*` не идут
+  подряд, и «index+2» сломалось бы на первом же новом пункте.
+
+Общее правило для любой `MENU_SELECT`-настройки: **в поле хранится позиция в `options[]`**,
+а перевод в доменное/системное значение — забота обработчика эффекта.
+
+### ⚠️ Компайл-тайм пол обязателен
+
+Рантайм-уровень гейтит только то, что ОСТАЛОСЬ скомпилированным. Продакшн-сборка `app` собирается
+с `LOG_LEVEL=4` (`target_compile_definitions(app PRIVATE …)` в
+[CMakeLists.txt](../../firmware/tft_app/CMakeLists.txt)) — без него Release брал бы фолбэк `log.h`
+по `NDEBUG` (`LOG_LEVEL_OFF`), все `LOG_*` вырезались бы препроцессором, и пункт меню гейтил бы
+пустоту.
+
+Дефайн именно `PRIVATE` на таргете `app`: глобальная cache-переменная `LOG_LEVEL` ушла бы в
+`utils` как `PUBLIC` и изменила бы Release выпущенного загрузчика.
+
+> **Ограничение проходимости.** `PRIVATE`-дефайн доходит только до исходников самого таргета
+> `app` (`src/app/*.c`). Подчинённые либы (`tft_app_sul`, `tft_app_gfx`, транспорты…) его НЕ
+> получают — в них `LOG_*` сейчас не используются вовсе. Если понадобится логировать оттуда,
+> дефайн придётся раздать этим целям явно, иначе в Release строки молча исчезнут.
+
+История решения (почему сначала был бит, а не уровень, и почему не гейт по тегам) — PLAN.md,
+Фазы 3.6 и 3.9.
 
 ---
 
@@ -210,5 +245,5 @@ log_set_enabled(g_menu.settings->device.log_enabled != 0U);
 | Механика offset/движок меню/навигация | [MENU.md](MENU.md) |
 | Протокольный параметр (адрес, скорость…) | [ADDING_PROTOCOL.md §3](ADDING_PROTOCOL.md) |
 | Протокол сам пишет settings без меню | [ADDING_PROTOCOL.md §4](ADDING_PROTOCOL.md) (`take_pending_write`) |
-| Готовый пример BOOL-настройки | §7 выше (тумблер логов) |
+| Готовый пример SELECT-настройки | §7 выше (уровень логов) |
 | Готовый пример SELECT/BYTE | адрес НКУ-CAN / скорость демо, [sul_registry.c](../../firmware/tft_app/src/domain/sul/src/sul_registry.c) |

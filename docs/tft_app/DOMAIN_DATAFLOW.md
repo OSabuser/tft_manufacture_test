@@ -59,7 +59,8 @@ flowchart TB
 контроллеру; `render_task` применяет diff. **Данные** между ними — очередь глубины 1
 (`xQueueOverwrite`: важно только последнее состояние, не история); **пробуждение** —
 `xTaskNotifyGive` (render_task — event-driven, не поллит). Пока открыто меню, `sul_rx_task`
-находится в «мягкой паузе» (decode/controller/очередь пропускаются, WDOG кормится). Полная
+находится в «мягкой паузе» (decode/controller/очередь пропускаются, heartbeat задачи
+отмечается безусловно — §3.7). Полная
 картина задач — [TASKS.md](TASKS.md).
 
 ```mermaid

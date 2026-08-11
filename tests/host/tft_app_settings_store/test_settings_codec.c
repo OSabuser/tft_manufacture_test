@@ -21,7 +21,7 @@ static void test_defaults_sane(void)
 {
     const settings_t D = settings_defaults();
     TEST_ASSERT_EQUAL_UINT8(0U, D.device.protocol_id);
-    TEST_ASSERT_EQUAL_UINT8(1U, D.device.log_enabled);
+    TEST_ASSERT_EQUAL_UINT8(1U, D.device.log_level); /* «Инфо» из коробки */
     TEST_ASSERT_EQUAL_UINT8(2U, D.user.sound_volume_idx);
     TEST_ASSERT_EQUAL_UINT8(1U, D.user.music_volume_idx);
     TEST_ASSERT_EQUAL_UINT16(0U, D.user.max_load_kg);
@@ -44,7 +44,7 @@ static void test_roundtrip_preserves_fields(void)
     in.user.max_cap_persons = 8U;
     in.user.year_production  = 25U;
     in.user.proto_slice[0]  = 7U;
-    in.device.log_enabled   = 0U;
+    in.device.log_level     = 0U;
     (void) snprintf(in.user.serial, SETTINGS_SERIAL_LEN, "AB1234");
 
     settings_page_t page;
@@ -56,7 +56,7 @@ static void test_roundtrip_preserves_fields(void)
     TEST_ASSERT_EQUAL_UINT8(8U, out.user.max_cap_persons);
     TEST_ASSERT_EQUAL_UINT8(25U, out.user.year_production);
     TEST_ASSERT_EQUAL_UINT8(7U, out.user.proto_slice[0]);
-    TEST_ASSERT_EQUAL_UINT8(0U, out.device.log_enabled);
+    TEST_ASSERT_EQUAL_UINT8(0U, out.device.log_level);
     TEST_ASSERT_EQUAL_STRING("AB1234", out.user.serial);
 }
 

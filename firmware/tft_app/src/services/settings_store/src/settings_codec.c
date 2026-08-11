@@ -17,7 +17,7 @@ static const settings_t K_DEFAULTS = {
         {
             .panel_type  = SETTINGS_DEFAULT_PANEL,
             .protocol_id = 0U, /* NKU_CAN */
-            .log_enabled = 1U, /* bring-up логи из коробки; меню выключит */
+            .log_level = 1U, /* «Инфо» — бизнес-логика из коробки; меню поменяет */
         },
     .user =
         {
@@ -27,7 +27,6 @@ static const settings_t K_DEFAULTS = {
             .music_volume_idx = 1U,
             .year_production  = 0U,  /* скрыть */
             .serial           = "",
-            .dummy_option     = 0U, // Моя опция
             .proto_slice      = {0}, /* НКУ: адрес 0 */
         },
 };

@@ -49,9 +49,13 @@ static const menu_item_desc_t K_TREE_FLAT[A_COUNT] = {
                   .min          = 0U,
                   .max          = 15U,
                   .parent       = MENU_ROOT_INDEX },
+    /* Дерево СИНТЕТИЧЕСКОЕ — проверяет движок, а не боевую раскладку. Поле
+     * `device.log_level` здесь просто uint8-мишень, и пункт объявляет СВОИ
+     * min/max (0..1). В боевом дереве (menu_tree.c) тот же байт — SELECT на
+     * три позиции (§3.9); расхождение намеренное, а не рассинхрон. */
     [A_LOG]   = { .label        = "Логи",
                   .type         = MENU_BOOL,
-                  .value_offset = offsetof(settings_t, device.log_enabled),
+                  .value_offset = offsetof(settings_t, device.log_level),
                   .min          = 0U,
                   .max          = 1U,
                   .parent       = MENU_ROOT_INDEX },
@@ -142,15 +146,15 @@ static void test_bool_toggle(void)
     menu_ctx_t ctx;
     settings_t s;
     open_flat(&ctx, &s);
-    s.device.log_enabled = 1U;
+    s.device.log_level = 1U;
     menu_next(&ctx);
     menu_next(&ctx);
     TEST_ASSERT_EQUAL_UINT8(A_LOG, menu_current(&ctx));
 
     menu_action(&ctx);
-    TEST_ASSERT_EQUAL_UINT8(0U, s.device.log_enabled);
+    TEST_ASSERT_EQUAL_UINT8(0U, s.device.log_level);
     menu_action(&ctx);
-    TEST_ASSERT_EQUAL_UINT8(1U, s.device.log_enabled);
+    TEST_ASSERT_EQUAL_UINT8(1U, s.device.log_level);
 }
 
 static void test_exit_saves_when_dirty(void)
@@ -306,7 +310,7 @@ static const menu_item_desc_t K_TREE_SUB[B_COUNT] = {
     [B_EXIT] = { .label = "Выход", .type = MENU_BACK, .parent = MENU_ROOT_INDEX },
     [B_B]    = { .label        = "B",
                  .type         = MENU_BOOL,
-                 .value_offset = offsetof(settings_t, device.log_enabled),
+                 .value_offset = offsetof(settings_t, device.log_level),
                  .min          = 0U,
                  .max          = 1U,
                  .parent       = B_SUB },
@@ -353,12 +357,12 @@ static void test_submenu_edit_persists_and_root_exit_saves(void)
     menu_ctx_t ctx;
     settings_t s;
     open_sub(&ctx, &s);
-    s.device.log_enabled = 0U;
+    s.device.log_level = 0U;
 
     menu_next(&ctx);
     menu_action(&ctx);
     menu_action(&ctx);
-    TEST_ASSERT_EQUAL_UINT8(1U, s.device.log_enabled);
+    TEST_ASSERT_EQUAL_UINT8(1U, s.device.log_level);
 
     menu_next(&ctx);
     menu_action(&ctx);

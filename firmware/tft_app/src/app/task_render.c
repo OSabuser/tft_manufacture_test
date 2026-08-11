@@ -25,8 +25,8 @@
 
 #include "FreeRTOS.h"
 #include "app_tasks.h"
-#include "crash_log.h"
 #include "domain/elevator_model.h"
+#include "heartbeat.h"
 #include "log/log.h"
 #include "queue.h"
 #include "services/gfx.h"
@@ -50,8 +50,10 @@ void render_task(void *p_arg)
     }
 
     sul_result_t last = sul_default_state();
+    heartbeat_enter(HB_TASK_RENDER, app_now_ms(), "render:first-frame");
     ui_fallback_render_initial(&last, g_dispatcher_indication);
     gfx_present();
+    heartbeat_leave(HB_TASK_RENDER, app_now_ms());
 
     bool was_menu_open                      = false;
     dispatcher_indication_t last_dispatcher = g_dispatcher_indication;
@@ -69,31 +71,34 @@ void render_task(void *p_arg)
                 /* Открытие: стереть индикацию из ВСЕГО AS и прогнать полный
                  * кадр в ОБА FB — после этого вне окна оба буфера корректны
                  * (чёрные), и навигация может обновлять только окно. */
-                crash_log_set_breadcrumb("render:menu-open");
+                heartbeat_enter(HB_TASK_RENDER, app_now_ms(), "render:menu-open");
                 gfx_clear();
                 menu_view_render(&g_menu);
                 gfx_present();
                 gfx_present(); /* тот же AS — во второй FB (double buffering) */
-                crash_log_set_breadcrumb("idle");
+                heartbeat_leave(HB_TASK_RENDER, app_now_ms());
             }
             else
             {
                 /* Навигация/правка: только окно (~27% кадра). */
-                crash_log_set_breadcrumb("render:menu-nav");
+                heartbeat_enter(HB_TASK_RENDER, app_now_ms(), "render:menu-nav");
 
-                /* ЗАМЕР ОТЗЫВЧИВОСТИ (временно, до разбора регресса): по
-                 * какой фазе уходит время — рисование в AS (uncached SDRAM,
-                 * попиксельно), busy-wait PXP или ожидание FRAME_DONE.
-                 * Навигация человеко-темповая, флуда не будет. */
+                /* ЗАМЕР ОТЗЫВЧИВОСТИ (Debug, §3.9): по какой фазе уходит
+                 * время — рисование в AS (uncached SDRAM, попиксельно),
+                 * busy-wait PXP или ожидание FRAME_DONE. Именно эту
+                 * диагностику сносили после разбора кэшируемого XIP; теперь
+                 * она штатная и включается в поле пунктом меню «Логи» →
+                 * «Отладка», без пересборки. Навигация человеко-темповая,
+                 * флуда не будет. */
                 const TickType_t T0 = xTaskGetTickCount();
                 menu_view_render(&g_menu);
                 const TickType_t T1 = xTaskGetTickCount();
                 gfx_present_rect(0U, 0U, MENU_VIEW_WIN_W, MENU_VIEW_WIN_H);
                 const TickType_t T2 = xTaskGetTickCount();
 
-                crash_log_set_breadcrumb("idle");
+                heartbeat_leave(HB_TASK_RENDER, app_now_ms());
 
-                LOG_I(LOG_TAG, "menu-nav: draw=%u pxp=%u vsync=%u total=%u мс (err=%u)",
+                LOG_D(LOG_TAG, "menu-nav: draw=%u pxp=%u vsync=%u total=%u мс (err=%u)",
                       (unsigned) ((T1 - T0) * portTICK_PERIOD_MS), (unsigned) g_gfx_last_pxp_ms,
                       (unsigned) g_gfx_last_vsync_ms, (unsigned) ((T2 - T0) * portTICK_PERIOD_MS),
                       (unsigned) g_gfx_present_errors);
@@ -149,9 +154,19 @@ void render_task(void *p_arg)
 
             if (present_needed)
             {
-                crash_log_set_breadcrumb("render:indication");
+                heartbeat_enter(HB_TASK_RENDER, app_now_ms(), "render:indication");
+                const TickType_t T0 = xTaskGetTickCount();
                 gfx_present(); /* индикация — всегда полный кадр */
-                crash_log_set_breadcrumb("idle");
+                const TickType_t T1 = xTaskGetTickCount();
+                heartbeat_leave(HB_TASK_RENDER, app_now_ms());
+
+                /* Debug (§3.9): полный кадр дороже оконного (весь экран против
+                 * 480×272) — на Отладке видно, укладывается ли он в бюджет
+                 * guard_ms супервизора (§3.7). Частота — по изменениям СУЛ,
+                 * не по кадрам развёртки, флуда нет. */
+                LOG_D(LOG_TAG, "indication: present=%u мс pxp=%u vsync=%u (err=%u)",
+                      (unsigned) ((T1 - T0) * portTICK_PERIOD_MS), (unsigned) g_gfx_last_pxp_ms,
+                      (unsigned) g_gfx_last_vsync_ms, (unsigned) g_gfx_present_errors);
             }
 
             last_dispatcher = DISPATCHER_NOW;

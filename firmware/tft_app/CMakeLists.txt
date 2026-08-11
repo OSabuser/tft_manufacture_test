@@ -13,6 +13,28 @@ if(BUILD_TESTS_HOST)
 endif()
 
 # -----------------------------------------------------------------------------
+# Версия образа — ЕДИНСТВЕННЫЙ источник правды (см. docs/RELEASE_PROCESS.md).
+#
+# Отсюда её забирает imgtool при подписи (через app_version.txt ниже), и она
+# попадает в заголовок MCUboot. Приложение читает версию ОТТУДА, в рантайме, —
+# отдельного version.h нет намеренно: два места разъезжаются, заголовок образа
+# разъехаться не может.
+#
+# ⚠️ Версия не косметическая: загрузчик по ней выбирает слот и решает,
+# принимать ли обновление с SD (image_version_compare() в update_policy.c
+# сравнивает major.minor.revision; build_num НЕ участвует). Образ с той же
+# версией, что установленный, будет ПРОПУЩЕН — обновление молча не применится.
+# -----------------------------------------------------------------------------
+project(
+  tft_app
+  VERSION 0.1.0
+  LANGUAGES C ASM)
+
+# Версия в файл — рецепт подписи (just/build.just) читает её отсюда, чтобы не
+# держать вторую копию числа в другом языке.
+file(WRITE "${CMAKE_BINARY_DIR}/app_version.txt" "${tft_app_VERSION}")
+
+# -----------------------------------------------------------------------------
 # FreeRTOS ядро — первый RTOS-потребитель в репозитории. Собираем свой STATIC
 # таргет из вендоренных исходников SDK (порт GCC/ARM_CM4F пригоден для cm7f,
 # heap_4). Конфиг — src/app/FreeRTOSConfig.h.
@@ -65,6 +87,7 @@ add_executable(
   src/app/task_render.c   # презентация: единственный вызывающий gfx_present(), event-driven
   src/app/dispatcher.c    # диспетчерский вход opto IN1/IN2 (§3.4) — не задача, обвязка bsp_opto
   src/app/crash_log.c     # причина предыдущего сброса (.noinit-запись) — диагностика зависаний
+  src/app/heartbeat.c     # супервизор живости задач — основание кормить WDOG (§3.7)
   ${BSP_GENERATED}/clock_config.c # BOARD_BootClockRUN (зовётся board_hw_init)
   ${BSP_STARTUP_FILE}
   ${BSP_SYSCALLS_FILE}
@@ -99,7 +122,19 @@ target_include_directories(
 # bsp/sdram/README.md и OLD_PROJECT/source/display/image_cache.c).
 target_compile_definitions(
   app PRIVATE APP_OWN_SLOT_ID=0 __STARTUP_CLEAR_BSS __STARTUP_INITIALIZE_RAMFUNCTION
-              __STARTUP_INITIALIZE_NONCACHEDATA)
+              __STARTUP_INITIALIZE_NONCACHEDATA
+              # LOG_LEVEL=4 (DEBUG) — компайл-тайм ПОЛ для рантайм-уровня (§3.9).
+              # Без него Release собирался бы с LOG_LEVEL=OFF (фолбэк log.h по
+              # NDEBUG): ВСЕ LOG_* вырезаются препроцессором, и пункт меню «Логи»
+              # гейтит пустоту. Цена — строковые литералы и вызовы log_write()
+              # остаются в образе.
+              #
+              # Именно PRIVATE на таргете `app`, а НЕ глобальная cache-переменная
+              # LOG_LEVEL: та ушла бы в `utils` как PUBLIC и изменила бы Release
+              # ВЫПУЩЕННОГО загрузчика 1.0.0. Все LOG_* в tft_app живут в
+              # src/app/*.c, которые компилируются прямо в этот таргет, — до них
+              # PRIVATE-дефайн доходит.
+              LOG_LEVEL=4)
 
 # Вендоренный bootutil_public.c — под своими warnings (как в bootloader/stub).
 set_source_files_properties(

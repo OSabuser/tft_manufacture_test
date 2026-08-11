@@ -20,7 +20,7 @@
 | `bringup_task` | task_bringup.c | `+4` (высший, недолгоживущая) | одноразовая инициализация → создаёт три остальные → `vTaskDelete(NULL)` | QSPI/flash-операции |
 | `menu_task` | task_menu.c | `+3` | модель меню: кнопки, вход/навигация/правка/сохранение. **НЕ рисует** | `settings_store_save()` (flash) на выходе из меню |
 | `render_task` | task_render.c | `+2` | **единственный** владелец дисплея и вызывающий `gfx_present*()` | PXP busy-wait + ожидание FRAME_DONE |
-| `sul_rx_task` | task_sul_rx.c | `+1` (низший) | приём CAN → decode → controller; WDOG/heartbeat | busy-spin в `bsp_can_receive()` до 100 мс без трафика |
+| `sul_rx_task` | task_sul_rx.c | `+1` (низший) | приём CAN → decode → controller; heartbeat (§3.7) | busy-spin в `bsp_can_receive()` до 100 мс без трафика |
 | — демон таймеров | (FreeRTOS) | `configTIMER_TASK_PRIORITY` (высший в системе) | `input_poll_cb` каждые 5 мс: `bsp_button_poll()` (debounce) → `bsp_opto_process()` (debounce IN1/IN2) → `dispatcher_poll()` (§3.4, `app/dispatcher.c` — безусловный опрос `bsp_opto_read()`, НЕ колбэк, см. PLAN.md про баг реактивной версии; пишет `g_dispatcher_indication` и будит `render_task` прямо отсюда при изменении) | нет (все три коротких) |
 
 `main()` создаёт только очередь, софт-таймер ввода и `bringup_task` — остальное wiring делает
@@ -65,7 +65,7 @@ CPU, пока не создаст всех троих.
 flowchart LR
     TMR["демон таймеров<br/>input_poll_cb 5 мс<br/>bsp_button_poll + bsp_opto_process"]
     MT["menu_task (+3)<br/>модель меню g_menu"]
-    RX["sul_rx_task (+1)<br/>CAN→decode→controller<br/>WDOG безусловно"]
+    RX["sul_rx_task (+1)<br/>CAN→decode→controller<br/>heartbeat безусловно"]
     RT["render_task (+2)<br/>gfx_present*()"]
     DSP["dispatcher_poll()<br/>(app/dispatcher.c)<br/>g_dispatcher_indication"]
 
@@ -121,7 +121,7 @@ flowchart LR
 ### Мягкая пауза `sul_rx_task` на время меню
 
 `menu_task` держит `g_menu_active=true`, пока меню открыто; `sul_rx_task` под этим флагом
-пропускает CAN-работу (decode/controller/очередь), но **WDOG/heartbeat кормит безусловно** —
+пропускает CAN-работу (decode/controller/очередь), но **heartbeat отмечает безусловно** —
 задача не suspend'ится, поэтому сторожевой таймер в безопасности по конструкции, что бы ни
 происходило с меню. Флаг обновляется **до** `settings_store_save()` (flash-запись небыстрая —
 иначе пауза держалась бы дольше нужного). На закрытие меню `render_task` немедленно
@@ -144,7 +144,28 @@ flowchart LR
    по задачам (в объединённой задаче ввод был мёртв).
 3. **`bringup` выше всех** — монополизирует CPU на время одноразовой инициализации.
 4. **Демон таймеров — наивысший в системе** (`configTIMER_TASK_PRIORITY`): debounce-сэмплы
-   не теряются, чем бы ни были заняты остальные.
+   не теряются, чем бы ни были заняты остальные. По этой же причине он — единственная
+   точка кормления watchdog (см. ниже).
+
+---
+
+## 4.1. Кто кормит watchdog
+
+Кормит **демон таймеров** (`supervise_watchdog()` в `input_poll_cb`), и только когда свежи
+heartbeat'ы всех трёх наблюдаемых задач. Раньше `bsp_wdog_refresh()` стоял в `sul_rx_task`,
+задаче с САМЫМ НИЗКИМ приоритетом: гарантия сводилась к «жив кормилец» и ничего не говорила
+о живости остальных.
+
+Что это значит для задач в этом документе:
+
+- `sul_rx` и `menu` отмечаются раз за проход цикла (`heartbeat_mark()`);
+- `render` — **не** отмечается периодически: она event-driven и законно спит на
+  `ulTaskNotifyTake(portMAX_DELAY)`. Её живость судится по длительности участков
+  `heartbeat_enter()`/`heartbeat_leave()`;
+- мягкая пауза меню (§3) на живость не влияет — `sul_rx_task` продолжает крутить цикл
+  и отмечаться.
+
+Пороги, защёлка приговора, крэш-запись и диагнозы в логе — [WATCHDOG.md](WATCHDOG.md).
 
 ---
 

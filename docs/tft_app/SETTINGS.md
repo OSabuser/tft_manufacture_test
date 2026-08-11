@@ -43,7 +43,7 @@ typedef struct {
 | --- | --- | --- | --- | --- |
 | `device.panel_type` | `uint8_t` | provisioning | `2` (TFT8), Фаза 9 | нет — provisioning-параметр (ARCH §9), не пользовательский |
 | `device.protocol_id` | `uint8_t` | provisioning/B | `0` (NKU_CAN) | да — пункт «Протокол» (`T_PROTO`) |
-| `device.log_enabled` | `uint8_t` | provisioning | `1` (вкл.) | да — пункт «Логи» (`T_LOG`, Фаза 3.6) |
+| `device.log_level` | `uint8_t` | provisioning | `1` (Инфо) | да — пункт «Логи» (`T_LOG`, Фаза 3.9): **индекс** 0 Выкл / 1 Инфо / 2 Отладка, не значение `LOG_LEVEL_*` |
 | `user.max_load_kg` | `uint16_t` | A | `0` = скрыто | **нет** — хранится и сериализуется, редактор — Фаза 5/6 |
 | `user.max_cap_persons` | `uint8_t` | A | `0` = скрыто | **нет** — Фаза 5/6 |
 | `user.sound_volume_idx` | `uint8_t` | A | `2` из 0..4 | **нет** — эффект (звук) только с Фазы 6 |
@@ -82,7 +82,7 @@ flowchart TB
   расширяется (готча со staleness — тоже в §4).
 - **device (provisioning).** Не входит ни в A, ни в B по смыслу ARCH §8, но физически хранится
   рядом (структура `settings_device_t`): панель — provisioning (Фаза 9, пишет `service_tui`,
-  не пользователь), протокол и тумблер логов — фактически пользовательские пункты меню уже
+  не пользователь), протокол и уровень логов — фактически пользовательские пункты меню уже
   сейчас, несмотря на «device» в имени поля.
 - **C — клиентский UX-зоопарк.** Логотип, сдвиги/маска номеров этажей, произвольные текстовые
   метки — то, что каждый клиент хочет по-своему. **НЕ входит в `settings_t` вообще** — ни
@@ -231,7 +231,7 @@ sequenceDiagram
     else невалидны/ошибка чтения
         B->>B: settings_store_init_defaults()
     end
-    B->>B: sul_registry_set_active(protocol_id)<br/>menu_tree_refresh_protocol_section()<br/>log_set_enabled(log_enabled)
+    B->>B: sul_registry_set_active(protocol_id)<br/>menu_tree_refresh_protocol_section()<br/>app_log_level_apply(log_level)
 
     Note over M,S: рантайм — RAM-мутации через settings_store_get_mutable()
     M->>M: правка в меню (offset, dirty=true)
@@ -249,9 +249,9 @@ sequenceDiagram
   вызываются один раз из `bringup_task` ДО создания остальных задач, гонки при создании нет по
   конструкции). Без мьютекса — два параллельных `erase+write` в один сектор, порча настроек
   (найдено при проектировании 3.5, не на стенде — см. PLAN.md).
-- **Реаппликация — не только после `save()`.** Активный протокол/тумблер логов переприменяются
+- **Реаппликация — не только после `save()`.** Активный протокол/уровень логов переприменяются
   СРАЗУ на каждое действие меню (`sul_registry_set_active()`, `menu_tree_refresh_protocol_section()`,
-  `log_set_enabled()`) — эффект виден в том же сеансе, независимо от того, дойдёт ли пользователь
+  `app_log_level_apply()`) — эффект виден в том же сеансе, независимо от того, дойдёт ли пользователь
   до сохранения.
 
 ---
@@ -268,7 +268,7 @@ sequenceDiagram
   ниоткуда в `app`-слое — нет пункта меню «сброс настроек». Задел под Фазу 5/6.
 - **Ярус A без UI** — весь список из §2 («нет» в последней колонке) хранится/сериализуется/проходит
   CRC уже сейчас, но нет ни одного пункта меню, который бы это редактировал — только `device.protocol_id`
-  и `device.log_enabled` (провиженинговые по имени поля) и `user.proto_slice` реально управляемы
+  и `device.log_level` (провиженинговые по имени поля) и `user.proto_slice` реально управляемы
   оператором сегодня.
 - **`device.panel_type`** — provisioning-параметр (ARCH §9), пишется `service_tui`, а не
   пользовательским меню; сейчас хардкод-дефолт `BSP_DISPLAY_TFT8`, реальный provisioning-путь —

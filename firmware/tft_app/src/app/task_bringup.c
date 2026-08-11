@@ -13,16 +13,15 @@
  * контролировать по отдельности.
  */
 
-#include "app_tasks.h"
-
 #include "FreeRTOS.h"
+#include "app_tasks.h"
 #include "bootutil/bootutil_public.h"
 #include "bsp/boot_state.h"
-#include "crash_log.h"
 #include "bsp/display.h"
 #include "bsp/qspi_flash.h"
 #include "bsp/sdram.h"
 #include "bsp/uart_host.h"
+#include "crash_log.h"
 #include "domain/sul.h"
 #include "domain/sul/transport/can.h"
 #include "flash_map.h"
@@ -61,7 +60,10 @@ void log_slot_status(const char *p_when)
 
     struct boot_swap_state st = { 0 };
     const int RC_RD           = boot_read_swap_state(p_fap, &st);
-    LOG_I(LOG_TAG, "%s: slot%d magic=%d copy_done=%d image_ok=%d (rd=%d)", p_when, APP_OWN_SLOT_ID,
+    /* Debug (§3.9): это ТЕХНИКА трейлера MCUboot, а не бизнес-событие. Бизнес-
+     * факт «образ подтвердил себя» печатает confirm_self() на Info. Строка
+     * повторяется раз в 2 с из sul_rx_task — на Info она забивала бы лог. */
+    LOG_D(LOG_TAG, "%s: slot%d magic=%d copy_done=%d image_ok=%d (rd=%d)", p_when, APP_OWN_SLOT_ID,
           st.magic, st.copy_done, st.image_ok, RC_RD);
 
     flash_area_close(p_fap);
@@ -128,6 +130,26 @@ static bool bring_up_display_and_can(void)
     return true;
 }
 
+/**
+ * @brief Индекс пункта меню «Логи» → рантайм-уровень логгера (§3.9).
+ *
+ * Таблицей, а не арифметикой: значения `LOG_LEVEL_*` не идут подряд
+ * (OFF=0, INFO=3, DEBUG=4), и «index+2» сломалось бы на первом же новом
+ * пункте. Неизвестный индекс → «Инфо»: неверная настройка не должна
+ * приводить к немому устройству.
+ */
+void app_log_level_apply(uint8_t setting_index)
+{
+    static const int K_LEVELS[] = {
+        LOG_LEVEL_OFF,   /* 0 — Выкл    */
+        LOG_LEVEL_INFO,  /* 1 — Инфо    */
+        LOG_LEVEL_DEBUG, /* 2 — Отладка */
+    };
+
+    const uint8_t COUNT = (uint8_t) (sizeof(K_LEVELS) / sizeof(K_LEVELS[0]));
+    log_set_level((setting_index < COUNT) ? K_LEVELS[setting_index] : LOG_LEVEL_INFO);
+}
+
 void bringup_task(void *p_arg)
 {
     (void) p_arg;
@@ -138,25 +160,34 @@ void bringup_task(void *p_arg)
      * порядок гарантирован конструкцией (main создаёт только её). */
     log_mutex_init();
 
-    /* LPUART1/MCU-Link VCOM — доступен сразу, без enumeration/wait (в отличие
-     * от target-side USB CDC). */
     (void) bsp_uart_host_init(115200U);
     log_uart_init();
 
-    /* Причина ПРЕДЫДУЩЕГО сброса — первым делом после подъёма лога, до любой
-     * инициализации, которая может снова упасть (см. app/crash_log.h). */
-    crash_log_report_previous();
-
-    /* flash_map_backend требует bsp_qspi_init() ДО любой flash_area_*. */
+    /* ── ТИХАЯ ЗОНА: ни одного LOG_* до применения уровня из настроек ────────
+     *
+     * Уровень логов живёт в настройках, настройки — на QSPI. Значит всё, что
+     * логируется ДО подъёма QSPI, физически не может быть отфильтровано: до
+     * первого log_set_level() действует дефолт «не резать ничего сверх
+     * компайл-тайм». Раньше сюда попадали три строки (причина сброса, qspi=,
+     * settings:), и они шли в UART даже при выбранном «Выкл» — найдено на
+     * стенде.
+     *
+     * Поэтому порядок такой: сначала МОЛЧА поднять QSPI и загрузить настройки,
+     * применить уровень — и только потом напечатать всё то же самое. Состав и
+     * порядок строк не изменились, изменился момент печати.
+     *
+     * Плата за это: crash_log_report_previous() уехал ПОСЛЕ bsp_qspi_init(),
+     * хотя раньше стоял до любой способной упасть инициализации. Осознанно:
+     * при ОТКАЗЕ QSPI (rc != OK) настройки берутся дефолтные, уровень — «Инфо»,
+     * и причина всё равно печатается ниже. Потерять её можно только если
+     * bsp_qspi_init() ЗАВИСНЕТ намертво — но такая плата не грузится в
+     * принципе, и её диагностика — LED-паттерны загрузчика, не наш UART. */
     const bool QSPI_OK = (bsp_qspi_init() == BSP_OK);
-    LOG_I(LOG_TAG, "tft_app boot: qspi=%s", QSPI_OK ? "OK" : "FAIL");
 
-    /* Настройки ядра (§8, §10): с флеша если QSPI поднялся, иначе дефолты. */
+    bsp_status_t settings_rc = BSP_OK;
     if (QSPI_OK)
     {
-        const bsp_status_t S_RC = settings_store_load();
-        LOG_I(LOG_TAG, "settings: load rc=%d proto_addr=%u", S_RC,
-              settings_store_get()->user.proto_slice[0]);
+        settings_rc = settings_store_load();
     }
     else
     {
@@ -168,10 +199,17 @@ void bringup_task(void *p_arg)
     sul_registry_set_active(settings_store_get()->device.protocol_id);
     menu_tree_refresh_protocol_section(settings_store_get_mutable());
 
-    /* Рантайм-тумблер логов (§3.6) — из настроек; ДО этой строки действует
-     * дефолт log.c (включено), чтобы сообщения выше (qspi/settings) не
-     * терялись молча, пока реальное значение ещё не загружено. */
-    log_set_enabled(settings_store_get()->device.log_enabled != 0U);
+    /* Рантайм-уровень логов (§3.9) — с этой строки лог подчиняется настройке. */
+    app_log_level_apply(settings_store_get()->device.log_level);
+
+    /* ── Конец тихой зоны: печатаем накопленное, в прежнем порядке ─────────── */
+    crash_log_report_previous();
+    LOG_I(LOG_TAG, "tft_app boot: qspi=%s", QSPI_OK ? "OK" : "FAIL");
+    if (QSPI_OK)
+    {
+        LOG_I(LOG_TAG, "settings: load rc=%d proto_addr=%u", settings_rc,
+              settings_store_get()->user.proto_slice[0]);
+    }
 
     /* «Дошёл до устойчивого состояния» — сбрасывает счётчик попыток загрузки
      * (recovery загрузчика). SRC GPR, без flash. Безусловно, до потенциально
@@ -196,7 +234,8 @@ void bringup_task(void *p_arg)
      * xTaskCreate() ниже отработают), но документирует зависимость явно. */
     (void) xTaskCreate(render_task, "render", APP_TASK_STACK_WORDS, NULL, APP_PRIORITY_RENDER,
                        &g_render_task_handle);
-    (void) xTaskCreate(sul_rx_task, "sul_rx", APP_TASK_STACK_WORDS, NULL, APP_PRIORITY_SUL_RX, NULL);
+    (void) xTaskCreate(sul_rx_task, "sul_rx", APP_TASK_STACK_WORDS, NULL, APP_PRIORITY_SUL_RX,
+                       NULL);
     (void) xTaskCreate(menu_task, "menu", APP_TASK_STACK_WORDS, NULL, APP_PRIORITY_MENU, NULL);
 
     vTaskDelete(NULL); /* одноразовая задача — дальше нечего делать */

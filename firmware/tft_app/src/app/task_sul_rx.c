@@ -5,10 +5,11 @@
  *        выбирается здесь по id активного драйвера — единственное место,
  *        которое трогает Фаза 8 при добавлении протокола на новом транспорте.
  *
- * WDOG/heartbeat/периодический re-log трейлера — БЕЗУСЛОВНО (housekeeping,
- * не протокол-специфика). Сам приём (decode/controller/очередь) — под
- * `!g_menu_active`: мягкая пауза на время меню (см. app_tasks.h) — задача НЕ
- * suspend'ится, поэтому WDOG остаётся в безопасности по конструкции.
+ * Heartbeat супервизора (§3.7), LED-heartbeat и периодический re-log трейлера
+ * — БЕЗУСЛОВНО (housekeeping, не протокол-специфика). Сам приём
+ * (decode/controller/очередь) — под `!g_menu_active`: мягкая пауза на время
+ * меню (см. app_tasks.h) — задача НЕ suspend'ится и продолжает крутить цикл,
+ * поэтому пауза не выглядит зависанием для супервизора.
  *
  * Bring-up (QSPI/settings/self-confirm/SDRAM+gfx+CAN) — bringup_task
  * (task_bringup.c); эта задача стартует уже после него, `g_display_ready`
@@ -18,8 +19,6 @@
 #include "FreeRTOS.h"
 #include "app_tasks.h"
 #include "bsp/led.h"
-#include "bsp/wdog.h"
-#include "crash_log.h"
 #include "domain/controller.h"
 #include "domain/elevator_model.h"
 #include "domain/sul.h"
@@ -28,6 +27,7 @@
 #include "domain/sul/transport/can.h"
 #include "domain/sul/transport/demo.h"
 #include "domain/sul/uim.h"
+#include "heartbeat.h"
 #include "log/log.h"
 #include "queue.h"
 #include "services/settings_store.h"
@@ -37,20 +37,16 @@
 
 #define LOG_TAG "sul_rx"
 
-#define HEARTBEAT_PERIOD_MS 500U
-/* Каденция итерации цикла. WDOG взводит ЗАГРУЗЧИК (WDE — write-once), таймаут
- * 10 c — см. firmware/bootloader/src/main.c; приложение только кормит.
- *
- * ВНИМАНИЕ на бюджет: bsp_wdog_refresh() ниже — ЕДИНСТВЕННАЯ точка кормления в
- * прошивке, и она в задаче с САМЫМ НИЗКИМ приоритетом. Любой, кто выше
- * (демон таймеров, menu_task, render_task), удерживая CPU дольше 10 c,
- * приводит к сбросу. Диагностика такого случая — app/crash_log.h
- * («WATCHDOG TIMEOUT, крэш-записи нет»). */
-#define WDOG_FEED_PERIOD_MS 100U
+#define LED_HEARTBEAT_PERIOD_MS 500U
+/* Каденция итерации цикла — она же каденция heartbeat'а этой задачи (§3.7).
+ * Порог свежести для неё задан в app/heartbeat.c (K_TASKS) с запасом ×20 к
+ * этому числу: задача с самым низким приоритетом законно задерживается под
+ * нагрузкой, ложный сброс хуже позднего. */
+#define LOOP_PERIOD_MS 100U
 #define STATUS_LOG_PERIOD_MS                                                                       \
     2000U /* периодический re-log трейлера — виден независимо
                                      * от момента подключения терминала */
-#define CAN_RX_TIMEOUT_MS 100U /* держит цикл отзывчивым к WDOG/heartbeat-каденции */
+#define CAN_RX_TIMEOUT_MS 100U /* держит цикл отзывчивым к каденции heartbeat */
 /* Отклик протокола (take_pending_tx) — TX-мейлбокс свободен практически всегда;
  * короткий таймаут, чтобы неисправная шина не съедала бюджет итерации. */
 #define CAN_TX_TIMEOUT_MS 10U
@@ -82,13 +78,13 @@ void sul_rx_task(void *p_arg)
     controller_ctx_t ctrl_ctx;
     controller_init(&ctrl_ctx);
 
-    const TickType_t FEED_PERIOD = pdMS_TO_TICKS(WDOG_FEED_PERIOD_MS);
+    const TickType_t LOOP_PERIOD = pdMS_TO_TICKS(LOOP_PERIOD_MS);
     TickType_t last_wake         = xTaskGetTickCount();
     TickType_t last_frame_tick   = xTaskGetTickCount();
 
     /* Дедлайны по РЕАЛЬНЫМ тикам, а не «+100 мс за итерацию».
      *
-     * Раньше счётчики инкрементировались на WDOG_FEED_PERIOD_MS каждый проход,
+     * Раньше счётчики инкрементировались на LOOP_PERIOD_MS каждый проход,
      * т.е. предполагали, что итерация длится ровно 100 мс. Вне меню так и было
      * (busy-spin в bsp_can_receive съедает таймаут), но ПОД МЕНЮ CAN-блок
      * пропускается — итерация становится микросекундной, vTaskDelayUntil() при
@@ -100,15 +96,19 @@ void sul_rx_task(void *p_arg)
 
     for (;;)
     {
-        bsp_wdog_refresh();
-        crash_log_feed_mark(); /* «я жива» — детектор голодания в input_poll_cb */
+        /* «Прошла итерацию» (§3.7). Кормит watchdog НЕ эта задача, а демон
+         * программных таймеров — и только когда свежи ВСЕ наблюдаемые задачи
+         * (см. supervise_watchdog() в task_menu.c). Отметка БЕЗУСЛОВНА, до
+         * ветки !g_menu_active: мягкая пауза на время меню — не признак
+         * зависания, задача продолжает крутить цикл. */
+        heartbeat_mark(HB_TASK_SUL_RX, app_now_ms());
 
         const TickType_t NOW = xTaskGetTickCount();
 
         /* Знаковая разница — корректна при перевороте счётчика тиков. */
         if ((int32_t) (NOW - next_heartbeat) >= 0)
         {
-            next_heartbeat = NOW + pdMS_TO_TICKS(HEARTBEAT_PERIOD_MS);
+            next_heartbeat = NOW + pdMS_TO_TICKS(LED_HEARTBEAT_PERIOD_MS);
             bsp_led_toggle(LED_APP);
         }
 
@@ -134,6 +134,21 @@ void sul_rx_task(void *p_arg)
              * вторая без переприменения фильтров под реальный адрес станции
              * кадры с адресом != 0 отбрасывались бы CAN-контроллером ещё до
              * decode (см. PLAN.md — найдено на реальной станции, адрес 1). */
+            /* Debug (§3.9): реаппликация настроек протокола идёт КАЖДУЮ
+             * итерацию (10 раз/с) и почти всегда — no-op. Логируем только
+             * ФАКТ изменения, иначе Отладка утонула бы в повторах. static —
+             * задача единственная и вечная. */
+            static uint8_t s_logged_proto = 0xFFU;
+            static uint8_t s_logged_param = 0xFFU;
+            const uint8_t PARAM_NOW       = settings_store_get()->user.proto_slice[0];
+            if ((p_driver->id != s_logged_proto) || (PARAM_NOW != s_logged_param))
+            {
+                s_logged_proto = p_driver->id;
+                s_logged_param = PARAM_NOW;
+                LOG_D(LOG_TAG, "protocol=%s proto_slice[0]=%u timeout=%u мс", p_driver->p_name,
+                      (unsigned) PARAM_NOW, (unsigned) p_driver->connection_timeout_ms);
+            }
+
             sul_frame_t frame;
             bsp_status_t rx_rc;
             /* Отправитель ТОГО ЖЕ транспорта, что и приём — выбирается здесь,
@@ -278,6 +293,6 @@ void sul_rx_task(void *p_arg)
             }
         }
 
-        vTaskDelayUntil(&last_wake, FEED_PERIOD);
+        vTaskDelayUntil(&last_wake, LOOP_PERIOD);
     }
 }

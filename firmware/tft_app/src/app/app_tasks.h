@@ -6,9 +6,16 @@
  * задаче оказались взаимно неотзывчивы, см. PLAN.md):
  *   - bringup_task — одноразовая инициализация (UART/QSPI/settings/self-confirm/
  *     SDRAM+gfx+CAN), затем создаёт три нижеследующие задачи и удаляет себя.
- *   - sul_rx_task  — приём CAN → decode → controller. WDOG/heartbeat кормятся
- *     БЕЗУСЛОВНО; сама CAN-работа — под !g_menu_active (мягкая пауза на время
- *     меню — WDOG остаётся в безопасности по конструкции).
+ *   - sul_rx_task  — приём CAN → decode → controller. Heartbeat (§3.7) и
+ *     LED-heartbeat отмечаются БЕЗУСЛОВНО; сама CAN-работа — под
+ *     !g_menu_active (мягкая пауза на время меню — живость задачи от паузы
+ *     не зависит по конструкции).
+ *
+ * WATCHDOG кормит НЕ задача, а демон программных таймеров (input_poll_cb), и
+ * только когда свежи heartbeat'ы ВСЕХ трёх наблюдаемых задач — см.
+ * app/heartbeat.h (§3.7). Раньше кормление стояло в sul_rx_task, задаче с
+ * самым НИЗКИМ приоритетом: гарантия сводилась к «жив кормилец» и ничего не
+ * говорила о живости остальных.
  *   - menu_task    — модель меню: потребление кнопок, hold-to-enter,
  *     навигация/edit/exit+save. НЕ рисует.
  *   - render_task  — единственный владелец дисплея/вызывающий gfx_present().
@@ -78,6 +85,18 @@
  *  маскировался под похожий на зависание симптом; x8 — с запасом,
  *  проверено на всех четырёх ролях). */
 #define APP_TASK_STACK_WORDS (configMINIMAL_STACK_SIZE * 8U)
+
+/**
+ * @brief Текущее время в мс — для heartbeat-супервизора (§3.7, app/heartbeat.h).
+ *
+ * Единая точка перевода тиков FreeRTOS в миллисекунды: супервизор — чистый C
+ * (host-тестируется) и время получает ПАРАМЕТРОМ, поэтому переводить обязан
+ * вызывающий — и делать это одинаково во всех местах, а не по-своему в каждом.
+ */
+static inline uint32_t app_now_ms(void)
+{
+    return (uint32_t) xTaskGetTickCount() * portTICK_PERIOD_MS;
+}
 
 /**
  * @brief Самое свежее состояние индикации (не история): sul_rx_task → render_task.
@@ -169,6 +188,19 @@ void dispatcher_poll(void);
  *  Логирует render_task, а НЕ dispatcher_poll(): у демона таймеров стек 1 КБ
  *  против 4 КБ у задач, vsnprintf там опасен (см. dispatcher.c). */
 const char *dispatcher_indication_name(dispatcher_indication_t v);
+
+/**
+ * @brief Применить уровень логов из настроек (§3.9).
+ *
+ * Переводит ИНДЕКС пункта меню (`settings_device_t.log_level`: 0 Выкл /
+ * 1 Инфо / 2 Отладка) в `LOG_LEVEL_*` и зовёт `log_set_level()`. Перевод живёт
+ * в app-слое (wiring, ARCH §4), а не в `settings_store` и не в `utils/log`:
+ * первый не должен знать про логгер, второй — про меню. Единственная точка,
+ * чтобы bringup и меню не разъехались в трактовке.
+ *
+ * Определена в task_bringup.c (как log_slot_status()).
+ */
+void app_log_level_apply(uint8_t setting_index);
 
 /** Диагностика трейлера слота (read-only, безопасно звать многократно) —
  *  общая для bringup_task (before/after-confirm) и sul_rx_task (периодический
