@@ -474,6 +474,47 @@ add_host_test(
   INCLUDES
   ${CMAKE_SOURCE_DIR}/bsp/reset/include)
 
+# tft_app — общий блиттер картинок (Фаза 4.1). Пиксельный цикл вынесен в свою
+# единицу трансляции именно ради этого: железа в нём нет, а через него рисуется
+# весь текст прошивки. Шов gfx_blend_pixel() подменяется тестом на линковке
+# (gfx.c сюда не входит). FloorFontFallback.c линкуется настоящий — golden на
+# реальном глифе; ему нужен тот же force-include fonts.h, что и в сборке
+# прошивки (сгенерированный файл не редактируем, конвертер его перезапишет).
+set(TFT_APP_GFX_DIR ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/services/gfx)
+
+add_host_test(
+  NAME
+  test_tft_app_gfx_blit
+  SOURCES
+  tft_app_gfx_blit/test_gfx_blit.c
+  ${TFT_APP_GFX_DIR}/src/gfx_blit.c
+  ${TFT_APP_GFX_DIR}/fonts/FloorFontFallback.c
+  INCLUDES
+  ${TFT_APP_GFX_DIR}/src
+  ${TFT_APP_GFX_DIR}/include
+  ${CMAKE_SOURCE_DIR}/bsp/display/include
+  ${CMAKE_SOURCE_DIR}/bsp/common/include)
+
+set_source_files_properties(
+  ${TFT_APP_GFX_DIR}/fonts/FloorFontFallback.c
+  PROPERTIES COMPILE_OPTIONS
+             "-include;${TFT_APP_GFX_DIR}/fonts/include/fonts.h;-w")
+
+# tft_app — выбор спрайта резервного режима (Фаза 4.1). Чистая часть: состояние
+# → id спрайта, без gfx и без указателей на картинки. Привязка id → настоящий
+# tImage живёт в отдельной единице трансляции и проверяется на стенде.
+add_host_test(
+  NAME
+  test_tft_app_fallback_sprites
+  SOURCES
+  tft_app_fallback_sprites/test_fallback_sprites.c
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/ui/fallback/src/fallback_sprites.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/firmware/tft_app/src/ui/fallback/include
+  ${TFT_APP_DOMAIN_DIR}/elevator_model/include
+  ${TFT_APP_DOMAIN_DIR}/controller/include
+  ${TFT_APP_DOMAIN_DIR}/sul/include)
+
 # tft_app — загрузочный экран (Фаза 3.10). Тестируется ТОЛЬКО компоновщик:
 # какие строки появляются, какие пропускаются, как форматируются. Рендер —
 # отдельная единица трансляции с gfx, на хосте не проверяется (как menu_view).

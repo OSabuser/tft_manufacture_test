@@ -1,5 +1,7 @@
 #include "services/gfx.h"
 
+#include "gfx_blit.h"
+
 #include "FreeRTOS.h"
 #include "fsl_common.h" /* AT_NONCACHEABLE_SECTION_ALIGN */
 #include "fsl_pxp.h"
@@ -83,8 +85,12 @@ static inline void set_pixel(uint16_t x, uint16_t y, gfx_color_t color)
  * содержимое AS. a=0 — пиксель нетронут (прозрачный край глифа), a=255 —
  * полная замена. Так сглаживание глифа корректно ложится на уже нарисованный
  * фон (в т.ч. полосу-курсор), а не штампует чёрный бокс. Результат всегда
- * непрозрачен (alpha 0xFF): PXP покажет его поверх PS. */
-static inline void blend_pixel(uint16_t x, uint16_t y, gfx_color_t color, uint8_t a)
+ * непрозрачен (alpha 0xFF): PXP покажет его поверх PS.
+ *
+ * НЕ static: это шов блиттера (gfx_blit.h). Пиксельный цикл живёт в отдельной
+ * единице трансляции и host-тестируется, подменяя ЭТУ функцию на линковке —
+ * знание о поверхности (AS, её размеры, обрезка) остаётся здесь. */
+void gfx_blend_pixel(uint16_t x, uint16_t y, gfx_color_t color, uint8_t a)
 {
     if ((x >= s_fb_width) || (y >= s_fb_height) || (a == 0U))
     {
@@ -133,73 +139,6 @@ static const tImage *find_glyph(const tFont *p_font, long code)
         }
     }
     return NULL;
-}
-
-/* ── RLE-декодирование глифа — порт draw_char() из OLD_PROJECT
- * source/fonts/fonts.c (проверенный в проде алгоритм, формат — как
- * реально экспортирует lcd-image-converter, "RLE compression enabled").
- *
- * Поток uint32_t, каждый блок начинается с заголовка:
- *   (header & 0xFFFFFF00) == 0xFFFFFF00 → UNIQUE: len = 0x100-(header&0xFF)
- *     уникальных пикселей подряд следуют в потоке (по одному слову каждый).
- *   иначе                                → REPEATABLE: len = header&0xFFFF
- *     повторений ОДНОГО пикселя (следующее слово потока, читается один раз).
- * Пиксели — ARGB8888, порядок row-major, перенос строки на границе width
- * (advance_pixel в оригинале). ──────────────────────────────────────────── */
-#define UNIQUE_BLOCK_MASK 0xFFFFFF00U
-
-/* Покрытие (α) пикселя глифа — белый глиф запечён grayscale'ом (0xVVVVVVVV),
- * V одинаков во всех байтах; берём младший. */
-#define GLYPH_COVERAGE(pixel) ((uint8_t) ((pixel) & 0xFFU))
-
-static void draw_glyph(const tImage *p_image, uint16_t x_pos, uint16_t y_pos, gfx_color_t color)
-{
-    const uint32_t total = (uint32_t) p_image->width * p_image->height;
-
-    uint32_t in_idx = 0U;
-    uint32_t out_n  = 0U;
-    uint32_t col    = 0U;
-    uint32_t row    = 0U;
-
-    while (out_n < total)
-    {
-        const uint32_t header = p_image->data[in_idx++];
-
-        if ((header & UNIQUE_BLOCK_MASK) == UNIQUE_BLOCK_MASK)
-        {
-            const uint32_t len = 0x100U - (header & 0xFFU);
-            for (uint32_t i = 0U; (i < len) && (out_n < total); i++)
-            {
-                blend_pixel((uint16_t) (x_pos + col), (uint16_t) (y_pos + row), color,
-                            GLYPH_COVERAGE(p_image->data[in_idx]));
-                col++;
-                if (col >= p_image->width)
-                {
-                    col = 0U;
-                    row++;
-                }
-                out_n++;
-                in_idx++;
-            }
-        }
-        else
-        {
-            const uint32_t len = header & 0xFFFFU;
-            const uint8_t a    = GLYPH_COVERAGE(p_image->data[in_idx]);
-            for (uint32_t i = 0U; (i < len) && (out_n < total); i++)
-            {
-                blend_pixel((uint16_t) (x_pos + col), (uint16_t) (y_pos + row), color, a);
-                col++;
-                if (col >= p_image->width)
-                {
-                    col = 0U;
-                    row++;
-                }
-                out_n++;
-            }
-            in_idx++;
-        }
-    }
 }
 
 /* ── Декодирование одного символа строки, включая 2-байтовый UTF-8
@@ -255,7 +194,7 @@ uint16_t gfx_draw_string(const tFont *p_font, const char *p_str, uint16_t x, uin
             continue;
         }
 
-        draw_glyph(p_glyph, (uint16_t) (x + offset), y, color);
+        gfx_blit_glyph(p_glyph, (uint16_t) (x + offset), y, color);
         offset = (uint16_t) (offset + p_glyph->width);
     }
 

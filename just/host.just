@@ -400,6 +400,24 @@ hil-firmware:
     uv run --directory "{{ HIL_DIR }}" pytest 06_test_firmware_opto.py 06_test_firmware_can.py -v
 
 # =============================================================================
+# ГРУППА: assets — паковка исходников в вкомпилированные ресурсы
+# =============================================================================
+
+_sprites_src := justfile_directory() / 'firmware/tft_app/assets/fallback_sprites'
+_sprites_out := justfile_directory() / 'firmware/tft_app/src/ui/fallback/sprites'
+
+# Стрелки пакуются ТИНТОМ: исходники монохромно-белые, значима только альфа →
+# сжатие x8.8 вместо x2.4, цвет задаётся прошивкой в рантайме, и попутно
+# игнорируются мусорные RGB внутри фигуры. Остальные — многоцветны по существу.
+_sprites_tint := "arrow_up,arrow_down,arrow_double"
+
+[doc('Перепаковать спрайты резервного режима: assets/*.png → src/ui/fallback/sprites/*.c')]
+[group('assets')]
+pack-fallback-sprites: setup-tools
+    cd "{{ TOOLS_DIR }}" && UV_PROJECT_ENVIRONMENT={{ _venv }} uv run python png2sprite.py \
+        "{{ _sprites_src }}" -o "{{ _sprites_out }}" --tint "{{ _sprites_tint }}"
+
+# =============================================================================
 # ГРУППА: debug — GDB-сервер для отладки из VSCode (devcontainer)
 #
 # Рабочий цикл А — прошивка уже в Flash:

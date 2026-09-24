@@ -37,28 +37,28 @@
 #include "app_tasks.h"
 #include "bsp/opto.h"
 /**
- * @brief Вычислить индикацию из ТЕКУЩЕГО состояния обоих каналов. ОТВЕТ
- *        (IN2) перебивает ВЫЗОВ (IN1), если оба почему-то активны
+ * @brief Вычислить индикацию из ТЕКУЩЕГО состояния обоих каналов. TALKING
+ *        (IN2) перебивает CALLING (IN1), если оба почему-то активны
  *        одновременно (согласовано с пользователем).
  */
 static dispatcher_indication_t resolve_indication(void)
 {
-    const bool ANSWER_ACTIVE = (bsp_opto_read(BSP_OPTO_CH_IN2) == BSP_OPTO_STATE_ACTIVE);
-    const bool CALL_ACTIVE   = (bsp_opto_read(BSP_OPTO_CH_IN1) == BSP_OPTO_STATE_ACTIVE);
+    const bool TALKING_ACTIVE = (bsp_opto_read(BSP_OPTO_CH_IN2) == BSP_OPTO_STATE_ACTIVE);
+    const bool CALLING_ACTIVE = (bsp_opto_read(BSP_OPTO_CH_IN1) == BSP_OPTO_STATE_ACTIVE);
 
-    return ANSWER_ACTIVE ? DISPATCHER_INDICATION_ANSWER
-           : CALL_ACTIVE ? DISPATCHER_INDICATION_CALL
-                         : DISPATCHER_INDICATION_NONE;
+    return TALKING_ACTIVE   ? DISPATCHER_INDICATION_TALKING
+           : CALLING_ACTIVE ? DISPATCHER_INDICATION_CALLING
+                            : DISPATCHER_INDICATION_NONE;
 }
 
 const char *dispatcher_indication_name(dispatcher_indication_t v)
 {
     switch (v)
     {
-    case DISPATCHER_INDICATION_CALL:
-        return "CALL";
-    case DISPATCHER_INDICATION_ANSWER:
-        return "ANSWER";
+    case DISPATCHER_INDICATION_CALLING:
+        return "CALLING";
+    case DISPATCHER_INDICATION_TALKING:
+        return "TALKING";
     case DISPATCHER_INDICATION_NONE:
     default:
         return "NONE";

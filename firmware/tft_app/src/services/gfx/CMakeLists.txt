@@ -1,9 +1,17 @@
-# services/gfx — Фаза 1 минимальный gfx: framebuffer (SDRAM non-cacheable) +
-# RLE-шрифты (lcd-image-converter) + примитивы. См. include/services/gfx.h.
-
+# services/gfx — компоновщик (double-buffer + PXP), RLE-шрифты
+# (lcd-image-converter), примитивы и общий блиттер картинок.
+# См. include/services/gfx.h.
+#
+# gfx_blit.c намеренно ОТДЕЛЬНАЯ единица трансляции: пиксельный цикл — чистая
+# логика (разбор RLE, перенос строки, пропуск прозрачных прогонов, два цветовых
+# пути) и потому host-тестируется (tests/host/tft_app_gfx_blit), подменяя на
+# линковке единственный шов gfx_blend_pixel(). Всё остальное в gfx.c — регистры
+# PXP/ELCDIF и запись в некэшируемую SDRAM, на хосте не проверяется. Та же
+# граница, что у menu.c/menu_view.c и boot_screen_compose.c/boot_screen_render.c.
 add_library(
   tft_app_gfx STATIC
   src/gfx.c
+  src/gfx_blit.c
   fonts/FloorFontFallback.c
   fonts/SystemFont.c
   fonts/JBMono12.c)

@@ -16,21 +16,27 @@ extern "C"
 {
 #endif
 
-/**
+    /**
  * @brief Диспетчерский вход (opto IN1/IN2, §3.4) — «локальный вход», не
  *        данные СУЛ (ARCH §8 п.3). Самый высокий приоритет из всех режимов —
  *        безусловно перекрывает и обычную индикацию, и любой режим СУЛ
- *        (пожар/перегруз/…), работает даже без связи со станцией. ОТВЕТ
- *        перебивает ВЫЗОВ, если оба почему-то активны одновременно.
+ *        (пожар/перегруз/…), работает даже без связи со станцией.
+ *
+ * Словарь — предметный (как у диспетчерского оборудования): CALLING «вызов
+ * подан», TALKING «вызов принят». Штатная последовательность: пассажир жмёт
+ * кнопку → станция подаёт CALLING; диспетчер отвечает → станция СНИМАЕТ
+ * CALLING и подаёт TALKING; разговор окончен → снимает и его. Отсюда опрос
+ * УРОВНЕЙ, а не фронтов (реактивная версия залипала на стенде, см. §3.4).
+ * TALKING перебивает CALLING, если оба почему-то активны одновременно.
  */
-typedef enum
-{
-    DISPATCHER_INDICATION_NONE = 0,
-    DISPATCHER_INDICATION_CALL,   /**< «Вызов подан» — opto IN1 */
-    DISPATCHER_INDICATION_ANSWER, /**< «Вызов принят» — opto IN2, приоритет выше CALL */
-} dispatcher_indication_t;
+    typedef enum
+    {
+        DISPATCHER_INDICATION_NONE = 0,
+        DISPATCHER_INDICATION_CALLING, /**< «Вызов подан» — opto IN1                     */
+        DISPATCHER_INDICATION_TALKING, /**< «Вызов принят» — opto IN2, перебивает CALLING */
+    } dispatcher_indication_t;
 
-/**
+    /**
  * @brief Безусловная первая отрисовка при старте.
  *
  * controller_init() засеивает кэш дефолтом — если первый реальный кадр
@@ -40,9 +46,10 @@ typedef enum
  *
  * @param dispatcher  текущее состояние диспетчерского входа (см. выше)
  */
-void ui_fallback_render_initial(const sul_result_t *p_result, dispatcher_indication_t dispatcher);
+    void ui_fallback_render_initial(const sul_result_t *p_result,
+                                    dispatcher_indication_t dispatcher);
 
-/**
+    /**
  * @brief Инкрементальная перерисовка по diff.
  *
  * Фаза 1: перерисовывает весь кадр целиком при ЛЮБОМ pending-поле (нет
@@ -52,8 +59,8 @@ void ui_fallback_render_initial(const sul_result_t *p_result, dispatcher_indicat
  *
  * @param dispatcher  текущее состояние диспетчерского входа (см. выше)
  */
-void ui_fallback_render(const indication_task_t *p_task, const sul_result_t *p_result,
-                        dispatcher_indication_t dispatcher);
+    void ui_fallback_render(const indication_task_t *p_task, const sul_result_t *p_result,
+                            dispatcher_indication_t dispatcher);
 
 #ifdef __cplusplus
 }
