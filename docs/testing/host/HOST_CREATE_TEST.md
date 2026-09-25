@@ -180,6 +180,8 @@ ctest --preset host-debug-test -R test_<name> -V
 [ ] tests/host/mocks/*.h              — новый stub-хедер, если модуль
                                          использует ранее не замоканный SDK-вызов
 [ ] tests/host/CMakeLists.txt         — add_host_test(...) для нового теста
+[ ] CMakePresets.json                 — имя таргета в "targets" у host-debug-build
+                                         И host-release-build (иначе ctest: "Not Run")
 [ ] just build::test-host             — зелёная сборка + прогон
 ```
 

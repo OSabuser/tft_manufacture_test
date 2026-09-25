@@ -15,17 +15,23 @@
 
 /* ── Периоды паттернов, мс (СИНХРОНИЗИРОВАТЬ с LED_PATTERNS.md) ─────────── */
 
-/** @brief Heartbeat «жив»: 50 мс горит / 450 мс не горит (период 500). */
-#define LED_HEARTBEAT_ON_MS     50U
+/**
+ * @brief Heartbeat «жив»: 150 мс горит / 350 мс не горит (период 500).
+ *
+ * На плате V3.x LED_HEARTBEAT (= LED_BLNK) кормит аппаратный сторож: фаза «горит»
+ * (пин LOW) должна быть ≥ 70 мс, иначе через ~30 с питание платы передёргивается.
+ * 150 мс — запас ×2 (docs/hardware/new_board_v3.2/HW_WATCHDOG.md). Было 50 мс — не кормило.
+ */
+#define LED_HEARTBEAT_ON_MS     150U
 #define LED_HEARTBEAT_PERIOD_MS 500U
 
 /** @brief Неисправность железа: APP 100/100 (период 200). */
 #define LED_HW_FAULT_ON_MS     100U
 #define LED_HW_FAULT_PERIOD_MS 200U
 
-/** @brief Recovery: оба LED синхронно 100/100 (период 200). */
-#define LED_RECOVERY_ON_MS     100U
-#define LED_RECOVERY_PERIOD_MS 200U
+/** @brief Recovery: оба LED синхронно 200/200 (период 400); ≥ 150 мс «горит» — см. выше. */
+#define LED_RECOVERY_ON_MS     200U
+#define LED_RECOVERY_PERIOD_MS 400U
 
 /** @brief Установка: APP 250/250 (период 500). */
 #define LED_INSTALL_ON_MS     250U
@@ -69,7 +75,7 @@ void led_status_draw_background(led_bg_t bg)
         break;
     }
     case LED_BG_HW_FAULT:
-        draw_heartbeat(); /* heartbeat в своём ритме 50/450 — не синхронен с APP */
+        draw_heartbeat(); /* heartbeat в своём ритме 150/350 — не синхронен с APP */
         bsp_led_set(LED_APP, phase_on(LED_HW_FAULT_PERIOD_MS, LED_HW_FAULT_ON_MS));
         break;
     case LED_BG_WAITING:

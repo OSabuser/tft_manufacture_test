@@ -17,6 +17,8 @@
 
 #include "bsp/sdram.h"
 
+#include "dcd_exec.h"
+
 #include "bsp/tick.h"
 #include "fsl_clock.h"
 #include "fsl_semc.h"
@@ -292,7 +294,67 @@ static bsp_status_t verify_word(uint32_t pattern)
     return (*P_TEST == pattern) ? BSP_OK : BSP_ERR_INIT;
 }
 
+/* ── Исполнение DCD: доступ к регистрам для dcd_exec ───────────────────── */
+
+/** @brief Предел опроса одной Check-команды DCD, мс (IP-команда SEMC — единицы мкс). */
+#define SDRAM_DCD_CHECK_TIMEOUT_MS 10U
+
+volatile uint32_t g_bsp_sdram_dcd_offset = 0xFFFFFFFFUL;
+
+static void dcd_on_command(size_t offset)
+{
+    g_bsp_sdram_dcd_offset = (uint32_t) offset;
+    __DSB(); /* значение должно дойти до памяти до следующей (возможно, зависающей) записи */
+}
+
+static uint32_t dcd_mmio_read(uint32_t addr, uint8_t width)
+{
+    const uintptr_t ADDR = (uintptr_t) addr;
+
+    switch (width)
+    {
+    case 1U:
+        return *(volatile const uint8_t *) ADDR;
+    case 2U:
+        return *(volatile const uint16_t *) ADDR;
+    default:
+        return *(volatile const uint32_t *) ADDR;
+    }
+}
+
+static void dcd_mmio_write(uint32_t addr, uint32_t value, uint8_t width)
+{
+    const uintptr_t ADDR = (uintptr_t) addr;
+
+    switch (width)
+    {
+    case 1U:
+        *(volatile uint8_t *) ADDR = (uint8_t) value;
+        break;
+    case 2U:
+        *(volatile uint16_t *) ADDR = (uint16_t) value;
+        break;
+    default:
+        *(volatile uint32_t *) ADDR = value;
+        break;
+    }
+    __DSB(); /* порядок записей в периферию, как у BootROM */
+}
+
 /* ── Public API ────────────────────────────────────────────────────────── */
+
+bsp_status_t bsp_sdram_run_dcd(const uint8_t *p_dcd, size_t size)
+{
+    static const dcd_exec_io_t IO = {
+        .read             = dcd_mmio_read,
+        .write            = dcd_mmio_write,
+        .now_ms           = bsp_tick_get_ms,
+        .check_timeout_ms = SDRAM_DCD_CHECK_TIMEOUT_MS,
+        .on_command       = dcd_on_command,
+    };
+
+    return dcd_exec_run(p_dcd, size, &IO, NULL);
+}
 
 bsp_status_t bsp_sdram_configure(void)
 {

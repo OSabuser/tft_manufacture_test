@@ -110,6 +110,11 @@ test-host-release: _configure-host-release
     cmake --build --preset host-release-build
     ctest --preset host-release-test
 
+[doc('pytest-тесты tools/host (dcd_tool и др.)')]
+[group('test')]
+test-tools:
+    uv run --directory "{{ TOOLS_DIR }}" --with pytest pytest tests -v
+
 # =============================================================================
 # ГРУППА: hil — сборка target-прошивок для HIL-тестов
 # Запуск самих тестов — на хосте через just host::hil-*
@@ -123,6 +128,20 @@ build-hil: _configure-target-debug
 # =============================================================================
 # ГРУППА: hab_image_gen — подготовка HAB-образов
 # =============================================================================
+# ── DCD ──────────────────────────────────────────────────────────────────────
+# Источник истины — bsp/generated/dcd/TFT_DCD.mex (DCD Tool) → board/dcd.c.
+# Пока HAB-yaml смотрят в tools/host/dcd/dcd.bin (legacy), результат кладётся
+# в build/dcd/ и production-DCD не подменяет (PLAN.md, фаза 1).
+
+[doc('DCD: Config Tools dcd.c (или .bin/.txt) → build/dcd/{dcd.bin, sdram_dcd.c, dcd.txt}')]
+[group('hab_image_gen')]
+dcd src='bsp/generated/dcd/board/dcd.c':
+    python3 "{{ TOOLS_DIR }}/dcd_tool.py" "{{ src }}" \
+        --bin "{{ BUILD_DIR }}/dcd/dcd.bin" \
+        --c "{{ BUILD_DIR }}/dcd/sdram_dcd.c" \
+        --txt "{{ BUILD_DIR }}/dcd/dcd.txt" \
+        --werror
+
 # ── firmware_test ─────────────────────────────────────────────────────────────
 
 [doc('Собрать HAB-образ firmware_test (Debug)')]

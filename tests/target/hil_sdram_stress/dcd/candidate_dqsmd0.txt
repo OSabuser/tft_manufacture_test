@@ -1,0 +1,197 @@
+# candidate_dqsmd0 — внутренняя петля строба (DQSMD=0), 135,77 МГц
+# EMC_39 освобождён (GPIO3_IO25 = EXT_IN1 на V3). Проверяем, держит ли SDRAM без DQS-пада на текущей частоте.
+# Предел частоты для DQSMD=0 — в даташите IMXRT1050CEC (ориентир ≤133 МГц), здесь сознательно выше.
+#
+# Формат — tools/host/dcd_tool.py. Семантика — RM §9.7.2.
+
+# --- Тактирование SEMC: только свои поля (RMW), безопасно и для BootROM, и в рантайме ---
+write_value 4 0x400FC068 0xFFFFFFFF   # CCM_CCGR0: все клоки вкл (как EVK)
+write_value 4 0x400FC06C 0xFFFFFFFF   # CCM_CCGR1: все клоки вкл (как EVK)
+write_value 4 0x400FC070 0xFFFFFFFF   # CCM_CCGR2: все клоки вкл (как EVK)
+write_value 4 0x400FC074 0xFFFFFFFF   # CCM_CCGR3: все клоки вкл (как EVK)
+write_value 4 0x400FC078 0xFFFFFFFF   # CCM_CCGR4: все клоки вкл (как EVK)
+write_value 4 0x400FC07C 0xFFFFFFFF   # CCM_CCGR5: все клоки вкл (как EVK)
+write_value 4 0x400FC080 0xFFFFFFFF   # CCM_CCGR6: все клоки вкл (как EVK)
+write_value 4 0x400D8030 0x00002001   # PLL_SYS: 528 МГц, ENABLE
+
+check_all_bits_set 4 0x400D8030 0x80000000   # PLL_SYS.LOCK — не тактировать SEMC от незахваченной PLL
+
+
+write_clear_bits 4 0x400D8100 0x00BF0000   # PFD_528: PFD2_FRAC + PFD2_CLKGATE
+
+write_set_bits 4 0x400D8100 0x00230000   # PFD2_FRAC = 35 → 271.54 МГц
+
+write_clear_bits 4 0x400FC014 0x000700C0   # CBCDR: SEMC_PODF, SEMC_ALT_CLK_SEL, SEMC_CLK_SEL
+
+write_set_bits 4 0x400FC014 0x00010040   # SEMC_PODF=/2, SEMC_CLK_SEL=alt, ALT=PLL2 PFD2 → 135.77 МГц
+
+check_all_bits_clear 4 0x400FC048 0x00000001   # CDHIPR.SEMC_PODF_BUSY — дождаться делителя (как CLOCK_SetDiv)
+
+# --- IOMUX: EMC_00..EMC_39 (как EVK); EMC_40/41 не трогаем — на V3 это EXT_IN2 ---
+write_value 4 0x401F8014 0x00000000   # MUX EMC_00 = ALT0 (SEMC)
+write_value 4 0x401F8018 0x00000000   # MUX EMC_01 = ALT0 (SEMC)
+write_value 4 0x401F801C 0x00000000   # MUX EMC_02 = ALT0 (SEMC)
+write_value 4 0x401F8020 0x00000000   # MUX EMC_03 = ALT0 (SEMC)
+write_value 4 0x401F8024 0x00000000   # MUX EMC_04 = ALT0 (SEMC)
+write_value 4 0x401F8028 0x00000000   # MUX EMC_05 = ALT0 (SEMC)
+write_value 4 0x401F802C 0x00000000   # MUX EMC_06 = ALT0 (SEMC)
+write_value 4 0x401F8030 0x00000000   # MUX EMC_07 = ALT0 (SEMC)
+write_value 4 0x401F8034 0x00000000   # MUX EMC_08 = ALT0 (SEMC)
+write_value 4 0x401F8038 0x00000000   # MUX EMC_09 = ALT0 (SEMC)
+write_value 4 0x401F803C 0x00000000   # MUX EMC_10 = ALT0 (SEMC)
+write_value 4 0x401F8040 0x00000000   # MUX EMC_11 = ALT0 (SEMC)
+write_value 4 0x401F8044 0x00000000   # MUX EMC_12 = ALT0 (SEMC)
+write_value 4 0x401F8048 0x00000000   # MUX EMC_13 = ALT0 (SEMC)
+write_value 4 0x401F804C 0x00000000   # MUX EMC_14 = ALT0 (SEMC)
+write_value 4 0x401F8050 0x00000000   # MUX EMC_15 = ALT0 (SEMC)
+write_value 4 0x401F8054 0x00000000   # MUX EMC_16 = ALT0 (SEMC)
+write_value 4 0x401F8058 0x00000000   # MUX EMC_17 = ALT0 (SEMC)
+write_value 4 0x401F805C 0x00000000   # MUX EMC_18 = ALT0 (SEMC)
+write_value 4 0x401F8060 0x00000000   # MUX EMC_19 = ALT0 (SEMC)
+write_value 4 0x401F8064 0x00000000   # MUX EMC_20 = ALT0 (SEMC)
+write_value 4 0x401F8068 0x00000000   # MUX EMC_21 = ALT0 (SEMC)
+write_value 4 0x401F806C 0x00000000   # MUX EMC_22 = ALT0 (SEMC)
+write_value 4 0x401F8070 0x00000000   # MUX EMC_23 = ALT0 (SEMC)
+write_value 4 0x401F8074 0x00000000   # MUX EMC_24 = ALT0 (SEMC)
+write_value 4 0x401F8078 0x00000000   # MUX EMC_25 = ALT0 (SEMC)
+write_value 4 0x401F807C 0x00000000   # MUX EMC_26 = ALT0 (SEMC)
+write_value 4 0x401F8080 0x00000000   # MUX EMC_27 = ALT0 (SEMC)
+write_value 4 0x401F8084 0x00000000   # MUX EMC_28 = ALT0 (SEMC)
+write_value 4 0x401F8088 0x00000000   # MUX EMC_29 = ALT0 (SEMC)
+write_value 4 0x401F808C 0x00000000   # MUX EMC_30 = ALT0 (SEMC)
+write_value 4 0x401F8090 0x00000000   # MUX EMC_31 = ALT0 (SEMC)
+write_value 4 0x401F8094 0x00000000   # MUX EMC_32 = ALT0 (SEMC)
+write_value 4 0x401F8098 0x00000000   # MUX EMC_33 = ALT0 (SEMC)
+write_value 4 0x401F809C 0x00000000   # MUX EMC_34 = ALT0 (SEMC)
+write_value 4 0x401F80A0 0x00000000   # MUX EMC_35 = ALT0 (SEMC)
+write_value 4 0x401F80A4 0x00000000   # MUX EMC_36 = ALT0 (SEMC)
+write_value 4 0x401F80A8 0x00000000   # MUX EMC_37 = ALT0 (SEMC)
+write_value 4 0x401F80AC 0x00000000   # MUX EMC_38 = ALT0 (SEMC)
+write_value 4 0x401F80B0 0x00000005   # MUX EMC_39 = ALT5 GPIO3_IO25 (EXT_IN1 на V3), DQS-пад свободен
+write_value 4 0x401F8204 0x000110F9   # PAD EMC_00
+write_value 4 0x401F8208 0x000110F9   # PAD EMC_01
+write_value 4 0x401F820C 0x000110F9   # PAD EMC_02
+write_value 4 0x401F8210 0x000110F9   # PAD EMC_03
+write_value 4 0x401F8214 0x000110F9   # PAD EMC_04
+write_value 4 0x401F8218 0x000110F9   # PAD EMC_05
+write_value 4 0x401F821C 0x000110F9   # PAD EMC_06
+write_value 4 0x401F8220 0x000110F9   # PAD EMC_07
+write_value 4 0x401F8224 0x000110F9   # PAD EMC_08
+write_value 4 0x401F8228 0x000110F9   # PAD EMC_09
+write_value 4 0x401F822C 0x000110F9   # PAD EMC_10
+write_value 4 0x401F8230 0x000110F9   # PAD EMC_11
+write_value 4 0x401F8234 0x000110F9   # PAD EMC_12
+write_value 4 0x401F8238 0x000110F9   # PAD EMC_13
+write_value 4 0x401F823C 0x000110F9   # PAD EMC_14
+write_value 4 0x401F8240 0x000110F9   # PAD EMC_15
+write_value 4 0x401F8244 0x000110F9   # PAD EMC_16
+write_value 4 0x401F8248 0x000110F9   # PAD EMC_17
+write_value 4 0x401F824C 0x000110F9   # PAD EMC_18
+write_value 4 0x401F8250 0x000110F9   # PAD EMC_19
+write_value 4 0x401F8254 0x000110F9   # PAD EMC_20
+write_value 4 0x401F8258 0x000110F9   # PAD EMC_21
+write_value 4 0x401F825C 0x000110F9   # PAD EMC_22
+write_value 4 0x401F8260 0x000110F9   # PAD EMC_23
+write_value 4 0x401F8264 0x000110F9   # PAD EMC_24
+write_value 4 0x401F8268 0x000110F9   # PAD EMC_25
+write_value 4 0x401F826C 0x000110F9   # PAD EMC_26
+write_value 4 0x401F8270 0x000110F9   # PAD EMC_27
+write_value 4 0x401F8274 0x000110F9   # PAD EMC_28
+write_value 4 0x401F8278 0x000110F9   # PAD EMC_29
+write_value 4 0x401F827C 0x000110F9   # PAD EMC_30
+write_value 4 0x401F8280 0x000110F9   # PAD EMC_31
+write_value 4 0x401F8284 0x000110F9   # PAD EMC_32
+write_value 4 0x401F8288 0x000110F9   # PAD EMC_33
+write_value 4 0x401F828C 0x000110F9   # PAD EMC_34
+write_value 4 0x401F8290 0x000110F9   # PAD EMC_35
+write_value 4 0x401F8294 0x000110F9   # PAD EMC_36
+write_value 4 0x401F8298 0x000110F9   # PAD EMC_37
+write_value 4 0x401F829C 0x000110F9   # PAD EMC_38
+
+# --- Контроллер SEMC ---
+write_value 4 0x402F0000 0x10000000   # MCR: BTO=16, DQSMD=0
+write_value 4 0x402F0008 0x00000081
+write_value 4 0x402F000C 0x00000081
+write_value 4 0x402F0010 0x8000001B   # BR0: SDRAM CS0 @0x80000000, 32 МБ, VLD
+write_value 4 0x402F0014 0x00000000   # BR1: не используется (VLD=0)
+write_value 4 0x402F0018 0x00000000   # BR2: не используется (VLD=0)
+write_value 4 0x402F001C 0x00000000   # BR3: не используется (VLD=0)
+write_value 4 0x402F0020 0x00000000   # BR4: не используется (VLD=0)
+write_value 4 0x402F0024 0x00000000   # BR5: не используется (VLD=0)
+write_value 4 0x402F0028 0x00000000   # BR6: не используется (VLD=0)
+write_value 4 0x402F002C 0x00000000   # BR7: не используется (VLD=0)
+write_value 4 0x402F0030 0x00000000   # BR8: не используется (VLD=0)
+write_value 4 0x402F0004 0x000079A8   # IOCR (как EVK)
+write_value 4 0x402F0040 0x00000F31   # SDRAMCR0: 16 бит, BL8, COL 9, CL3
+write_value 4 0x402F0044 0x00652922   # SDRAMCR1: PRE2ACT 3, ACT2RW 3, RFRC 10, WRC 2, CKEOFF 6, ACT2PRE 7 тактов
+write_value 4 0x402F0048 0x0002090A   # SDRAMCR2
+write_value 4 0x402F004C 0x501C0A08   # SDRAMCR3 на время init: REN=0
+write_value 4 0x402F0080 0x00000021   # DBICR0/1 (как EVK, DBI не используется)
+write_value 4 0x402F0084 0x00888888
+write_value 4 0x402F0094 0x00000002   # IPCR1: DATSZ=2 байта
+write_value 4 0x402F0098 0x00000000
+
+# --- Init SDRAM: precharge-all → N×auto-refresh → MRS (W9825 требует 8, Micron 2) ---
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000F   # IPCMD: PRECHARGE ALL
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000C   # IPCMD: AUTO REFRESH 1/8
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000C   # IPCMD: AUTO REFRESH 2/8
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000C   # IPCMD: AUTO REFRESH 3/8
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000C   # IPCMD: AUTO REFRESH 4/8
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000C   # IPCMD: AUTO REFRESH 5/8
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000C   # IPCMD: AUTO REFRESH 6/8
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000C   # IPCMD: AUTO REFRESH 7/8
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000C   # IPCMD: AUTO REFRESH 8/8
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+write_value 4 0x402F00A0 0x00000033   # IPTXDAT: mode register
+write_value 4 0x402F003C 0x00000003   # INTR: сбросить IPCMDDONE|IPCMDERR (W1C), иначе check ниже пройдёт по старому флагу
+write_value 4 0x402F0090 0x80000000   # IPCR0: адрес SDRAM
+write_value 4 0x402F009C 0xA55A000A   # IPCMD: MODE SET (BL8, sequential, CL3)
+
+check_any_bit_set 4 0x402F003C 0x00000001   # INTR.IPCMDDONE
+
+# --- Рабочий refresh ---
+write_value 4 0x402F004C 0x501C0A09   # SDRAMCR3 рабочий

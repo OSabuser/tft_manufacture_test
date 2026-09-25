@@ -322,7 +322,7 @@ _hil_build := BUILD_DIR / "target-debug"
 [group('hil')]
 hil-run:
     HIL_BUILD_DIR="{{ _hil_build }}" \
-        uv run --directory "{{ HIL_DIR }}" pytest -m "not interactive and not usb_vcom" -v 
+        uv run --directory "{{ HIL_DIR }}" pytest -m "not interactive and not usb_vcom and not board_v3 and not sdram_stress and not flexspi_stress" -v 
 
 [doc('Запустить все интерактивные HIL-тесты: кнопки, дисплей')]
 [group('hil')]
@@ -335,6 +335,27 @@ hil-run-interactive:
 hil-uart:
     HIL_BUILD_DIR="{{ _hil_build }}" \
         uv run --directory "{{ HIL_DIR }}" pytest 01_test_uart.py -v
+
+[doc('Плата V3.x: аппаратный watchdog (LED_BLNK → EN DC/DC). Доп. аргументы — в pytest, напр. -k "pulse_width or real_pattern"')]
+[group('hil')]
+[positional-arguments]
+hil-hw-wdt *args:
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest 07_test_hw_wdt.py -s -v "$@"
+
+[doc('Стресс-тест SDRAM по DCD-вариантам (стёртая флеш!). HIL_BOARD=v3|legacy — метка отчёта. Доп. аргументы — в pytest')]
+[group('hil')]
+[positional-arguments]
+hil-sdram-stress *args:
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest 08_test_sdram_stress.py -s -v "$@"
+
+[doc('Стресс-тест чтения QSPI (FlexSPI): RXCLKSRC × частота, окно DLL. Пишет последний 1 МБ флеш! HIL_BOARD=v3|legacy, HIL_FLEXSPI_SOAK_S — долгий прогон')]
+[group('hil')]
+[positional-arguments]
+hil-flexspi-stress *args:
+    HIL_BUILD_DIR="{{ _hil_build }}" \
+        uv run --directory "{{ HIL_DIR }}" pytest 09_test_flexspi_stress.py -s -v "$@"
 
 [doc('Запустить HIL-тест оптоизолированных входов')]
 [group('hil')]

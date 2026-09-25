@@ -68,7 +68,26 @@ DCD уже сделала эту работу раньше, а `bsp_sdram_config
 ```c
 bsp_status_t bsp_sdram_configure(void); /* поднять SEMC: тактирование → пины → контроллер → init-команды SDRAM */
 bsp_status_t bsp_sdram_init(void);      /* верифицировать SDRAM (SEMC уже поднят — DCD либо bsp_sdram_configure()) */
+bsp_status_t bsp_sdram_run_dcd(const uint8_t *p_dcd, size_t size); /* исполнить DCD-массив в рантайме */
 ```
+
+> ⚠ Аудит `docs/hardware/new_board_v3.2/SEMC_TIMING.md` §4.1: `bsp_sdram_configure()`
+> **не** совпадает с `dcd.bin` по `SDRAMCR3`. В `dcd.bin` финальной записи `0x50210A09` нет,
+> это значение из DCD от EVK. `bsp_sdram_configure()` будет заменён исполнением общего
+> DCD-массива через `bsp_sdram_run_dcd()` (PLAN.md, фаза 1).
+
+**Поведение `bsp_sdram_run_dcd()`** — интерпретатор DCD (`src/dcd_exec.c`), тот же
+формат и семантика, что у BootROM (i.MX RT1050 RM Rev.4 §9.7.2, табл. 9-41/9-45):
+write value / clear bits / set bits, check all/any clear/set с count, NOP.
+
+- Массив целиком валидируется **до** исполнения первой команды: заголовок `0xD2`/`0x41`,
+  длина ≤ 1768 байт, границы команд, ширина 1/2/4, выравнивание адреса, значение
+  не шире ширины. Битый DCD не исполняется частично.
+- Check без count у BootROM опрашивает бесконечно, здесь — не дольше 10 мс.
+- Белый список адресов BootROM (RM табл. 9-42) не проверяется — это задача
+  офлайн-конвертера DCD.
+- Ядро платформо-независимо (доступ к регистрам через `dcd_exec_io_t`),
+  host-тест `tests/host/dcd_exec` (в т.ч. прогон реального `tools/host/dcd/dcd.bin`).
 
 **Публичные константы:**
 

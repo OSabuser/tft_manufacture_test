@@ -12,7 +12,7 @@ if(BUILD_TESTS_HOST)
   return()
 endif()
 
-add_library(bsp_sdram STATIC src/sdram.c)
+add_library(bsp_sdram STATIC src/sdram.c src/dcd_exec.c)
 
 target_include_directories(
   bsp_sdram

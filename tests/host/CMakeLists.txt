@@ -314,3 +314,49 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang")
     ${PROJECT_SOURCE_DIR}/firmware/bootloader/src/slot_version.c
     PROPERTIES COMPILE_OPTIONS "-fno-sanitize=address,undefined")
 endif()
+
+# -----------------------------------------------------------------------------
+# bsp_sdram: интерпретатор DCD (категория A — доступ к регистрам через
+# dcd_exec_io_t, в тесте — фейковая карта регистров). Последний тест гоняет
+# реальный legacy tools/host/dcd/dcd.bin.
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_dcd_exec
+  SOURCES
+  dcd_exec/test_dcd_exec.c
+  ${PROJECT_SOURCE_DIR}/bsp/sdram/src/dcd_exec.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/bsp/sdram/src # dcd_exec.h (приватный заголовок модуля)
+  ${PROJECT_SOURCE_DIR}/bsp/common/include)
+
+target_compile_definitions(
+  test_dcd_exec PRIVATE LEGACY_DCD_PATH="${PROJECT_SOURCE_DIR}/tools/host/dcd/dcd.bin")
+
+# -----------------------------------------------------------------------------
+# hil_sdram_stress: алгоритмы проверки памяти (категория A, обычный буфер;
+# неисправности имитируются колбэками). MEM_PROGRESS_WORDS=16 — колбэк часто.
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_mem_tests
+  SOURCES
+  mem_tests/test_mem_tests.c
+  ${PROJECT_SOURCE_DIR}/tests/target/hil_sdram_stress/mem_tests.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/tests/target/hil_sdram_stress)
+
+target_compile_definitions(test_mem_tests PRIVATE MEM_PROGRESS_WORDS=16U)
+
+# -----------------------------------------------------------------------------
+# hil_flexspi_stress: PRNG-паттерн, сверка, маска линий IO, план тактирования
+# FlexSPI (категория A, регистров не трогает).
+# -----------------------------------------------------------------------------
+add_host_test(
+  NAME
+  test_qspi_check
+  SOURCES
+  qspi_check/test_qspi_check.c
+  ${PROJECT_SOURCE_DIR}/tests/target/hil_flexspi_stress/qspi_check.c
+  INCLUDES
+  ${PROJECT_SOURCE_DIR}/tests/target/hil_flexspi_stress)

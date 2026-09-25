@@ -167,7 +167,10 @@
                 "test_mcuboot_boot_select",
                 "test_slot_version",
                 "test_update_policy",
-                "test_recovery"
+                "test_recovery",
+                "test_dcd_exec",
+                "test_mem_tests",
+                "test_qspi_check"
             ]
         },
         {
@@ -190,7 +193,10 @@
                 "test_mcuboot_boot_select",
                 "test_slot_version",
                 "test_update_policy",
-                "test_recovery"
+                "test_recovery",
+                "test_dcd_exec",
+                "test_mem_tests",
+                "test_qspi_check"
             ]
         },
         {
@@ -202,7 +208,10 @@
                 "test_hil_button",
                 "test_hil_can",
                 "test_hil_usb_cdc",
-                "test_hil_opto"
+                "test_hil_opto",
+                "test_hil_hw_wdt",
+                "test_hil_sdram_stress",
+                "test_hil_flexspi_stress"
             ]
         }
     ],

@@ -17,7 +17,7 @@ product: Pins v17.0
 processor: MIMXRT1052xxxxB
 package_id: MIMXRT1052CVJ5B
 mcu_data: ksdk2_0
-processor_version: 25.12.10
+processor_version: 26.06.20
 external_user_signals: {}
 pin_labels:
 - {pin_num: M4, pin_signal: GPIO_SD_B1_03, label: UserLed1, identifier: LED_1;UserLed1}

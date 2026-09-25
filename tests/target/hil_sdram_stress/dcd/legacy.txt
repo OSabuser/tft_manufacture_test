@@ -1,0 +1,164 @@
+# legacy — текущий production-DCD: bsp/generated/dcd/TFT_DCD.mex (= tools/host/dcd/dcd.bin без NIC-301 QoS)
+# Единственное отличие: запись CBCDR целиком заменена на RMW полей SEMC (см. ниже).
+# Сохранено как есть: «мусорный» первый блок, PFD_528=0x00230000 (обнуляет PFD0/1/3), BR1..8 валидны,
+# SDRAMCR2=0x00020201 (REF2REF 22 нс), SDRAMCR3=0x08193D0F с REN=1 до init, 2×auto-refresh,
+# check без сброса INTR — SEMC_TIMING.md §2–4.
+
+write_value 4 0x400FC068 0xFFFFFFFF
+write_value 4 0x400FC06C 0xFFFFFFFF
+write_value 4 0x400FC070 0xFFFFFFFF
+write_value 4 0x400FC074 0xFFFFFFFF
+write_value 4 0x400FC078 0xFFFFFFFF
+write_value 4 0x400FC07C 0xFFFFFFFF
+write_value 4 0x400FC080 0xFFFFFFFF
+write_value 4 0x400D8030 0x00002001
+write_value 4 0x400D8100 0x00230000
+
+# CBCDR: в legacy пишется целиком 0x00010D40 — это ещё и AHB_PODF=/4, IPG_PODF=/2.
+# В рантайме после BOARD_BootClockRUN() это уронит частоту ядра, поэтому здесь — только поля SEMC
+# (результат для SEMC тот же: CLK_SEL=alt, ALT=PLL2 PFD2, PODF=/2) + ожидание делителя.
+write_clear_bits 4 0x400FC014 0x000700C0
+
+write_set_bits 4 0x400FC014 0x00010040
+
+check_all_bits_clear 4 0x400FC048 0x00000001
+
+write_value 4 0x401F8014 0x00000000
+write_value 4 0x401F8018 0x00000000
+write_value 4 0x401F801C 0x00000000
+write_value 4 0x401F8020 0x00000000
+write_value 4 0x401F8024 0x00000000
+write_value 4 0x401F8028 0x00000000
+write_value 4 0x401F802C 0x00000000
+write_value 4 0x401F8030 0x00000000
+write_value 4 0x401F8034 0x00000000
+write_value 4 0x401F8038 0x00000000
+write_value 4 0x401F803C 0x00000000
+write_value 4 0x401F8040 0x00000000
+write_value 4 0x401F8044 0x00000000
+write_value 4 0x401F8048 0x00000000
+write_value 4 0x401F804C 0x00000000
+write_value 4 0x401F8050 0x00000000
+write_value 4 0x401F8054 0x00000000
+write_value 4 0x401F8058 0x00000000
+write_value 4 0x401F805C 0x00000000
+write_value 4 0x401F8060 0x00000000
+write_value 4 0x401F8064 0x00000000
+write_value 4 0x401F8068 0x00000000
+write_value 4 0x401F806C 0x00000000
+write_value 4 0x401F8070 0x00000000
+write_value 4 0x401F8074 0x00000000
+write_value 4 0x401F8078 0x00000000
+write_value 4 0x401F807C 0x00000000
+write_value 4 0x401F8080 0x00000000
+write_value 4 0x401F8084 0x00000000
+write_value 4 0x401F8088 0x00000000
+write_value 4 0x401F808C 0x00000000
+write_value 4 0x401F8090 0x00000000
+write_value 4 0x401F8094 0x00000000
+write_value 4 0x401F8098 0x00000000
+write_value 4 0x401F809C 0x00000000
+write_value 4 0x401F80A0 0x00000000
+write_value 4 0x401F80A4 0x00000000
+write_value 4 0x401F80A8 0x00000000
+write_value 4 0x401F80AC 0x00000000
+write_value 4 0x401F80B0 0x00000010
+write_value 4 0x401F80B4 0x00000000
+write_value 4 0x401F80B8 0x00000000
+write_value 4 0x401F8204 0x000110F9
+write_value 4 0x401F8208 0x000110F9
+write_value 4 0x401F820C 0x000110F9
+write_value 4 0x401F8210 0x000110F9
+write_value 4 0x401F8214 0x000110F9
+write_value 4 0x401F8218 0x000110F9
+write_value 4 0x401F821C 0x000110F9
+write_value 4 0x401F8220 0x000110F9
+write_value 4 0x401F8224 0x000110F9
+write_value 4 0x401F8228 0x000110F9
+write_value 4 0x401F822C 0x000110F9
+write_value 4 0x401F8230 0x000110F9
+write_value 4 0x401F8234 0x000110F9
+write_value 4 0x401F8238 0x000110F9
+write_value 4 0x401F823C 0x000110F9
+write_value 4 0x401F8240 0x000110F9
+write_value 4 0x401F8244 0x000110F9
+write_value 4 0x401F8248 0x000110F9
+write_value 4 0x401F824C 0x000110F9
+write_value 4 0x401F8250 0x000110F9
+write_value 4 0x401F8254 0x000110F9
+write_value 4 0x401F8258 0x000110F9
+write_value 4 0x401F825C 0x000110F9
+write_value 4 0x401F8260 0x000110F9
+write_value 4 0x401F8264 0x000110F9
+write_value 4 0x401F8268 0x000110F9
+write_value 4 0x401F826C 0x000110F9
+write_value 4 0x401F8270 0x000110F9
+write_value 4 0x401F8274 0x000110F9
+write_value 4 0x401F8278 0x000110F9
+write_value 4 0x401F827C 0x000110F9
+write_value 4 0x401F8280 0x000110F9
+write_value 4 0x401F8284 0x000110F9
+write_value 4 0x401F8288 0x000110F9
+write_value 4 0x401F828C 0x000110F9
+write_value 4 0x401F8290 0x000110F9
+write_value 4 0x401F8294 0x000110F9
+write_value 4 0x401F8298 0x000110F9
+write_value 4 0x401F829C 0x000110F9
+write_value 4 0x401F82A0 0x000110F9
+write_value 4 0x401F82A4 0x000110F9
+write_value 4 0x401F82A8 0x000110F9
+write_value 4 0x402F0000 0x1000E000
+write_value 4 0x402F0008 0x00000081
+write_value 4 0x402F000C 0x00000081
+write_value 4 0x402F0010 0x8000001B
+write_value 4 0x402F0014 0x90000021
+write_value 4 0x402F0004 0x00000008
+write_value 4 0x402F0040 0x00000B27
+write_value 4 0x402F0044 0x00100100
+write_value 4 0x402F0048 0x00020201
+write_value 4 0x402F004C 0x08193D0F
+write_value 4 0x402F0080 0x00000021
+write_value 4 0x402F0084 0x00888888
+write_value 4 0x402F0094 0x00000002
+write_value 4 0x402F0098 0x00000000
+write_value 4 0x402F0000 0x10000004
+write_value 4 0x402F0008 0x00000081
+write_value 4 0x402F000C 0x00000081
+write_value 4 0x402F0010 0x8000001B
+write_value 4 0x402F0014 0x8200001B
+write_value 4 0x402F0018 0x8400001B
+write_value 4 0x402F001C 0x8600001B
+write_value 4 0x402F0020 0x90000021
+write_value 4 0x402F0024 0xA0000019
+write_value 4 0x402F0028 0xA8000017
+write_value 4 0x402F002C 0xA900001B
+write_value 4 0x402F0030 0x00000021
+write_value 4 0x402F0004 0x000079A8
+write_value 4 0x402F0040 0x00000F31
+write_value 4 0x402F0044 0x00652922
+write_value 4 0x402F0048 0x00020201
+write_value 4 0x402F004C 0x08193D0F
+write_value 4 0x402F0080 0x00000021
+write_value 4 0x402F0084 0x00888888
+write_value 4 0x402F0094 0x00000002
+write_value 4 0x402F0098 0x00000000
+write_value 4 0x402F0090 0x80000000
+write_value 4 0x402F009C 0xA55A000F
+
+check_any_bit_set 4 0x402F003C 0x00000001
+
+write_value 4 0x402F0090 0x80000000
+write_value 4 0x402F009C 0xA55A000C
+
+check_any_bit_set 4 0x402F003C 0x00000001
+
+write_value 4 0x402F0090 0x80000000
+write_value 4 0x402F009C 0xA55A000C
+
+check_any_bit_set 4 0x402F003C 0x00000001
+
+write_value 4 0x402F00A0 0x00000033
+write_value 4 0x402F0090 0x80000000
+write_value 4 0x402F009C 0xA55A000A
+
+check_any_bit_set 4 0x402F003C 0x00000001

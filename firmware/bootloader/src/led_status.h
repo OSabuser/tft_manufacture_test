@@ -22,9 +22,9 @@
 /** @brief Фоновое (устойчивое) состояние индикации. */
 typedef enum
 {
-    LED_BG_WAITING,  /**< Норма: HEARTBEAT 50/450, APP выкл — ждём microSD.     */
-    LED_BG_HW_FAULT, /**< Неисправность: HEARTBEAT 50/450, APP 100/100.         */
-    LED_BG_RECOVERY, /**< Recovery (Фаза 6): оба LED синхронно 100/100.         */
+    LED_BG_WAITING,  /**< Норма: HEARTBEAT 150/350, APP выкл — ждём microSD.   */
+    LED_BG_HW_FAULT, /**< Неисправность: HEARTBEAT 150/350, APP 100/100.       */
+    LED_BG_RECOVERY, /**< Recovery (Фаза 6): оба LED синхронно 200/200.         */
 } led_bg_t;
 
 /**
@@ -43,7 +43,7 @@ void led_status_install_begin(void);
 void led_status_install_end(void);
 
 /**
- * @brief Обновить APP/HEARTBEAT под паттерн установки (HEARTBEAT 50/450,
+ * @brief Обновить APP/HEARTBEAT под паттерн установки (HEARTBEAT 150/350,
  *        APP 250/250). No-op вне окна install.
  *
  * Звать из ВСЕХ блокирующих циклов установки — и поблочного стирания слота

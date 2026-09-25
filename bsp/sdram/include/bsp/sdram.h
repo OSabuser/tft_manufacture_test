@@ -32,6 +32,9 @@
 
 #include "bsp/status.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 /**
  * @brief Размер расширенного тестового региона, байт (27 MB).
  *
@@ -97,6 +100,40 @@
  *                       (IP-команда SEMC вернула ошибку).
  */
 bsp_status_t bsp_sdram_configure(void);
+
+/**
+ * @brief Исполнить DCD-массив в рантайме — то же, что делает BootROM до main().
+ *
+ * Формат и семантика — i.MX RT1050 RM Rev.4 §9.7.2 (write/check/NOP).
+ * Массив целиком валидируется до исполнения первой команды. Check-команды
+ * опрашиваются не дольше 10 мс каждая (у BootROM без count — бесконечно).
+ *
+ * Назначение: один DCD-источник (DCD Tool, Config Tools) для BootROM и для
+ * вызывателей без DCD (bootloader, HIL-стресс-тесты SDRAM с вариантами конфига).
+ *
+ * @note Те же ограничения среды, что у bsp_sdram_configure(): если DCD трогает
+ *       тактирование SEMC или NIC-301 GPV (0x41000000+) — нужны
+ *       SKIP_SYSCLK_INIT и MPU Region 11.
+ *
+ * @param p_dcd  DCD-массив (заголовок 0xD2 + команды).
+ * @param size   Размер массива, байт.
+ *
+ * @retval BSP_OK                Все команды исполнены.
+ * @retval BSP_ERR_PARAM         p_dcd == NULL.
+ * @retval BSP_ERR_INVALID       Битый DCD — ни одна команда не исполнена.
+ * @retval BSP_ERR_NOT_SUPPORTED Неизвестная команда — ни одна не исполнена.
+ * @retval BSP_ERR_TIMEOUT       Check-команда не дождалась условия.
+ */
+bsp_status_t bsp_sdram_run_dcd(const uint8_t *p_dcd, size_t size);
+
+/**
+ * @brief Отладка: смещение последнего НАЧАТОГО элемента DCD (пары write или
+ *        заголовка check/NOP) в
+ *        bsp_sdram_run_dcd() (0xFFFFFFFF — ни одной). Если исполнение зависло
+ *        на обращении к регистру, отладчик читает эту переменную и видит, на
+ *        какой команде (tools/hil/08_test_sdram_stress.py делает это сам).
+ */
+extern volatile uint32_t g_bsp_sdram_dcd_offset;
 
 /**
  * @brief Верифицировать доступность SDRAM.

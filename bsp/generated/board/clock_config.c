@@ -22,11 +22,11 @@
 
 /* TEXT BELOW IS USED AS SETTING FOR TOOLS *************************************
 !!GlobalInfo
-product: Clocks v19.0
+product: Clocks v20.0
 processor: MIMXRT1052xxxxB
 package_id: MIMXRT1052CVJ5B
 mcu_data: ksdk2_0
-processor_version: 25.12.10
+processor_version: 26.06.20
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS **********/
 
 #include "clock_config.h"
